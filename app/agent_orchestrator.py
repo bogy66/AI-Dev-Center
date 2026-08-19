@@ -60,23 +60,28 @@ class AgentOrchestrator:
         )
 
         # Step 5: Create a real DEV Git commit
-        git_manager.commit(project, "Development changes")
+        commit_hash = git_manager.commit_and_get_hash(project, "DEV: Development completed")
+        if commit_hash:
+            workflow_manager.update_agent("developer", "completed", commit=commit_hash)
 
         # Step 6: Run TesterAgent
-        tester_agent.test(project, str(workflow_manager.storage))
+        tester_state = tester_agent.test(project, str(workflow_manager.storage))
 
-        # Step 7: Create a real TEST Git commit
-        git_manager.commit(project, "Testing changes")
+        # Step 7: Check Tester state
+        if tester_state.get("status") != "completed" or tester_state.get("result") != "PASS":
+            return tester_state
 
         # Step 8: Run ReviewerAgent
-        review_result = reviewer_agent.review(project, str(workflow_manager.storage))
+        reviewer_state = reviewer_agent.review(project, str(workflow_manager.storage))
 
-        # Step 9: Update workflow status if review is successful
-        if review_result == "success":
-            workflow_manager.update_agent("reviewer", "approved")
-            state = workflow_manager.load()
-            state["status"] = "approval_waiting"
-            workflow_manager.save(state)
+        # Step 9: Check Reviewer state
+        if reviewer_state.get("status") != "approved":
+            return reviewer_state
+
+        # Step 10: Set approval_waiting if Reviewer approved
+        state = workflow_manager.load()
+        state["status"] = "approval_waiting"
+        workflow_manager.save(state)
 
         return workflow_manager.load()
 
