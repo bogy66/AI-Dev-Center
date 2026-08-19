@@ -8,176 +8,188 @@
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
 <style>
+    body {
+        font-family: Arial, sans-serif;
+        background: #1e1e1e;
+        color: #ddd;
+        margin: 0;
+        display: flex;
+        height: 100vh;
+        overflow: hidden;
+    }
 
-body {
-    font-family: Arial, sans-serif;
-    background:#1e1e1e;
-    color:#ddd;
-    margin:0;
-}
+    .sidebar {
+        width: 260px;
+        background: #111;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 20px;
+        box-sizing: border-box;
+    }
 
-.header {
-    background:#111;
-    padding:20px;
-    font-size:28px;
-    font-weight:bold;
-}
+    .sidebar h2 {
+        margin: 0 0 20px 0;
+        font-size: 24px;
+    }
 
-.container {
-    padding:20px;
-}
+    .sidebar button {
+        margin-bottom: 10px;
+        width: 100%;
+    }
 
-.card {
-    background:#2b2b2b;
-    padding:20px;
-    margin-bottom:20px;
-    border-radius:10px;
-}
+    .main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+    }
 
-input, textarea {
-    width:100%;
-    background:#111;
-    color:white;
-    border:1px solid #555;
-    padding:10px;
-    font-size:16px;
-}
+    .main-header {
+        background: #111;
+        padding: 20px;
+        font-size: 24px;
+        font-weight: bold;
+    }
 
-textarea {
-    height:120px;
-}
+    .chat-area {
+        flex: 1;
+        padding: 20px;
+        overflow-y: auto;
+    }
 
-button {
-    background:#1976d2;
-    color:white;
-    border:0;
-    padding:12px 25px;
-    border-radius:6px;
-    cursor:pointer;
-    font-size:16px;
-}
+    .chat-message {
+        background: #2b2b2b;
+        padding: 15px;
+        margin-bottom: 10px;
+        border-radius: 10px;
+    }
 
-button:hover {
-    background:#2196f3;
-}
+    .chat-input {
+        display: flex;
+        padding: 20px;
+        background: #111;
+    }
 
-.agents {
-    display:flex;
-    gap:10px;
-}
+    .chat-input textarea {
+        flex: 1;
+        margin-right: 10px;
+    }
 
-.agent {
-    background:#333;
-    padding:10px;
-    border-radius:5px;
-    flex:1;
-}
+    .chat-input button {
+        width: 100px;
+    }
 
-.result {
-    background:#111;
-    padding:20px;
-    border-radius:8px;
-    white-space:normal;
-}
+    .right-sidebar {
+        width: 300px;
+        background: #111;
+        padding: 20px;
+        box-sizing: border-box;
+        overflow-y: auto;
+    }
 
-pre {
-    background:#000;
-    padding:10px;
-}
+    .right-sidebar h2 {
+        margin: 0 0 20px 0;
+        font-size: 24px;
+    }
 
+    .status-indicator {
+        margin-bottom: 10px;
+        padding: 10px;
+        background: #2b2b2b;
+        border-radius: 5px;
+    }
+
+    .approval-section {
+        margin-top: 20px;
+    }
+
+    .approval-section textarea {
+        margin-bottom: 10px;
+    }
 </style>
 
 </head>
 
 
 <body>
+    <div class="sidebar">
+        <div>
+            <h2>🤖 AI Dev Center</h2>
+            <button>+ Neues Projekt</button>
+            <div id="project-list">
+                <div class="project active">NeuesKIProjekt</div>
+                <!-- Add more projects here -->
+            </div>
+        </div>
+        <div>
+            <button>Einstellungen</button>
+        </div>
+    </div>
 
-<div class="header">
-🤖 AI Dev Center
-</div>
+    <div class="main">
+        <div class="main-header">Aktives Projekt: NeuesKIProjekt</div>
+        <div class="chat-area" id="chat-area">
+            <div class="chat-message">Füge YouTube als Datenquelle hinzu</div>
+            <div class="chat-message" id="result">Bereit...</div>
+        </div>
+        <div class="chat-input">
+            <textarea id="task" placeholder="Neue Aufgabe..."></textarea>
+            <button onclick="runAI()">Senden</button>
+        </div>
+    </div>
 
-<div class="card" id="approval-section">
-    <h2>Udo Freigabe</h2>
-    <div id="approval-status">Lade Status...</div>
-    <textarea id="approval-comment" placeholder="Kommentar"></textarea>
-    <button id="approve-button" onclick="approve()">✅ FREIGEBEN</button>
-    <button id="reject-button" onclick="reject()">❌ ABLEHNEN</button>
-</div>
+    <div class="right-sidebar">
+        <h2>Workflow</h2>
+        <div class="status-indicator">👨‍💼 Projektmanager</div>
+        <div class="status-indicator">🏗 Architekt</div>
+        <div class="status-indicator">💻 Entwickler</div>
+        <div class="status-indicator">🧪 Tester</div>
+        <div class="status-indicator">🔍 Reviewer</div>
 
-
-<div class="container">
-
-
-<div class="card">
-
-<h2>Projekt</h2>
-
-<input id="project"
-value="/home/udo/NeuesKIProjekt">
-
-
-<h2>Aufgabe</h2>
-
-<textarea id="task">
-Füge YouTube als Datenquelle hinzu
-</textarea>
-
-
-<br><br>
-
-<button onclick="runAI()">
-▶ KI Entwicklerteam starten
-</button>
-
-</div>
-
-
-<div class="card">
-
-<h2>Status</h2>
-
-<div class="agents">
-
-<div class="agent">
-👨‍💼 Projektmanager
-</div>
-
-<div class="agent">
-🏗 Architekt
-</div>
-
-<div class="agent">
-💻 Entwickler
-</div>
-
-<div class="agent">
-🧪 Tester
-</div>
-
-<div class="agent">
-🔍 Reviewer
-</div>
-
-</div>
-
-</div>
-
-
-<div class="card">
-
-<h2>Ergebnisse</h2>
-
-<div id="result" class="result">
-Bereit...
-</div>
-
-</div>
-
-
-</div>
+        <div class="approval-section">
+            <h2>Udo Freigabe</h2>
+            <div id="approval-status">Lade Status...</div>
+            <textarea id="approval-comment" placeholder="Kommentar"></textarea>
+            <button id="approve-button" onclick="approve()">✅ FREIGEBEN</button>
+            <button id="reject-button" onclick="reject()">❌ ABLEHNEN</button>
+        </div>
+    </div>
 
 
 <script>
+document.getElementById("result").innerHTML = "⏳ KI-Team arbeitet...";
+
+let project = document.getElementById("project").value;
+
+let task = document.getElementById("task").value;
+
+let response = await fetch("/run", {
+    method: "POST",
+    headers: {
+        "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+        project: project,
+        task: task
+    })
+});
+
+let data = await response.json();
+
+let html = "";
+
+for (let agent in data) {
+    html += `
+    <div class="chat-message">
+        <h2>${agent}</h2>
+        <hr>
+        ${marked.parse(data[agent])}
+    </div>
+    `;
+}
+
+document.getElementById("result").innerHTML = html;
 
 
 async function fetchApprovalStatus() {
