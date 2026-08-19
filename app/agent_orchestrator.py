@@ -32,10 +32,13 @@ class AgentOrchestrator:
         tester_agent = TesterAgent()
         reviewer_agent = ReviewerAgent()
 
-        # Step 1: Create a new workflow
-        workflow_manager.create(task, "dev_branch")
+        # 1. Workflow erstellen
+        workflow_manager.create(
+            task,
+            "dev_branch"
+        )
 
-        # Step 2: Run Project Manager
+        # 2. Project Manager
         self.agent_executor.run(
             AGENT_ROLES["project_manager"],
             task,
@@ -44,7 +47,7 @@ class AgentOrchestrator:
             AGENT_CONFIG["project_manager"]["max_tokens"]
         )
 
-        # Step 3: Run Architect
+        # 3. Architect
         self.agent_executor.run(
             AGENT_ROLES["architect"],
             task,
@@ -53,7 +56,7 @@ class AgentOrchestrator:
             AGENT_CONFIG["architect"]["max_tokens"]
         )
 
-        # Step 4: Run Developer
+        # 4. Developer
         developer_response = self.agent_executor.run(
             AGENT_ROLES["developer"],
             task,
@@ -62,40 +65,56 @@ class AgentOrchestrator:
             AGENT_CONFIG["developer"]["max_tokens"]
         )
 
-        # Step 5: Parse developer changes
+        # 5. Developer-Antwort parsen
         developer_changes = DeveloperChanges.parse(
             developer_response
         )
 
-        # Step 6: Apply developer changes
-        file_applier = DeveloperFileApplier(project)
+        # 6. Änderungen anwenden
+        file_applier = DeveloperFileApplier(
+            project
+        )
 
         apply_result = file_applier.apply(
             developer_changes
         )
 
-        if not apply_result["applied"]:
+        if not apply_result.get("applied"):
+
             state = workflow_manager.load()
+
             state["status"] = "development_no_changes"
-            workflow_manager.save(state)
+
+            workflow_manager.save(
+                state
+            )
 
             return workflow_manager.load()
 
-        # Step 7: Create DEV Git commit
+        # 7. DEV Commit
         commit_result = git_manager.commit_and_get_hash(
             project,
             "DEV: Development completed"
         )
 
-        if commit_result["code"] != 0:
+        if commit_result.get("code") != 0:
+
             state = workflow_manager.load()
 
+            stdout = commit_result.get(
+                "stdout",
+                ""
+            ).lower()
+
             if (
-                "nothing to commit" in commit_result["stdout"].lower()
-                and "working tree clean" in commit_result["stdout"].lower()
+                "nothing to commit" in stdout
+                and "working tree clean" in stdout
             ):
                 state["status"] = "development_no_changes"
-                workflow_manager.save(state)
+
+                workflow_manager.save(
+                    state
+                )
 
             return workflow_manager.load()
 
@@ -105,44 +124,134 @@ class AgentOrchestrator:
             commit=commit_result["commit"]
         )
 
-        # Step 8: Run TesterAgent
+        # 8. Tester
         tester_state = tester_agent.test(
             project,
             str(workflow_manager.storage)
         )
 
-        # Step 9: Check Tester state
-        if (
-            tester_state["tester"]["status"] != "completed"
-            or tester_state["tester"]["result"] != "PASS"
-        ):
-            return tester_state
+        # Tester-Ergebnis in den zentralen Workflow-State
+        # übernehmen. Das macht den Orchestrator unabhängig
+        # davon, ob TesterAgent selbst persistiert oder nicht.
 
-        # Step 10: Run ReviewerAgent
+        state = workflow_manager.load()
+
+        tester_info = tester_state.get(
+            "tester",
+            {}
+        )
+
+        if tester_info:
+
+            state["tester"] = {
+                **state.get("tester", {}),
+                **tester_info
+            }
+
+            workflow_manager.save(
+                state
+            )
+
+        state = workflow_manager.load()
+
+        tester_info = state.get(
+            "tester",
+            {}
+        )
+
+        if tester_info.get("status") != "completed":
+            return state
+
+        if tester_info.get("result") != "PASS":
+            return state
+
+        # 9. Reviewer
         reviewer_state = reviewer_agent.review(
             project,
             str(workflow_manager.storage)
         )
 
-        # Step 11: Check Reviewer state
-        if reviewer_state.get("status") != "approved":
-            return reviewer_state
+        # Reviewer-Ergebnis ebenfalls zentral persistieren.
 
-        # Step 12: Wait for user approval
         state = workflow_manager.load()
+
+        reviewer_info = reviewer_state.get(
+            "reviewer",
+            {}
+        )
+
+        if reviewer_info:
+
+            state["reviewer"] = {
+                **state.get("reviewer", {}),
+                **reviewer_info
+            }
+
+        reviewer_status = reviewer_state.get(
+            "status"
+        )
+
+        if reviewer_status != "approved":
+
+            workflow_manager.save(
+                state
+            )
+
+            return state
+
+        # Reviewer kann entweder einen vollständigen
+        # Workflow-State oder nur {"status": "approved"}
+        # zurückgeben.
+
+        reviewer = state.get(
+            "reviewer",
+            {}
+        )
+
+        reviewer["status"] = "approved"
+
+        if reviewer_info.get("result") is not None:
+            reviewer["result"] = reviewer_info["result"]
+
+        state["reviewer"] = reviewer
+
+        workflow_manager.save(
+            state
+        )
+
+        # 10. Auf Benutzerfreigabe warten
+
+        state = workflow_manager.load()
+
         state["status"] = "approval_waiting"
-        workflow_manager.save(state)
+
+        workflow_manager.save(
+            state
+        )
 
         return workflow_manager.load()
 
-    def run(self, project, task):
-        agents = self.agent_manager.load_agents(project)
-        project_context = self.agent_manager.load_context(project)
-        project_files = self.project_reader.read_files(project)
+    def run(
+        self,
+        project,
+        task
+    ):
+        self.agent_manager.load_agents(
+            project
+        )
+
+        project_context = self.agent_manager.load_context(
+            project
+        )
+
+        project_files = self.project_reader.read_files(
+            project
+        )
 
         files_context = ""
 
         for name, content in project_files.items():
+
             files_context += (
                 f"\n\n===== {name} =====\n\n"
                 f"{content}\n\n"
@@ -152,27 +261,24 @@ class AgentOrchestrator:
         previous_results = ""
 
         for role in AGENT_ROLES:
+
             limit = AGENT_CONFIG[role]["max_context"]
 
             context = f"""
-            Projektkontext:
+Projektkontext:
 
-            {project_context}
-
-
-            Projektdateien:
-
-            {files_context[:4000]}
+{project_context}
 
 
-            Vorherige Team-Ergebnisse:
+Projektdateien:
 
-            {previous_results[-limit:]}
-            """
+{files_context[:4000]}
 
-            executor = AgentExecutor(
-                model=AGENT_CONFIG[role]["model"]
-            )
+
+Vorherige Team-Ergebnisse:
+
+{previous_results[-limit:]}
+"""
 
             response = self.agent_executor.run(
                 AGENT_ROLES[role],
