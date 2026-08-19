@@ -65,7 +65,7 @@ class WorkflowManager:
     def load(self):
 
         if not self.storage.exists():
-            return None
+            return {"status": "not_started"}
 
 
         return json.loads(

@@ -10,6 +10,17 @@ def orchestrator():
     return AgentOrchestrator(AgentManager(), AgentExecutor())
 
 def test_workflow_approve(orchestrator):
+    # Initialize a new workflow
+    state = orchestrator.run_workflow("test_project", "Test task")
+    assert state["status"] == "approval_waiting"
+
+    # Simulate approval
+    approval_manager = ApprovalManager()
+    approval_manager.approve()
+
+    # Check that the state is updated to approved
+    state = orchestrator.run_workflow("test_project", "Test task")
+    assert state["status"] == "approved"
     with patch("app.git_manager.GitManager.commit_and_get_hash") as mock_commit:
         mock_commit.return_value = {"code": 0, "commit": "abc123", "message": "Commit message"}
         state = orchestrator.run_workflow("test_project", "Test task")
@@ -25,6 +36,17 @@ def test_workflow_approve(orchestrator):
             mock_upload.assert_called_once()
 
 def test_workflow_reject(orchestrator):
+    # Initialize a new workflow
+    state = orchestrator.run_workflow("test_project", "Test task")
+    assert state["status"] == "approval_waiting"
+
+    # Simulate rejection
+    approval_manager = ApprovalManager()
+    approval_manager.reject()
+
+    # Check that the state is updated to rejected
+    state = orchestrator.run_workflow("test_project", "Test task")
+    assert state["status"] == "rejected"
     state = orchestrator.run_workflow("test_project", "Test task")
     assert state["status"] == "approval_waiting"
 
