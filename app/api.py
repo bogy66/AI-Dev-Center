@@ -6,6 +6,7 @@ from pathlib import Path
 from app.agent_orchestrator import AgentOrchestrator
 from app.agent_manager import AgentManager
 from app.agent_executor import AgentExecutor
+from app.approval_manager import ApprovalManager
 
 
 
@@ -25,8 +26,25 @@ class Task(BaseModel):
     task: str
 
 
+approval_manager = ApprovalManager()
 
-@app.get("/")
+
+@app.get("/approval")
+def get_approval_status():
+    return approval_manager.get_status()
+
+
+@app.post("/approval/approve")
+def approve_approval(approved_by: str = "Udo", comment: str = None):
+    approval_manager.approve(approved_by=approved_by, comment=comment)
+    return approval_manager.get_status()
+
+
+@app.post("/approval/reject")
+def reject_approval(approved_by: str = "Udo", comment: str = None):
+    approval_manager.reject(approved_by=approved_by, comment=comment)
+    return approval_manager.get_status()
+
 def home():
     return {
         "name": "AI Dev Center",
