@@ -67,3 +67,13 @@ class GitManager:
             "git rev-parse HEAD",
             project
         )
+
+    def diff(
+        self,
+        project
+    ):
+
+        return self.run(
+            "git diff HEAD",
+            project
+        )
