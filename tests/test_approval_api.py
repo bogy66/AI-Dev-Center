@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from app.api import app
 
+
 client = TestClient(app)
 
 
@@ -9,6 +10,7 @@ def test_get_approval_status():
     response = client.get("/approval")
     assert response.status_code == 200
     assert "status" in response.json()
+
 
 
 def test_approve_approval():

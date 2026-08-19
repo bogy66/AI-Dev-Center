@@ -46,11 +46,6 @@ class PublishRequest(BaseModel):
     project: str
 
 
-# Ensure the approval state is initialized
-if not approval_manager.get_status():
-    approval_manager.create_approval()
-
-
 @app.get("/approval")
 def get_approval_status():
     return approval_manager.get_status()
