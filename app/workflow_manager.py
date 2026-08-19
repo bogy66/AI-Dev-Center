@@ -44,7 +44,12 @@ class WorkflowManager:
                 "result": None
             },
 
-            "user_approval": False,
+            "user_approval": {
+                "status": "waiting",
+                "approved_by": None,
+                "approved_at": None,
+                "comment": None
+            },
 
             "created": str(datetime.now())
 
