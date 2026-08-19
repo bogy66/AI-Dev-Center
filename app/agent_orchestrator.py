@@ -2,7 +2,7 @@ from app.agent_config import AGENT_CONFIG
 from app.agent_manager import AgentManager
 from app.agent_executor import AgentExecutor
 from app.agent_roles import AGENT_ROLES
-
+from app.project_reader import ProjectReader
 
 class AgentOrchestrator:
 
@@ -13,7 +13,7 @@ class AgentOrchestrator:
     ):
         self.agent_manager = agent_manager
         self.agent_executor = agent_executor
-
+        self.project_reader = ProjectReader()
 
     def run(
         self,
@@ -29,6 +29,23 @@ class AgentOrchestrator:
             project
         )
 
+        project_files = self.project_reader.read_files(
+            project
+        )
+
+
+        files_context = ""
+
+        for name, content in project_files.items():
+
+            files_context += f"""
+
+        ===== {name} =====
+
+        {content}
+
+        """
+
         responses = {}
 
         previous_results = ""
@@ -41,7 +58,12 @@ class AgentOrchestrator:
             context = f"""
             Projektkontext:
 
-            {project_context[:1000]}
+            {project_context}
+
+
+            Projektdateien:
+
+            {files_context[:4000]}
 
 
             Vorherige Team-Ergebnisse:
