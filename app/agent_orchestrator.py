@@ -3,6 +3,10 @@ from app.agent_manager import AgentManager
 from app.agent_executor import AgentExecutor
 from app.agent_roles import AGENT_ROLES
 from app.project_reader import ProjectReader
+from app.workflow_manager import WorkflowManager
+from app.git_manager import GitManager
+from app.tester_agent import TesterAgent
+from app.reviewer_agent import ReviewerAgent
 
 class AgentOrchestrator:
 
@@ -15,7 +19,63 @@ class AgentOrchestrator:
         self.agent_executor = agent_executor
         self.project_reader = ProjectReader()
 
-    def run(
+    def run_workflow(
+        self,
+        project,
+        task
+    ):
+        workflow_manager = WorkflowManager()
+        git_manager = GitManager()
+        tester_agent = TesterAgent()
+        reviewer_agent = ReviewerAgent()
+
+        # Step 1: Create a new workflow
+        workflow_manager.create(task, "dev_branch")
+
+        # Step 2: Run Project Manager
+        self.agent_executor.run(
+            AGENT_ROLES["project_manager"],
+            task,
+            "",
+            "project_manager",
+            AGENT_CONFIG["project_manager"]["max_tokens"]
+        )
+
+        # Step 3: Run Architect
+        self.agent_executor.run(
+            AGENT_ROLES["architect"],
+            task,
+            "",
+            "architect",
+            AGENT_CONFIG["architect"]["max_tokens"]
+        )
+
+        # Step 4: Run Developer
+        self.agent_executor.run(
+            AGENT_ROLES["developer"],
+            task,
+            "",
+            "developer",
+            AGENT_CONFIG["developer"]["max_tokens"]
+        )
+
+        # Step 5: Create a real DEV Git commit
+        git_manager.commit(project, "Development changes")
+
+        # Step 6: Run TesterAgent
+        tester_agent.test(project, "workflow_file")
+
+        # Step 7: Create a real TEST Git commit
+        git_manager.commit(project, "Testing changes")
+
+        # Step 8: Run ReviewerAgent
+        review_result = reviewer_agent.review(project, "workflow_file")
+
+        # Step 9: Update workflow status if review is successful
+        if review_result == "success":
+            workflow_manager.update_agent("reviewer", "approval_waiting")
+
+        return "Workflow completed"
         self,
         project,
         task
