@@ -181,6 +181,63 @@ class TestWorkflow(unittest.TestCase):
             "approval_waiting"
         )
 
+    @patch("app.agent_orchestrator.WorkflowManager")
+    @patch("app.agent_orchestrator.GitManager")
+    @patch("app.agent_orchestrator.TesterAgent")
+    @patch("app.agent_orchestrator.ReviewerAgent")
+    def test_workflow_no_development_changes(
+        self,
+        MockReviewerAgent,
+        MockTesterAgent,
+        MockGitManager,
+        MockWorkflowManager
+    ):
+        mock_workflow = MockWorkflowManager.return_value
+        mock_workflow.storage = "mock_workflow_state.json"
+
+        state = {
+            "status": "started",
+            "developer": {
+                "status": "pending",
+                "commit": None
+            },
+            "tester": {
+                "status": "pending",
+                "result": None
+            },
+            "reviewer": {
+                "status": "pending",
+                "result": None
+            }
+        }
+
+        mock_workflow.create.return_value = state
+        mock_workflow.load.return_value = state
+
+        MockGitManager.return_value.commit_and_get_hash.return_value = {
+            "code": 1,
+            "stdout": "On branch master\nnothing to commit, working tree clean",
+            "stderr": ""
+        }
+
+        orchestrator = AgentOrchestrator(
+            MagicMock(),
+            MagicMock()
+        )
+
+        result = orchestrator.run_workflow(
+            "mock_project",
+            "mock_task"
+        )
+
+        self.assertEqual(
+            result["status"],
+            "development_no_changes"
+        )
+
+        MockTesterAgent.return_value.test.assert_not_called()
+        MockReviewerAgent.return_value.review.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

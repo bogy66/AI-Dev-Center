@@ -66,6 +66,15 @@ class AgentOrchestrator:
         )
 
         if commit_result["code"] != 0:
+            state = workflow_manager.load()
+
+            if (
+                "nothing to commit" in commit_result["stdout"].lower()
+                and "working tree clean" in commit_result["stdout"].lower()
+            ):
+                state["status"] = "development_no_changes"
+                workflow_manager.save(state)
+
             return workflow_manager.load()
 
         workflow_manager.update_agent(
