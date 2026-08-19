@@ -39,13 +39,13 @@ def get_approval_status():
 
 
 @app.post("/approval/approve")
-def approve_approval(approved_by: str = "Udo", comment: str = ""):
+def approve_approval(approved_by: str = "Udo", comment: str = None):
     approval_manager.approve(approved_by=approved_by, comment=comment)
     return approval_manager.get_status()
 
 
 @app.post("/approval/reject")
-def reject_approval(approved_by: str = "Udo", comment: str = ""):
+def reject_approval(approved_by: str = "Udo", comment: str = None):
     approval_manager.reject(approved_by=approved_by, comment=comment)
     return approval_manager.get_status()
 
