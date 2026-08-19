@@ -110,4 +110,30 @@ def test_rejected_workflow_cannot_be_published(tmp_path):
     assert result["status"] == "approval_waiting"
     assert result["user_approval"]["status"] == "rejected"
 
+def test_rejected_workflow_preserves_comment(tmp_path):
+    storage = tmp_path / "workflow_state.json"
 
+    workflow = WorkflowManager(storage=storage)
+
+    workflow.create(
+        "mock_task",
+        "master"
+    )
+
+    state = workflow.load()
+    state["status"] = "approval_waiting"
+    workflow.save(state)
+
+    approval = ApprovalManager(storage=storage)
+
+    approval.reject(
+        approved_by="Udo",
+        comment="Needs changes"
+    )
+
+    result = workflow.load()
+
+    assert result["status"] == "approval_waiting"
+    assert result["user_approval"]["status"] == "rejected"
+    assert result["user_approval"]["approved_by"] == "Udo"
+    assert result["user_approval"]["comment"] == "Needs changes"
