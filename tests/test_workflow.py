@@ -4,6 +4,7 @@ from app.agent_orchestrator import AgentOrchestrator
 from app.agent_manager import AgentManager
 from app.agent_executor import AgentExecutor
 from app.workflow_manager import WorkflowManager
+from app.approval_manager import ApprovalManager
 
 @pytest.fixture
 def orchestrator():

@@ -6,6 +6,7 @@ from app.project_reader import ProjectReader
 from app.workflow_manager import WorkflowManager
 from app.tester_agent import TesterAgent
 from app.reviewer_agent import ReviewerAgent
+from app.git_manager import GitManager
 
 class AgentOrchestrator:
 
