@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 from pathlib import Path
 
 from app.agent_orchestrator import AgentOrchestrator
@@ -25,6 +26,10 @@ class Task(BaseModel):
     project: str
     task: str
 
+class ApprovalRequest(BaseModel):
+    approved_by: str = "Udo"
+    comment: str | None = None
+
 
 approval_manager = ApprovalManager()
 
@@ -39,14 +44,14 @@ def get_approval_status():
 
 
 @app.post("/approval/approve")
-def approve_approval(approved_by: str = "Udo", comment: str = None):
-    approval_manager.approve(approved_by=approved_by, comment=comment)
+def approve_approval(request: ApprovalRequest):
+    approval_manager.approve(approved_by=request.approved_by, comment=request.comment)
     return approval_manager.get_status()
 
 
 @app.post("/approval/reject")
-def reject_approval(approved_by: str = "Udo", comment: str = None):
-    approval_manager.reject(approved_by=approved_by, comment=comment)
+def reject_approval(request: ApprovalRequest):
+    approval_manager.reject(approved_by=request.approved_by, comment=request.comment)
     return approval_manager.get_status()
 
 def home():
