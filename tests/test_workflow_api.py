@@ -73,3 +73,30 @@ def test_get_workflow_status(mock_workflow_manager):
     assert response.status_code == 200
     assert response.json()["status"] == "approval_waiting"
     assert response.json()["task"] == "mock_task"
+
+@patch("app.api.orchestrator")
+def test_run_workflow(mock_orchestrator):
+
+    mock_orchestrator.run_workflow.return_value = {
+        "status": "approval_waiting",
+        "task": "mock_task",
+        "user_approval": {
+            "status": "waiting"
+        }
+    }
+
+    response = client.post(
+        "/workflow/run",
+        json={
+            "project": "mock_project",
+            "task": "mock_task"
+        }
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "approval_waiting"
+
+    mock_orchestrator.run_workflow.assert_called_once_with(
+        "mock_project",
+        "mock_task"
+    )

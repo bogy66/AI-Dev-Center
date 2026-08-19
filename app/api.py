@@ -80,6 +80,13 @@ def get_workflow_status():
     workflow_manager = WorkflowManager()
     return workflow_manager.load()
 
+@app.post("/workflow/run")
+def run_workflow(task: Task):
+    return orchestrator.run_workflow(
+        task.project,
+        task.task
+    )
+
 @app.post("/workflow/publish")
 def publish_workflow(request: PublishRequest):
     return workflow_publisher.publish(
