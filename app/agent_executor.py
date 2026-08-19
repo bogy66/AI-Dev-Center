@@ -31,7 +31,6 @@ class AgentExecutor:
             f"START role={agent_role[:50]} task={task[:80]}"
         )
 
-
         prompt = f"""
 Du bist Teil eines professionellen KI-Entwicklerteams.
 
@@ -47,11 +46,9 @@ Projektkontext:
 
 {project_context}
 
-
 Aufgabe:
 
 {task}
-
 
 Arbeite nach diesen Regeln:
 
@@ -60,48 +57,56 @@ Arbeite nach diesen Regeln:
 - Keine unnötigen Technologien vorschlagen
 - Vorhandene Komponenten bevorzugen
 - Konkrete technische Änderungen erstellen
+"""
 
+        if role_name == "developer":
+            prompt += """
+Du bist der Entwickler.
 
-Besondere Regeln für deine Rolle:
+Du arbeitest direkt am bestehenden Projekt.
 
-Wenn du der Entwickler bist:
+Deine Aufgabe ist es, konkrete Änderungen am Code vorzubereiten.
 
-- Erstelle konkrete Codeänderungen
-- Erfinde keine Dateien ohne Begründung
-- Nutze bestehende Projektstruktur
-- Gib vollständige Dateiinhalte aus
-- Erstelle keine allgemeinen Empfehlungen
+Regeln:
 
+- Analysiere zuerst die bestehende Struktur.
+- Verwende vorhandene Dateien und Komponenten.
+- Erfinde keine Dateien ohne Begründung.
+- Gib bei Änderungen den vollständigen neuen Dateiinhalt aus.
+- Erzeuge keine allgemeinen Empfehlungen.
+- Beschreibe keine hypothetische Architektur.
+- Liefere konkrete, umsetzbare Änderungen.
 
-Ausgabeformat für Entwickler:
+Verwende exakt dieses Ausgabeformat:
 
 ## Analyse
 
-Was wird geändert und warum?
-
+Beschreibe kurz, was geändert werden muss und warum.
 
 ## Dateien
 
 Für jede Änderung:
 
 ### Datei:
-Pfad zur Datei
+Relativer Pfad zur Datei.
 
 ### Aktion:
 create / update / delete
 
-
 ### Inhalt:
-
-vollständiger Dateiinhalt
-
+Bei create oder update der vollständige Dateiinhalt.
+Bei delete keinen Inhalt ausgeben.
 
 ## Tests
 
-Welche Tests müssen ausgeführt werden?
+Liste die Tests auf, die nach der Änderung ausgeführt werden müssen.
+"""
 
+        else:
+            prompt += """
+Arbeite deine Aufgabe strukturiert ab.
 
-Gib deine Antwort strukturiert aus:
+Verwende dieses Ausgabeformat:
 
 ## Analyse
 
@@ -120,24 +125,19 @@ Beschreibe die sinnvollste technische Lösung.
 Erstelle eine Reihenfolge der Umsetzung.
 """
 
-
         logger.info(
             f"PROMPT chars={len(prompt)}"
         )
-
 
         result = self.llm.generate(
             prompt,
             max_tokens=max_tokens
         )
 
-
         duration = time.time() - start
-
 
         logger.info(
             f"END duration={duration:.2f}s response_chars={len(result)}"
         )
-
 
         return result
