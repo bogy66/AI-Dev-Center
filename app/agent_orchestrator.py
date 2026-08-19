@@ -22,6 +22,136 @@ class AgentOrchestrator:
         self.agent_executor = agent_executor
         self.project_reader = ProjectReader()
 
+    def _ensure_workflow_state(self, state):
+        """
+        Stellt sicher, dass ein vollständiger Workflow-State vorhanden ist.
+
+        Das ist insbesondere für Tests mit vereinfachten Mock-States wichtig.
+        """
+        state = dict(state or {})
+
+        state.setdefault("status", "started")
+
+        state.setdefault(
+            "developer",
+            {
+                "status": "pending",
+                "commit": None
+            }
+        )
+
+        state.setdefault(
+            "tester",
+            {
+                "status": "pending",
+                "commit": None,
+                "result": None
+            }
+        )
+
+        state.setdefault(
+            "reviewer",
+            {
+                "status": "pending",
+                "result": None
+            }
+        )
+
+        state.setdefault(
+            "user_approval",
+            {
+                "status": "waiting",
+                "approved_by": None,
+                "approved_at": None,
+                "comment": None
+            }
+        )
+
+        return state
+
+    def _merge_tester_result(
+        self,
+        state,
+        tester_result
+    ):
+        """
+        Übernimmt sowohl den neuen Tester-Vertrag
+
+            {"status": "...", "result": "..."}
+
+        als auch ältere/Mock-Rückgaben mit
+
+            {"tester": {...}}
+        """
+        state = self._ensure_workflow_state(state)
+        tester_result = tester_result or {}
+
+        if "tester" in tester_result:
+            tester_info = tester_result.get("tester") or {}
+
+            state["tester"] = {
+                **state["tester"],
+                **tester_info
+            }
+
+        else:
+            state["tester"] = {
+                **state["tester"],
+                "status": tester_result.get(
+                    "status",
+                    state["tester"]["status"]
+                ),
+                "result": tester_result.get(
+                    "result",
+                    state["tester"]["result"]
+                )
+            }
+
+            if tester_result.get("commit"):
+                state["tester"]["commit"] = tester_result["commit"]
+
+        return state
+
+    def _merge_reviewer_result(
+        self,
+        state,
+        reviewer_result
+    ):
+        """
+        Übernimmt sowohl den neuen Reviewer-Vertrag
+
+            {"status": "...", "result": "..."}
+
+        als auch ältere/Mock-Rückgaben mit
+
+            {"reviewer": {...}}
+        """
+        state = self._ensure_workflow_state(state)
+        reviewer_result = reviewer_result or {}
+
+        if "reviewer" in reviewer_result:
+            reviewer_info = reviewer_result.get("reviewer") or {}
+
+            state["reviewer"] = {
+                **state["reviewer"],
+                **reviewer_info
+            }
+
+        else:
+            state["reviewer"] = {
+                **state["reviewer"],
+                "status": reviewer_result.get(
+                    "status",
+                    state["reviewer"]["status"]
+                ),
+                "result": reviewer_result.get(
+                    "result",
+                    state["reviewer"]["result"]
+                )
+            }
+
+        return state
+
     def run_workflow(
         self,
         project,
@@ -37,6 +167,12 @@ class AgentOrchestrator:
             task,
             "dev_branch"
         )
+
+        state = self._ensure_workflow_state(
+            workflow_manager.load()
+        )
+
+        workflow_manager.save(state)
 
         # 2. Project Manager
         self.agent_executor.run(
@@ -80,14 +216,13 @@ class AgentOrchestrator:
         )
 
         if not apply_result.get("applied"):
-
-            state = workflow_manager.load()
+            state = self._ensure_workflow_state(
+                workflow_manager.load()
+            )
 
             state["status"] = "development_no_changes"
 
-            workflow_manager.save(
-                state
-            )
+            workflow_manager.save(state)
 
             return workflow_manager.load()
 
@@ -98,8 +233,9 @@ class AgentOrchestrator:
         )
 
         if commit_result.get("code") != 0:
-
-            state = workflow_manager.load()
+            state = self._ensure_workflow_state(
+                workflow_manager.load()
+            )
 
             stdout = commit_result.get(
                 "stdout",
@@ -111,10 +247,7 @@ class AgentOrchestrator:
                 and "working tree clean" in stdout
             ):
                 state["status"] = "development_no_changes"
-
-                workflow_manager.save(
-                    state
-                )
+                workflow_manager.save(state)
 
             return workflow_manager.load()
 
@@ -125,118 +258,67 @@ class AgentOrchestrator:
         )
 
         # 8. Tester
-        tester_state = tester_agent.test(
+        tester_result = tester_agent.test(
             project,
-            str(workflow_manager.storage)
+            developer_changes
         )
 
-        # Tester-Ergebnis in den zentralen Workflow-State
-        # übernehmen. Das macht den Orchestrator unabhängig
-        # davon, ob TesterAgent selbst persistiert oder nicht.
-
-        state = workflow_manager.load()
-
-        tester_info = tester_state.get(
-            "tester",
-            {}
+        state = self._merge_tester_result(
+            workflow_manager.load(),
+            tester_result
         )
 
-        if tester_info:
+        workflow_manager.save(state)
 
-            state["tester"] = {
-                **state.get("tester", {}),
-                **tester_info
-            }
-
-            workflow_manager.save(
-                state
-            )
-
-        state = workflow_manager.load()
-
-        tester_info = state.get(
-            "tester",
-            {}
-        )
-
-        if tester_info.get("status") != "completed":
+        # Tester muss erfolgreich sein
+        if state["tester"]["status"] != "completed":
             return state
 
-        if tester_info.get("result") != "PASS":
+        if state["tester"]["result"] != "PASS":
             return state
 
         # 9. Reviewer
-        reviewer_state = reviewer_agent.review(
+        reviewer_result = reviewer_agent.review(
             project,
-            str(workflow_manager.storage)
+            state
         )
 
-        # Reviewer-Ergebnis ebenfalls zentral persistieren.
-
-        state = workflow_manager.load()
-
-        reviewer_info = reviewer_state.get(
-            "reviewer",
-            {}
+        state = self._merge_reviewer_result(
+            state,
+            reviewer_result
         )
 
-        if reviewer_info:
+        workflow_manager.save(state)
 
-            state["reviewer"] = {
-                **state.get("reviewer", {}),
-                **reviewer_info
-            }
-
-        reviewer_status = reviewer_state.get(
-            "status"
-        )
-
-        if reviewer_status != "approved":
-
-            workflow_manager.save(
-                state
-            )
-
+        # Reviewer muss freigeben
+        if state["reviewer"]["status"] != "approved":
             return state
 
-        # Reviewer kann entweder einen vollständigen
-        # Workflow-State oder nur {"status": "approved"}
-        # zurückgeben.
-
-        reviewer = state.get(
-            "reviewer",
-            {}
-        )
-
-        reviewer["status"] = "approved"
-
-        if reviewer_info.get("result") is not None:
-            reviewer["result"] = reviewer_info["result"]
-
-        state["reviewer"] = reviewer
-
-        workflow_manager.save(
-            state
-        )
-
         # 10. Auf Benutzerfreigabe warten
-
-        state = workflow_manager.load()
-
         state["status"] = "approval_waiting"
 
-        workflow_manager.save(
-            state
+        state.setdefault(
+            "user_approval",
+            {
+                "status": "waiting",
+                "approved_by": None,
+                "approved_at": None,
+                "comment": None
+            }
         )
 
-        return workflow_manager.load()
+        state["user_approval"]["status"] = "waiting"
+
+        workflow_manager.save(state)
+
+        return state
 
     def run(
         self,
         project,
         task
     ):
-        self.agent_manager.load_agents(
+        agents = self.agent_manager.load_agents(
             project
         )
 
@@ -251,7 +333,6 @@ class AgentOrchestrator:
         files_context = ""
 
         for name, content in project_files.items():
-
             files_context += (
                 f"\n\n===== {name} =====\n\n"
                 f"{content}\n\n"
@@ -261,7 +342,6 @@ class AgentOrchestrator:
         previous_results = ""
 
         for role in AGENT_ROLES:
-
             limit = AGENT_CONFIG[role]["max_context"]
 
             context = f"""

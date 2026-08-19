@@ -10,6 +10,24 @@ class DeveloperChanges:
     }
 
     @staticmethod
+    def _clean_content(content):
+        content = content.strip()
+
+        if content.startswith("```"):
+            lines = content.splitlines()
+
+            if lines and lines[0].strip().startswith("```"):
+                lines = lines[1:]
+
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+
+            content = "\n".join(lines).strip()
+
+        return content
+
+
+    @staticmethod
     def _valid_path(file_path):
         if not file_path:
             return False
@@ -95,8 +113,9 @@ class DeveloperChanges:
                     1
                 )[1].strip()
 
-            if action == "delete":
-                content = ""
+            content = DeveloperChanges._clean_content(
+                content
+            )
 
             changes.append({
                 "file": file_path,
@@ -108,3 +127,20 @@ class DeveloperChanges:
             "changes": changes,
             "tests": tests
         }
+
+    @staticmethod
+    def _clean_content(content):
+        content = content.strip()
+
+        if content.startswith("```"):
+            lines = content.splitlines()
+
+            if lines and lines[0].strip().startswith("```"):
+                lines = lines[1:]
+
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+
+            content = "\n".join(lines).strip()
+
+        return content
