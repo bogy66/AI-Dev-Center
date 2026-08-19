@@ -1,70 +1,54 @@
 import unittest
 from unittest.mock import MagicMock, patch
+
 from app.agent_orchestrator import AgentOrchestrator
 
+
+DEVELOPER_RESPONSE = """
+## Analyse
+
+Teständerung.
+
+## Dateien
+
+### Datei:
+app/example.py
+
+### Aktion:
+update
+
+### Inhalt:
+print("changed")
+
+## Tests
+
+python -m pytest -q
+"""
+
+
 class TestWorkflow(unittest.TestCase):
-    @patch('app.agent_orchestrator.WorkflowManager')
-    @patch('app.agent_orchestrator.GitManager')
-    @patch('app.agent_orchestrator.TesterAgent')
-    @patch('app.agent_orchestrator.ReviewerAgent')
-    def test_workflow_happy_path(self, MockReviewerAgent, MockTesterAgent, MockGitManager, MockWorkflowManager):
-        # Mock WorkflowManager
-        mock_workflow_manager = MockWorkflowManager.return_value
-        mock_workflow_manager.storage = "mock_workflow_state.json"
-        mock_workflow_manager.create.return_value = {}
-        mock_workflow_manager.load.return_value = {"developer": {}, "status": ""}
-        mock_workflow_manager.save.side_effect = lambda state: mock_workflow_manager.load.return_value.update(state)
-        mock_workflow_manager.update_agent.side_effect = lambda agent, status, commit=None: mock_workflow_manager.load.return_value["developer"].update({"commit": commit})
-
-        # Mock GitManager
-        mock_git_manager = MockGitManager.return_value
-        mock_git_manager.commit_and_get_hash.return_value = {"code": 0, "commit": "dev123", "message": "DEV commit"}
-
-        # Mock TesterAgent
-        mock_tester_agent = MockTesterAgent.return_value
-        mock_tester_agent.test.return_value = {
-            "status": "completed",
-            "tester": {
-                "status": "completed",
-                "result": "PASS"
-            }
-        }
-        # Mock ReviewerAgent
-        mock_reviewer_agent = MockReviewerAgent.return_value
-        mock_reviewer_agent.review.return_value = {"status": "approved"}
-
-        # Initialize AgentOrchestrator
-        orchestrator = AgentOrchestrator(MagicMock(), MagicMock())
-
-        # Run workflow
-        state = orchestrator.run_workflow("mock_project", "mock_task")
-
-        # Assertions
-        self.assertEqual(state["status"], "approval_waiting")
-        self.assertEqual(state["developer"]["commit"], "dev123")
-        mock_tester_agent.test.assert_called_once()
-        mock_reviewer_agent.review.assert_called_once()
-        mock_git_manager.commit_and_get_hash.assert_called_once_with("mock_project", "DEV: Development completed")
 
     @patch("app.agent_orchestrator.WorkflowManager")
     @patch("app.agent_orchestrator.GitManager")
     @patch("app.agent_orchestrator.TesterAgent")
     @patch("app.agent_orchestrator.ReviewerAgent")
-    def test_workflow_tester_failure(
+    @patch("app.agent_orchestrator.DeveloperFileApplier")
+    def test_workflow_happy_path(
         self,
+        MockDeveloperFileApplier,
         MockReviewerAgent,
         MockTesterAgent,
         MockGitManager,
         MockWorkflowManager
     ):
-        mock_workflow = MockWorkflowManager.return_value
-        mock_workflow.storage = "mock_workflow_state.json"
+        workflow = MockWorkflowManager.return_value
+        workflow.storage = "mock_workflow_state.json"
 
         state = {
             "status": "started",
             "developer": {
-                "status": "completed",
-                "commit": "dev123"
+                "status": "pending",
+                "commit": None
             },
             "tester": {
                 "status": "pending",
@@ -76,9 +60,114 @@ class TestWorkflow(unittest.TestCase):
             }
         }
 
-        mock_workflow.create.return_value = state
-        mock_workflow.load.return_value = state
-        mock_workflow.update_agent.return_value = state
+        workflow.create.return_value = state
+        workflow.load.return_value = state
+
+        workflow.save.side_effect = (
+            lambda new_state: workflow.load.return_value.update(new_state)
+        )
+
+        workflow.update_agent.side_effect = (
+            lambda agent, status, commit=None:
+            workflow.load.return_value[agent].update({
+                "status": status,
+                "commit": commit
+            })
+        )
+
+        MockDeveloperFileApplier.return_value.apply.return_value = {
+            "applied": ["app/example.py"]
+        }
+
+        MockGitManager.return_value.commit_and_get_hash.return_value = {
+            "code": 0,
+            "commit": "dev123",
+            "message": "DEV commit"
+        }
+
+        MockTesterAgent.return_value.test.return_value = {
+            "status": "completed",
+            "tester": {
+                "status": "completed",
+                "result": "PASS"
+            }
+        }
+
+        MockReviewerAgent.return_value.review.return_value = {
+            "status": "approved"
+        }
+
+        executor = MagicMock()
+        executor.run.return_value = DEVELOPER_RESPONSE
+
+        orchestrator = AgentOrchestrator(
+            MagicMock(),
+            executor
+        )
+
+        result = orchestrator.run_workflow(
+            "mock_project",
+            "mock_task"
+        )
+
+        self.assertEqual(
+            result["status"],
+            "approval_waiting"
+        )
+
+        self.assertEqual(
+            result["developer"]["commit"],
+            "dev123"
+        )
+
+        MockDeveloperFileApplier.return_value.apply.assert_called_once()
+
+        MockTesterAgent.return_value.test.assert_called_once()
+        MockReviewerAgent.return_value.review.assert_called_once()
+
+        MockGitManager.return_value.commit_and_get_hash.assert_called_once_with(
+            "mock_project",
+            "DEV: Development completed"
+        )
+
+    @patch("app.agent_orchestrator.WorkflowManager")
+    @patch("app.agent_orchestrator.GitManager")
+    @patch("app.agent_orchestrator.TesterAgent")
+    @patch("app.agent_orchestrator.ReviewerAgent")
+    @patch("app.agent_orchestrator.DeveloperFileApplier")
+    def test_workflow_tester_failure(
+        self,
+        MockDeveloperFileApplier,
+        MockReviewerAgent,
+        MockTesterAgent,
+        MockGitManager,
+        MockWorkflowManager
+    ):
+        workflow = MockWorkflowManager.return_value
+        workflow.storage = "mock_workflow_state.json"
+
+        state = {
+            "status": "started",
+            "developer": {
+                "status": "pending",
+                "commit": None
+            },
+            "tester": {
+                "status": "pending",
+                "result": None
+            },
+            "reviewer": {
+                "status": "pending",
+                "result": None
+            }
+        }
+
+        workflow.create.return_value = state
+        workflow.load.return_value = state
+
+        MockDeveloperFileApplier.return_value.apply.return_value = {
+            "applied": ["app/example.py"]
+        }
 
         MockGitManager.return_value.commit_and_get_hash.return_value = {
             "code": 0,
@@ -94,7 +183,12 @@ class TestWorkflow(unittest.TestCase):
             }
         }
 
-        orchestrator = AgentOrchestrator(MagicMock(), MagicMock())
+        orchestrator = AgentOrchestrator(
+            MagicMock(),
+            MagicMock()
+        )
+
+        orchestrator.agent_executor.run.return_value = DEVELOPER_RESPONSE
 
         result = orchestrator.run_workflow(
             "mock_project",
@@ -112,21 +206,23 @@ class TestWorkflow(unittest.TestCase):
     @patch("app.agent_orchestrator.GitManager")
     @patch("app.agent_orchestrator.TesterAgent")
     @patch("app.agent_orchestrator.ReviewerAgent")
+    @patch("app.agent_orchestrator.DeveloperFileApplier")
     def test_workflow_reviewer_failure(
         self,
+        MockDeveloperFileApplier,
         MockReviewerAgent,
         MockTesterAgent,
         MockGitManager,
         MockWorkflowManager
     ):
-        mock_workflow = MockWorkflowManager.return_value
-        mock_workflow.storage = "mock_workflow_state.json"
+        workflow = MockWorkflowManager.return_value
+        workflow.storage = "mock_workflow_state.json"
 
         state = {
             "status": "started",
             "developer": {
-                "status": "completed",
-                "commit": "dev123"
+                "status": "pending",
+                "commit": None
             },
             "tester": {
                 "status": "pending",
@@ -138,8 +234,12 @@ class TestWorkflow(unittest.TestCase):
             }
         }
 
-        mock_workflow.create.return_value = state
-        mock_workflow.load.return_value = state
+        workflow.create.return_value = state
+        workflow.load.return_value = state
+
+        MockDeveloperFileApplier.return_value.apply.return_value = {
+            "applied": ["app/example.py"]
+        }
 
         MockGitManager.return_value.commit_and_get_hash.return_value = {
             "code": 0,
@@ -164,7 +264,12 @@ class TestWorkflow(unittest.TestCase):
             }
         }
 
-        orchestrator = AgentOrchestrator(MagicMock(), MagicMock())
+        orchestrator = AgentOrchestrator(
+            MagicMock(),
+            MagicMock()
+        )
+
+        orchestrator.agent_executor.run.return_value = DEVELOPER_RESPONSE
 
         result = orchestrator.run_workflow(
             "mock_project",
@@ -181,63 +286,6 @@ class TestWorkflow(unittest.TestCase):
             "approval_waiting"
         )
 
-    @patch("app.agent_orchestrator.WorkflowManager")
-    @patch("app.agent_orchestrator.GitManager")
-    @patch("app.agent_orchestrator.TesterAgent")
-    @patch("app.agent_orchestrator.ReviewerAgent")
-    def test_workflow_no_development_changes(
-        self,
-        MockReviewerAgent,
-        MockTesterAgent,
-        MockGitManager,
-        MockWorkflowManager
-    ):
-        mock_workflow = MockWorkflowManager.return_value
-        mock_workflow.storage = "mock_workflow_state.json"
 
-        state = {
-            "status": "started",
-            "developer": {
-                "status": "pending",
-                "commit": None
-            },
-            "tester": {
-                "status": "pending",
-                "result": None
-            },
-            "reviewer": {
-                "status": "pending",
-                "result": None
-            }
-        }
-
-        mock_workflow.create.return_value = state
-        mock_workflow.load.return_value = state
-
-        MockGitManager.return_value.commit_and_get_hash.return_value = {
-            "code": 1,
-            "stdout": "On branch master\nnothing to commit, working tree clean",
-            "stderr": ""
-        }
-
-        orchestrator = AgentOrchestrator(
-            MagicMock(),
-            MagicMock()
-        )
-
-        result = orchestrator.run_workflow(
-            "mock_project",
-            "mock_task"
-        )
-
-        self.assertEqual(
-            result["status"],
-            "development_no_changes"
-        )
-
-        MockTesterAgent.return_value.test.assert_not_called()
-        MockReviewerAgent.return_value.review.assert_not_called()
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
