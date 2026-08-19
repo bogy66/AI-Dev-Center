@@ -8,6 +8,14 @@ from app.reviewer_agent import ReviewerAgent
 
 class TestAgentOrchestrator(unittest.TestCase):
     def test_run_workflow(self):
+        # Mock dependencies
+        mock_agent_manager = MagicMock()
+        mock_agent_executor = MagicMock()
+        mock_workflow_manager = MagicMock()
+        mock_git_manager = MagicMock()
+        mock_tester_agent = MagicMock()
+        mock_reviewer_agent = MagicMock()
+
         # Mock dependencies with patch
         with patch('app.agent_orchestrator.GitManager', return_value=mock_git_manager), \
              patch('app.agent_orchestrator.TesterAgent', return_value=mock_tester_agent), \
