@@ -1,342 +1,613 @@
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-
 <title>AI Dev Center</title>
 
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
 
-<style>
-    body {
-        font-family: Arial, sans-serif;
-        background: #1e1e1e;
-        color: #ddd;
-        margin: 0;
-        display: flex;
-        height: 100vh;
-        overflow: hidden;
-    }
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+            color: #222;
+        }
 
-    .sidebar {
-        width: 260px;
-        background: #111;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        padding: 20px;
-        box-sizing: border-box;
-    }
+        .app {
+            display: grid;
+            grid-template-columns: 220px 1fr 320px;
+            min-height: 100vh;
+        }
 
-    .sidebar h2 {
-        margin: 0 0 20px 0;
-        font-size: 24px;
-    }
+        .sidebar {
+            background: #1f2937;
+            color: white;
+            padding: 20px;
+        }
 
-    .sidebar button {
-        margin-bottom: 10px;
-        width: 100%;
-    }
+        .sidebar h1 {
+            font-size: 20px;
+            margin-top: 0;
+        }
 
-    .main {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        overflow-y: auto;
-    }
+        .main {
+            padding: 20px;
+        }
 
-    .main-header {
-        background: #111;
-        padding: 20px;
-        font-size: 24px;
-        font-weight: bold;
-    }
+        .main-header {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
 
-    .chat-area {
-        flex: 1;
-        padding: 20px;
-        overflow-y: auto;
-    }
+        .chat-area {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            min-height: 500px;
+            overflow-y: auto;
+        }
 
-    .chat-message {
-        background: #2b2b2b;
-        padding: 15px;
-        margin-bottom: 10px;
-        border-radius: 10px;
-    }
+        .chat-message {
+            padding: 12px;
+            margin-bottom: 10px;
+            border-radius: 6px;
+            background: #f3f4f6;
+        }
 
-    .chat-input {
-        display: flex;
-        padding: 20px;
-        background: #111;
-    }
+        .chat-input {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+        }
 
-    .chat-input textarea {
-        flex: 1;
-        margin-right: 10px;
-    }
+        .chat-input textarea {
+            flex: 1;
+            min-height: 80px;
+            resize: vertical;
+            padding: 10px;
+        }
 
-    .chat-input button {
-        width: 100px;
-    }
+        button {
+            border: none;
+            border-radius: 6px;
+            padding: 10px 15px;
+            cursor: pointer;
+            font-weight: bold;
+        }
 
-    .right-sidebar {
-        width: 300px;
-        background: #111;
-        padding: 20px;
-        box-sizing: border-box;
-        overflow-y: auto;
-    }
+        .send-button {
+            background: #2563eb;
+            color: white;
+        }
 
-    .right-sidebar h2 {
-        margin: 0 0 20px 0;
-        font-size: 24px;
-    }
+        .right-sidebar {
+            background: white;
+            padding: 20px;
+            border-left: 1px solid #ddd;
+        }
 
-    .status-indicator {
-        margin-bottom: 10px;
-        padding: 10px;
-        background: #2b2b2b;
-        border-radius: 5px;
-    }
+        .right-sidebar h2 {
+            margin-top: 0;
+        }
 
-    .approval-section {
-        margin-top: 20px;
-    }
+        .status-indicator {
+            padding: 10px;
+            margin-bottom: 8px;
+            background: #f3f4f6;
+            border-radius: 6px;
+        }
 
-    .approval-section textarea {
-        margin-bottom: 10px;
-    }
-</style>
+        .approval-section {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+        }
 
+        #approval-status {
+            font-weight: bold;
+            margin-bottom: 12px;
+        }
+
+        #approval-comment {
+            width: 100%;
+            min-height: 80px;
+            padding: 10px;
+            resize: vertical;
+            margin-bottom: 10px;
+        }
+
+        #approve-button {
+            background: #16a34a;
+            color: white;
+        }
+
+        #reject-button {
+            background: #dc2626;
+            color: white;
+        }
+
+        #publish-button {
+            background: #7c3aed;
+            color: white;
+            margin-top: 10px;
+            width: 100%;
+        }
+
+        .workflow-button {
+            width: 100%;
+            margin-bottom: 8px;
+        }
+
+        .project-input {
+            width: 100%;
+            padding: 10px;
+            margin-top: 10px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+        }
+    </style>
 </head>
 
-
 <body>
-    <div class="sidebar">
-        <div>
-            <h2>🤖 AI Dev Center</h2>
-            <button>+ Neues Projekt</button>
-            <div id="project-list">
-                <div class="project active">NeuesKIProjekt</div>
-                <!-- Add more projects here -->
-            </div>
-        </div>
-        <div>
-            <button>Einstellungen</button>
-        </div>
-    </div>
 
-    <div class="main">
-        <div class="main-header">Aktives Projekt: NeuesKIProjekt</div>
+<div class="app">
+
+    <aside class="sidebar">
+        <h1>🤖 AI Dev Center</h1>
+
+        <p>Entwicklung</p>
+        <p>Workflows</p>
+        <p>Freigaben</p>
+        <p>Git</p>
+    </aside>
+
+
+    <main class="main">
+
+        <div class="main-header">
+            Aktives Projekt:
+            <input
+                id="project"
+                class="project-input"
+                type="text"
+                value="AI-Dev-Center"
+            >
+        </div>
+
         <div class="chat-area" id="chat-area">
-            <div class="chat-message">Füge YouTube als Datenquelle hinzu</div>
-            <div class="chat-message" id="result">Bereit...</div>
-        </div>
-        <div class="chat-input">
-            <textarea id="task" placeholder="Neue Aufgabe..."></textarea>
-            <button onclick="runAI()">Senden</button>
-        </div>
-    </div>
 
-    <div class="right-sidebar">
+            <div class="chat-message">
+                Füge eine Aufgabe für das KI-Team hinzu.
+            </div>
+
+            <div
+                class="chat-message"
+                id="result"
+            >
+                Bereit...
+            </div>
+
+        </div>
+
+        <div class="chat-input">
+
+            <textarea
+                id="task"
+                placeholder="Neue Aufgabe..."
+            ></textarea>
+
+            <button
+                class="send-button"
+                onclick="runAI()"
+            >
+                Senden
+            </button>
+
+        </div>
+
+    </main>
+
+
+    <aside class="right-sidebar">
+
         <h2>Workflow</h2>
-        <div class="status-indicator">👨‍💼 Projektmanager</div>
-        <div class="status-indicator">🏗 Architekt</div>
-        <div class="status-indicator">💻 Entwickler</div>
-        <div class="status-indicator">🧪 Tester</div>
-        <div class="status-indicator">🔍 Reviewer</div>
+
+        <div class="status-indicator">
+            👨‍💼 Projektmanager
+        </div>
+
+        <div class="status-indicator">
+            🏗 Architekt
+        </div>
+
+        <div class="status-indicator">
+            💻 Entwickler
+        </div>
+
+        <div class="status-indicator">
+            🧪 Tester
+        </div>
+
+        <div class="status-indicator">
+            🔍 Reviewer
+        </div>
+
 
         <div class="approval-section">
+
             <h2>Udo Freigabe</h2>
-            <div id="approval-status">Lade Status...</div>
-            <textarea id="approval-comment" placeholder="Kommentar"></textarea>
-            <button id="approve-button" onclick="approve()">✅ FREIGEBEN</button>
-            <button id="reject-button" onclick="reject()">❌ ABLEHNEN</button>
+
+            <div id="approval-status">
+                Lade Status...
+            </div>
+
+            <textarea
+                id="approval-comment"
+                placeholder="Kommentar"
+            ></textarea>
+
+            <button
+                id="approve-button"
+                class="workflow-button"
+                onclick="approve()"
+            >
+                ✅ FREIGEBEN
+            </button>
+
+            <button
+                id="reject-button"
+                class="workflow-button"
+                onclick="reject()"
+            >
+                ❌ ABLEHNEN
+            </button>
+
+            <button
+                id="publish-button"
+                onclick="publishWorkflow()"
+            >
+                🚀 PUBLISH
+            </button>
+
         </div>
-    </div>
+
+    </aside>
+
+</div>
 
 
 <script>
-document.getElementById("result").innerHTML = "⏳ KI-Team arbeitet...";
 
-let project = document.getElementById("project").value;
+async function runAI() {
 
-let task = document.getElementById("task").value;
+    const project =
+        document.getElementById("project").value;
 
-let response = await fetch("/run", {
-    method: "POST",
-    headers: {
-        "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-        project: project,
-        task: task
-    })
-});
+    const task =
+        document.getElementById("task").value;
 
-let data = await response.json();
+    if (!project || !task) {
+        document.getElementById("result").innerText =
+            "Projekt und Aufgabe eingeben.";
 
-let html = "";
+        return;
+    }
 
-for (let agent in data) {
-    html += `
-    <div class="chat-message">
-        <h2>${agent}</h2>
-        <hr>
-        ${marked.parse(data[agent])}
-    </div>
-    `;
+    document.getElementById("result").innerText =
+        "⏳ KI-Team arbeitet...";
+
+    try {
+
+        const response = await fetch("/run", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                project: project,
+                task: task
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(
+                data.detail || "Workflow konnte nicht gestartet werden."
+            );
+        }
+
+        let html = "";
+
+        for (const agent in data) {
+
+            html += `
+                <div class="chat-message">
+                    <h2>${agent}</h2>
+                    <hr>
+                    ${typeof data[agent] === "string"
+                        ? data[agent]
+                        : JSON.stringify(data[agent], null, 2)}
+                </div>
+            `;
+        }
+
+        document.getElementById("result").innerHTML = html;
+
+        await fetchApprovalStatus();
+
+    } catch (error) {
+
+        document.getElementById("result").innerText =
+            "Fehler: " + error.message;
+    }
 }
-
-document.getElementById("result").innerHTML = html;
 
 
 async function fetchApprovalStatus() {
+
     try {
-        let response = await fetch("/approval");
-        let data = await response.json();
+
+        const response =
+            await fetch("/approval");
+
+        const data =
+            await response.json();
+
         updateApprovalUI(data);
+
     } catch (error) {
-        document.getElementById("approval-status").innerText = "Fehler beim Laden des Status";
+
+        document.getElementById("approval-status").innerText =
+            "Fehler beim Laden des Status";
     }
 }
+
 
 function updateApprovalUI(data) {
-    const statusElement = document.getElementById("approval-status");
-    const commentElement = document.getElementById("approval-comment");
-    const approveButton = document.getElementById("approve-button");
-    const rejectButton = document.getElementById("reject-button");
+
+    const statusElement =
+        document.getElementById("approval-status");
+
+    const commentElement =
+        document.getElementById("approval-comment");
+
+    const approveButton =
+        document.getElementById("approve-button");
+
+    const rejectButton =
+        document.getElementById("reject-button");
+
+    const publishButton =
+        document.getElementById("publish-button");
+
 
     switch (data.status) {
+
         case "waiting":
-            statusElement.innerText = "WARTET AUF FREIGABE";
-            commentElement.style.display = "block";
-            approveButton.style.display = "inline-block";
-            rejectButton.style.display = "inline-block";
+
+            statusElement.innerText =
+                "WARTET AUF FREIGABE";
+
+            commentElement.style.display =
+                "block";
+
+            approveButton.style.display =
+                "block";
+
+            rejectButton.style.display =
+                "block";
+
+            publishButton.style.display =
+                "none";
+
             break;
+
+
         case "approved":
-            statusElement.innerText = "FREIGEGEBEN";
-            commentElement.style.display = "none";
-            approveButton.style.display = "none";
-            rejectButton.style.display = "none";
+
+            statusElement.innerText =
+                "FREIGEGEBEN";
+
+            commentElement.style.display =
+                "none";
+
+            approveButton.style.display =
+                "none";
+
+            rejectButton.style.display =
+                "none";
+
+            publishButton.style.display =
+                "block";
+
             break;
+
+
         case "rejected":
-            statusElement.innerText = "ABGELEHNT";
-            commentElement.style.display = "none";
-            approveButton.style.display = "none";
-            rejectButton.style.display = "none";
+
+            statusElement.innerText =
+                "ABGELEHNT";
+
+            commentElement.style.display =
+                "block";
+
+            approveButton.style.display =
+                "block";
+
+            rejectButton.style.display =
+                "block";
+
+            publishButton.style.display =
+                "none";
+
             break;
+
+
+        case "completed":
+
+            statusElement.innerText =
+                "VERÖFFENTLICHT";
+
+            commentElement.style.display =
+                "none";
+
+            approveButton.style.display =
+                "none";
+
+            rejectButton.style.display =
+                "none";
+
+            publishButton.style.display =
+                "none";
+
+            break;
+
+
         default:
-            statusElement.innerText = "Unbekannter Status";
+
+            statusElement.innerText =
+                "Unbekannter Status";
+
+            publishButton.style.display =
+                "none";
     }
 }
+
 
 async function approve() {
-    const comment = document.getElementById("approval-comment").value;
+
+    const comment =
+        document.getElementById("approval-comment").value;
+
     try {
-        let response = await fetch("/approval/approve", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                approved_by: "Udo",
-                comment: comment
-            })
-        });
-        let data = await response.json();
+
+        const response =
+            await fetch("/approval/approve", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    approved_by: "Udo",
+                    comment: comment
+                })
+            });
+
+        const data =
+            await response.json();
+
         updateApprovalUI(data);
+
     } catch (error) {
-        document.getElementById("approval-status").innerText = "Fehler beim Freigeben";
+
+        document.getElementById("approval-status").innerText =
+            "Fehler beim Freigeben";
     }
 }
+
 
 async function reject() {
-    const comment = document.getElementById("approval-comment").value;
+
+    const comment =
+        document.getElementById("approval-comment").value;
+
     try {
-        let response = await fetch("/approval/reject", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                approved_by: "Udo",
-                comment: comment
-            })
-        });
-        let data = await response.json();
+
+        const response =
+            await fetch("/approval/reject", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    approved_by: "Udo",
+                    comment: comment
+                })
+            });
+
+        const data =
+            await response.json();
+
         updateApprovalUI(data);
+
     } catch (error) {
-        document.getElementById("approval-status").innerText = "Fehler beim Ablehnen";
+
+        document.getElementById("approval-status").innerText =
+            "Fehler beim Ablehnen";
     }
 }
 
+
+async function publishWorkflow() {
+
+    const project =
+        document.getElementById("project").value;
+
+    if (!project) {
+
+        document.getElementById("approval-status").innerText =
+            "Kein Projekt angegeben.";
+
+        return;
+    }
+
+    const publishButton =
+        document.getElementById("publish-button");
+
+    publishButton.disabled = true;
+
+    publishButton.innerText =
+        "⏳ PUBLISH läuft...";
+
+    try {
+
+        const response =
+            await fetch("/workflow/publish", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    project: project
+                })
+            });
+
+        const data =
+            await response.json();
+
+        if (!response.ok) {
+
+            throw new Error(
+                data.detail || "Veröffentlichung fehlgeschlagen."
+            );
+        }
+
+        updateApprovalUI(data);
+
+    } catch (error) {
+
+        document.getElementById("approval-status").innerText =
+            "Fehler beim Veröffentlichen: " +
+            error.message;
+
+        publishButton.disabled = false;
+
+        publishButton.innerText =
+            "🚀 PUBLISH";
+    }
+}
+
+
 window.onload = function() {
+
     fetchApprovalStatus();
+
 };
 
-
-document.getElementById("result").innerHTML =
-"⏳ KI-Team arbeitet...";
-
-
-let project =
-document.getElementById("project").value;
-
-
-let task =
-document.getElementById("task").value;
-
-
-
-let response =
-await fetch(
-"/run",
-{
-method:"POST",
-headers:{
-"Content-Type":"application/json"
-},
-body:JSON.stringify({
-project:project,
-task:task
-})
-}
-);
-
-
-
-let data =
-await response.json();
-
-
-
-let html="";
-
-
-for(let agent in data){
-
-html +=
-`
-<h2>${agent}</h2>
-<hr>
-${marked.parse(data[agent])}
-`;
-
-}
-
-
-
-document.getElementById("result").innerHTML =
-html;
-
-
-}
-
-
 </script>
-
 
 </body>
 </html>
