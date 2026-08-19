@@ -17,7 +17,7 @@ class TestAgentOrchestrator(unittest.TestCase):
             "reviewer": MagicMock()
         }
         mock_agent_manager.load_project_context.return_value = "mock_project_context"
-        mock_agent_executor.execute.return_value = "mock_response"
+        mock_agent_executor.run.return_value = "mock_response"
 
         # Initialize AgentOrchestrator
         orchestrator = AgentOrchestrator(mock_agent_manager, mock_agent_executor)
