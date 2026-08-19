@@ -59,10 +59,6 @@ class AgentOrchestrator:
             AGENT_CONFIG["developer"]["max_tokens"]
         )
 
-        # Step 5: Create a real DEV Git commit
-        commit_hash = git_manager.commit_and_get_hash(project, "DEV: Development completed")
-        if commit_hash:
-            workflow_manager.update_agent("developer", "completed", commit=commit_hash)
 
         # Step 6: Run TesterAgent
         tester_state = tester_agent.test(project, str(workflow_manager.storage))
