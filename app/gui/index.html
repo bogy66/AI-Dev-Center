@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>AI Dev Center</title>
+
+<style>
+body {
+    font-family: Arial;
+    margin: 40px;
+}
+
+textarea {
+    width: 600px;
+    height: 100px;
+}
+
+button {
+    padding: 10px 20px;
+}
+
+.result {
+    margin-top:20px;
+    white-space:pre-wrap;
+    background:#eee;
+    padding:15px;
+}
+</style>
+
+</head>
+
+<body>
+
+<h1>AI Dev Center</h1>
+
+<h3>Projekt</h3>
+
+<input id="project"
+value="/home/udo/NeuesKIProjekt"
+size="50">
+
+
+<h3>Aufgabe</h3>
+
+<textarea id="task">
+Füge YouTube als Datenquelle hinzu
+</textarea>
+
+<br><br>
+
+<button onclick="runAI()">
+KI-Team starten
+</button>
+
+
+<div id="result" class="result"></div>
+
+
+<script>
+
+async function runAI(){
+
+    let project =
+        document.getElementById("project").value;
+
+    let task =
+        document.getElementById("task").value;
+
+
+    let response =
+        await fetch("/run",
+        {
+            method:"POST",
+            headers:{
+                "Content-Type":"application/json"
+            },
+            body:JSON.stringify({
+                project:project,
+                task:task
+            })
+        });
+
+
+    let data =
+        await response.json();
+
+
+    document.getElementById("result").innerText =
+        JSON.stringify(data,null,2);
+
+}
+
+</script>
+
+
+</body>
+</html>

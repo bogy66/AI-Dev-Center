@@ -43,3 +43,20 @@ class AgentManager:
             "project": str(project),
             "agents": agents
         }
+
+    def load_context(self, project_path):
+
+        project = Path(project_path)
+
+        context_file = (
+            project
+            / ".ai"
+            / "project_context.md"
+        )
+
+        if context_file.exists():
+            return context_file.read_text(
+                encoding="utf-8"
+            )
+
+        return ""

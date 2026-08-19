@@ -1,6 +1,6 @@
 import binascii
 from base64 import b64decode
-from typing import Annotated
+from typing import Annotated, Optional
 
 from annotated_doc import Doc
 from fastapi.exceptions import HTTPException
@@ -67,17 +67,17 @@ class HTTPAuthorizationCredentials(BaseModel):
 
 
 class HTTPBase(SecurityBase):
-    model: HTTPBaseModel
-
     def __init__(
         self,
         *,
         scheme: str,
-        scheme_name: str | None = None,
-        description: str | None = None,
+        scheme_name: Optional[str] = None,
+        description: Optional[str] = None,
         auto_error: bool = True,
     ):
-        self.model = HTTPBaseModel(scheme=scheme, description=description)
+        self.model: HTTPBaseModel = HTTPBaseModel(
+            scheme=scheme, description=description
+        )
         self.scheme_name = scheme_name or self.__class__.__name__
         self.auto_error = auto_error
 
@@ -91,7 +91,9 @@ class HTTPBase(SecurityBase):
             headers=self.make_authenticate_headers(),
         )
 
-    async def __call__(self, request: Request) -> HTTPAuthorizationCredentials | None:
+    async def __call__(
+        self, request: Request
+    ) -> Optional[HTTPAuthorizationCredentials]:
         authorization = request.headers.get("Authorization")
         scheme, credentials = get_authorization_scheme_param(authorization)
         if not (authorization and scheme and credentials):
@@ -141,7 +143,7 @@ class HTTPBasic(HTTPBase):
         self,
         *,
         scheme_name: Annotated[
-            str | None,
+            Optional[str],
             Doc(
                 """
                 Security scheme name.
@@ -151,7 +153,7 @@ class HTTPBasic(HTTPBase):
             ),
         ] = None,
         realm: Annotated[
-            str | None,
+            Optional[str],
             Doc(
                 """
                 HTTP Basic authentication realm.
@@ -159,7 +161,7 @@ class HTTPBasic(HTTPBase):
             ),
         ] = None,
         description: Annotated[
-            str | None,
+            Optional[str],
             Doc(
                 """
                 Security scheme description.
@@ -201,7 +203,7 @@ class HTTPBasic(HTTPBase):
 
     async def __call__(  # type: ignore
         self, request: Request
-    ) -> HTTPBasicCredentials | None:
+    ) -> Optional[HTTPBasicCredentials]:
         authorization = request.headers.get("Authorization")
         scheme, param = get_authorization_scheme_param(authorization)
         if not authorization or scheme.lower() != "basic":
@@ -254,9 +256,9 @@ class HTTPBearer(HTTPBase):
     def __init__(
         self,
         *,
-        bearerFormat: Annotated[str | None, Doc("Bearer token format.")] = None,
+        bearerFormat: Annotated[Optional[str], Doc("Bearer token format.")] = None,
         scheme_name: Annotated[
-            str | None,
+            Optional[str],
             Doc(
                 """
                 Security scheme name.
@@ -266,7 +268,7 @@ class HTTPBearer(HTTPBase):
             ),
         ] = None,
         description: Annotated[
-            str | None,
+            Optional[str],
             Doc(
                 """
                 Security scheme description.
@@ -300,7 +302,9 @@ class HTTPBearer(HTTPBase):
         self.scheme_name = scheme_name or self.__class__.__name__
         self.auto_error = auto_error
 
-    async def __call__(self, request: Request) -> HTTPAuthorizationCredentials | None:
+    async def __call__(
+        self, request: Request
+    ) -> Optional[HTTPAuthorizationCredentials]:
         authorization = request.headers.get("Authorization")
         scheme, credentials = get_authorization_scheme_param(authorization)
         if not (authorization and scheme and credentials):
@@ -321,7 +325,7 @@ class HTTPDigest(HTTPBase):
     HTTP Digest authentication.
 
     **Warning**: this is only a stub to connect the components with OpenAPI in FastAPI,
-    but it doesn't implement the full Digest scheme, you would need to subclass it
+    but it doesn't implement the full Digest scheme, you would need to to subclass it
     and implement it in your code.
 
     Ref: https://datatracker.ietf.org/doc/html/rfc7616
@@ -358,7 +362,7 @@ class HTTPDigest(HTTPBase):
         self,
         *,
         scheme_name: Annotated[
-            str | None,
+            Optional[str],
             Doc(
                 """
                 Security scheme name.
@@ -368,7 +372,7 @@ class HTTPDigest(HTTPBase):
             ),
         ] = None,
         description: Annotated[
-            str | None,
+            Optional[str],
             Doc(
                 """
                 Security scheme description.
@@ -401,7 +405,9 @@ class HTTPDigest(HTTPBase):
         self.scheme_name = scheme_name or self.__class__.__name__
         self.auto_error = auto_error
 
-    async def __call__(self, request: Request) -> HTTPAuthorizationCredentials | None:
+    async def __call__(
+        self, request: Request
+    ) -> Optional[HTTPAuthorizationCredentials]:
         authorization = request.headers.get("Authorization")
         scheme, credentials = get_authorization_scheme_param(authorization)
         if not (authorization and scheme and credentials):

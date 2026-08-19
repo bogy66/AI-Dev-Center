@@ -1,19 +1,51 @@
+from app.agent_manager import AgentManager
+from app.agent_executor import AgentExecutor
+
+
 class AgentOrchestrator:
-    def __init__(self, agent_manager, agent_executor):
+
+    def __init__(
+        self,
+        agent_manager: AgentManager,
+        agent_executor: AgentExecutor
+    ):
         self.agent_manager = agent_manager
         self.agent_executor = agent_executor
 
-    def run(self, project, task):
-        # Load agents using AgentManager
-        agents = self.agent_manager.load_agents()
 
-        # Load project context
-        project_context = self.agent_manager.load_project_context(project)
+    def run(
+        self,
+        project,
+        task
+    ):
 
-        # Execute agents using AgentExecutor
+        # Agenten laden
+        agents = self.agent_manager.load_agents(
+            project
+        )
+
+        # Projektkontext laden
+        project_context = self.agent_manager.load_context(
+            project
+        )
+
         responses = {}
-        for role in ["project_manager", "architect", "developer", "tester", "reviewer"]:
-            response = self.agent_executor.execute(agents[role], project_context, task)
+
+        for role in [
+            "project_manager",
+            "architect",
+            "developer",
+            "tester",
+            "reviewer"
+        ]:
+
+            response = self.agent_executor.run(
+                agents["agents"][role],
+                task,
+                project_context
+            )
+
             responses[role] = response
+
 
         return responses

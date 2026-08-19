@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import warnings
 
-from starlette.exceptions import StarletteDeprecationWarning
-
 __all__ = [
     "HTTP_100_CONTINUE",
     "HTTP_101_SWITCHING_PROTOCOLS",
@@ -199,7 +197,7 @@ def __getattr__(name: str) -> int:
     if deprecated:
         warnings.warn(
             f"'{name}' is deprecated. Use '{deprecation_changes[name]}' instead.",
-            category=StarletteDeprecationWarning,
+            category=DeprecationWarning,
             stacklevel=3,
         )
         return deprecated
