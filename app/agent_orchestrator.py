@@ -3,6 +3,9 @@ from app.agent_manager import AgentManager
 from app.agent_executor import AgentExecutor
 from app.agent_roles import AGENT_ROLES
 from app.project_reader import ProjectReader
+from app.workflow_manager import WorkflowManager
+from app.tester_agent import TesterAgent
+from app.reviewer_agent import ReviewerAgent
 
 class AgentOrchestrator:
 
@@ -15,88 +18,55 @@ class AgentOrchestrator:
         self.agent_executor = agent_executor
         self.project_reader = ProjectReader()
 
-    def run(
+    def run_workflow(
         self,
         project,
         task
     ):
 
-        agents = self.agent_manager.load_agents(
-            project
-        )
+        workflow_manager = WorkflowManager()
+        state = workflow_manager.load()
 
-        project_context = self.agent_manager.load_context(
-            project
-        )
+        if not state or state["status"] == "started":
+            state = workflow_manager.create(task, "dev-branch")
 
-        project_files = self.project_reader.read_files(
-            project
-        )
+        if state["status"] == "started":
+            responses = self.run_agents(project, task)
+            workflow_manager.update_agent("project_manager", "completed")
+            state["status"] = "project_manager_completed"
 
+        if state["status"] == "project_manager_completed":
+            responses = self.run_agents(project, task)
+            workflow_manager.update_agent("architect", "completed")
+            state["status"] = "architect_completed"
 
-        files_context = ""
+        if state["status"] == "architect_completed":
+            responses = self.run_agents(project, task)
+            workflow_manager.update_agent("developer", "completed")
+            state["status"] = "developer_completed"
 
-        for name, content in project_files.items():
+        if state["status"] == "developer_completed":
+            # Simulate DEV commit
+            workflow_manager.update_agent("developer", "committed")
+            state["status"] = "developer_committed"
 
-            files_context += f"""
+        if state["status"] == "developer_committed":
+            tester_agent = TesterAgent()
+            state = tester_agent.test(project, workflow_manager.storage)
+            state["status"] = "tester_completed"
 
-        ===== {name} =====
+        if state["status"] == "tester_completed":
+            # Simulate TEST commit
+            workflow_manager.update_agent("tester", "committed")
+            state["status"] = "tester_committed"
 
-        {content}
+        if state["status"] == "tester_committed":
+            reviewer_agent = ReviewerAgent()
+            state = reviewer_agent.review(project, workflow_manager.storage)
+            state["status"] = "reviewer_completed"
 
-        """
+        if state["status"] == "reviewer_completed":
+            state["status"] = "approval_waiting"
 
-        responses = {}
-
-        previous_results = ""
-
-
-        for role in AGENT_ROLES:
-
-            limit = AGENT_CONFIG[role]["max_context"]
-
-            context = f"""
-            Projektkontext:
-
-            {project_context}
-
-
-            Projektdateien:
-
-            {files_context[:4000]}
-
-
-            Vorherige Team-Ergebnisse:
-
-            {previous_results[-limit:]}
-            """
-
-            executor = AgentExecutor(
-                model=AGENT_CONFIG[role]["model"]
-            )
-
-
-            response = self.agent_executor.run(
-                AGENT_ROLES[role],
-                task,
-                context,
-                role,
-                AGENT_CONFIG[role]["max_tokens"]
-            )
-
-
-            responses[role] = response
-
-
-            limit = AGENT_CONFIG[role]["max_context"]
-
-            previous_results += f"""
-
-            ===== {role} =====
-
-            {response[:limit]}
-
-            """
-
-
-        return responses
+        workflow_manager.save(state)
+        return state
