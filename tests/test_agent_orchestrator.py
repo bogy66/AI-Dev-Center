@@ -27,6 +27,10 @@ class TestAgentOrchestrator(unittest.TestCase):
             mock_tester_agent.test.return_value = {"status": "completed"}
             mock_reviewer_agent.review.return_value = "success"
 
+            # Mock AgentManager and AgentExecutor
+            mock_agent_manager = MagicMock()
+            mock_agent_executor = MagicMock()
+
             # Initialize AgentOrchestrator with mocks
             orchestrator = AgentOrchestrator(mock_agent_manager, mock_agent_executor)
 
@@ -43,9 +47,6 @@ class TestAgentOrchestrator(unittest.TestCase):
             mock_tester_agent.test.assert_called_once_with("mock_project", str(mock_workflow_manager.storage))
             mock_reviewer_agent.review.assert_called_once_with("mock_project", str(mock_workflow_manager.storage))
             mock_workflow_manager.update_agent.assert_any_call("reviewer", "approved")
-        # Mock AgentManager and AgentExecutor
-        mock_agent_manager = MagicMock()
-        mock_agent_executor = MagicMock()
 
         # Setup mock return values
         mock_agent_manager.load_agents.return_value = {
