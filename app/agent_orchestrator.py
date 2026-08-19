@@ -59,12 +59,29 @@ class AgentOrchestrator:
             AGENT_CONFIG["developer"]["max_tokens"]
         )
 
+        # Step 5: Create DEV Git commit
+        commit_result = git_manager.commit_and_get_hash(
+            project,
+            "DEV: Development completed"
+        )
+
+        if commit_result["code"] != 0:
+            return workflow_manager.load()
+
+        workflow_manager.update_agent(
+            "developer",
+            "completed",
+            commit=commit_result["commit"]
+        )
 
         # Step 6: Run TesterAgent
         tester_state = tester_agent.test(project, str(workflow_manager.storage))
 
         # Step 7: Check Tester state
-        if tester_state.get("status") != "completed" or tester_state.get("result") != "PASS":
+        if (
+            tester_state["tester"]["status"] != "completed"
+            or tester_state["tester"]["result"] != "PASS"
+        ):
             return tester_state
 
         # Step 8: Run ReviewerAgent

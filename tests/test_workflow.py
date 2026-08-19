@@ -22,8 +22,13 @@ class TestWorkflow(unittest.TestCase):
 
         # Mock TesterAgent
         mock_tester_agent = MockTesterAgent.return_value
-        mock_tester_agent.test.return_value = {"status": "completed", "result": "PASS"}
-
+        mock_tester_agent.test.return_value = {
+            "status": "completed",
+            "tester": {
+                "status": "completed",
+                "result": "PASS"
+            }
+        }
         # Mock ReviewerAgent
         mock_reviewer_agent = MockReviewerAgent.return_value
         mock_reviewer_agent.review.return_value = {"status": "approved"}
@@ -40,6 +45,142 @@ class TestWorkflow(unittest.TestCase):
         mock_tester_agent.test.assert_called_once()
         mock_reviewer_agent.review.assert_called_once()
         mock_git_manager.commit_and_get_hash.assert_called_once_with("mock_project", "DEV: Development completed")
+
+    @patch("app.agent_orchestrator.WorkflowManager")
+    @patch("app.agent_orchestrator.GitManager")
+    @patch("app.agent_orchestrator.TesterAgent")
+    @patch("app.agent_orchestrator.ReviewerAgent")
+    def test_workflow_tester_failure(
+        self,
+        MockReviewerAgent,
+        MockTesterAgent,
+        MockGitManager,
+        MockWorkflowManager
+    ):
+        mock_workflow = MockWorkflowManager.return_value
+        mock_workflow.storage = "mock_workflow_state.json"
+
+        state = {
+            "status": "started",
+            "developer": {
+                "status": "completed",
+                "commit": "dev123"
+            },
+            "tester": {
+                "status": "pending",
+                "result": None
+            },
+            "reviewer": {
+                "status": "pending",
+                "result": None
+            }
+        }
+
+        mock_workflow.create.return_value = state
+        mock_workflow.load.return_value = state
+        mock_workflow.update_agent.return_value = state
+
+        MockGitManager.return_value.commit_and_get_hash.return_value = {
+            "code": 0,
+            "commit": "dev123"
+        }
+
+        MockTesterAgent.return_value.test.return_value = {
+            **state,
+            "status": "tester_failed",
+            "tester": {
+                "status": "failed",
+                "result": "Tests failed"
+            }
+        }
+
+        orchestrator = AgentOrchestrator(MagicMock(), MagicMock())
+
+        result = orchestrator.run_workflow(
+            "mock_project",
+            "mock_task"
+        )
+
+        self.assertEqual(
+            result["tester"]["status"],
+            "failed"
+        )
+
+        MockReviewerAgent.return_value.review.assert_not_called()
+
+    @patch("app.agent_orchestrator.WorkflowManager")
+    @patch("app.agent_orchestrator.GitManager")
+    @patch("app.agent_orchestrator.TesterAgent")
+    @patch("app.agent_orchestrator.ReviewerAgent")
+    def test_workflow_reviewer_failure(
+        self,
+        MockReviewerAgent,
+        MockTesterAgent,
+        MockGitManager,
+        MockWorkflowManager
+    ):
+        mock_workflow = MockWorkflowManager.return_value
+        mock_workflow.storage = "mock_workflow_state.json"
+
+        state = {
+            "status": "started",
+            "developer": {
+                "status": "completed",
+                "commit": "dev123"
+            },
+            "tester": {
+                "status": "pending",
+                "result": None
+            },
+            "reviewer": {
+                "status": "pending",
+                "result": None
+            }
+        }
+
+        mock_workflow.create.return_value = state
+        mock_workflow.load.return_value = state
+
+        MockGitManager.return_value.commit_and_get_hash.return_value = {
+            "code": 0,
+            "commit": "dev123"
+        }
+
+        MockTesterAgent.return_value.test.return_value = {
+            **state,
+            "status": "completed",
+            "tester": {
+                "status": "completed",
+                "result": "PASS"
+            }
+        }
+
+        MockReviewerAgent.return_value.review.return_value = {
+            **state,
+            "status": "changes_required",
+            "reviewer": {
+                "status": "changes_required",
+                "result": "Review failed"
+            }
+        }
+
+        orchestrator = AgentOrchestrator(MagicMock(), MagicMock())
+
+        result = orchestrator.run_workflow(
+            "mock_project",
+            "mock_task"
+        )
+
+        self.assertEqual(
+            result["reviewer"]["status"],
+            "changes_required"
+        )
+
+        self.assertNotEqual(
+            result["status"],
+            "approval_waiting"
+        )
+
 
 if __name__ == '__main__':
     unittest.main()
