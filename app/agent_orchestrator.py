@@ -76,10 +76,6 @@ class AgentOrchestrator:
             workflow_manager.update_agent("reviewer", "approval_waiting")
 
         return "Workflow completed"
-        self,
-        project,
-        task
-    ):
 
         agents = self.agent_manager.load_agents(
             project
