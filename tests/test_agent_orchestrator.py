@@ -17,9 +17,16 @@ class TestAgentOrchestrator(unittest.TestCase):
         mock_reviewer_agent = MagicMock()
 
         # Mock dependencies with patch
-        with patch('app.agent_orchestrator.GitManager', return_value=mock_git_manager), \
+        with patch('app.agent_orchestrator.WorkflowManager', return_value=mock_workflow_manager), \
+             patch('app.agent_orchestrator.GitManager', return_value=mock_git_manager), \
              patch('app.agent_orchestrator.TesterAgent', return_value=mock_tester_agent), \
              patch('app.agent_orchestrator.ReviewerAgent', return_value=mock_reviewer_agent):
+
+            # Configure mock workflow manager
+            mock_workflow_manager.create.return_value = {"status": "started"}
+            mock_workflow_manager.update_agent.return_value = {"status": "approval_waiting"}
+            mock_workflow_manager.save.return_value = None
+            mock_workflow_manager.load.return_value = {"status": "approval_waiting"}
 
             # Setup mock return values
             mock_agent_manager.load_agents.return_value = {
