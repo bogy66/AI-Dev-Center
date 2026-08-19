@@ -277,3 +277,113 @@ python -m pytest -q
         )
 
         assert result["status"] == "approval_waiting"
+
+def test_run_workflow_persists_approval_waiting(tmp_path):
+
+    mock_agent_manager = MagicMock()
+    mock_agent_executor = MagicMock()
+
+    developer_response = """
+## Dateien
+
+### Datei:
+app/example.py
+
+### Aktion:
+create
+
+### Inhalt:
+print("changed")
+
+## Tests
+
+python -m pytest -q
+"""
+
+    def executor_run(
+        agent_role,
+        task,
+        project_context,
+        role_name,
+        max_tokens
+    ):
+        if role_name == "developer":
+            return developer_response
+
+        return "mock_response"
+
+    mock_agent_executor.run.side_effect = executor_run
+
+    orchestrator = AgentOrchestrator(
+        mock_agent_manager,
+        mock_agent_executor
+    )
+
+    git_manager = MagicMock()
+
+    git_manager.commit_and_get_hash.return_value = {
+        "code": 0,
+        "commit": "abc123",
+        "message": "DEV: Development completed"
+    }
+
+    tester_agent = MagicMock()
+
+    tester_agent.test.return_value = {
+        "status": "started",
+        "tester": {
+            "status": "completed",
+            "commit": "abc123",
+            "result": "PASS"
+        }
+    }
+
+    reviewer_agent = MagicMock()
+
+    reviewer_agent.review.return_value = {
+        "status": "approved"
+    }
+
+    storage = tmp_path / "workflow_state.json"
+
+    from app.workflow_manager import WorkflowManager
+
+    real_workflow = WorkflowManager(storage)
+
+    with patch(
+        "app.agent_orchestrator.WorkflowManager",
+        return_value=real_workflow
+    ), patch(
+        "app.agent_orchestrator.GitManager",
+        return_value=git_manager
+    ), patch(
+        "app.agent_orchestrator.TesterAgent",
+        return_value=tester_agent
+    ), patch(
+        "app.agent_orchestrator.ReviewerAgent",
+        return_value=reviewer_agent
+    ), patch(
+        "app.agent_orchestrator.DeveloperFileApplier"
+    ) as file_applier_class:
+
+        file_applier = file_applier_class.return_value
+
+        file_applier.apply.return_value = {
+            "applied": ["app/example.py"]
+        }
+
+        result = orchestrator.run_workflow(
+            "mock_project",
+            "mock_task"
+        )
+
+    assert result["status"] == "approval_waiting"
+
+    persisted = real_workflow.load()
+
+    assert persisted["status"] == "approval_waiting"
+    assert persisted["developer"]["status"] == "completed"
+    assert persisted["tester"]["status"] == "completed"
+    assert persisted["tester"]["result"] == "PASS"
+    assert persisted["reviewer"]["status"] == "approved"
+    assert persisted["user_approval"]["status"] == "waiting"
