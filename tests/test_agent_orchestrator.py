@@ -17,10 +17,10 @@ class TestAgentOrchestrator(unittest.TestCase):
         mock_reviewer_agent = MagicMock()
 
         # Mock dependencies with patch
-        with patch('app.agent_orchestrator.WorkflowManager', return_value=mock_workflow_manager), \
-             patch('app.agent_orchestrator.GitManager', return_value=mock_git_manager), \
-             patch('app.agent_orchestrator.TesterAgent', return_value=mock_tester_agent), \
-             patch('app.agent_orchestrator.ReviewerAgent', return_value=mock_reviewer_agent):
+        with patch('app.workflow_manager.WorkflowManager', return_value=mock_workflow_manager), \
+             patch('app.git_manager.GitManager', return_value=mock_git_manager), \
+             patch('app.tester_agent.TesterAgent', return_value=mock_tester_agent), \
+             patch('app.reviewer_agent.ReviewerAgent', return_value=mock_reviewer_agent):
 
             # Configure mock workflow manager
             mock_workflow_manager.create.return_value = {"status": "started"}
@@ -46,7 +46,7 @@ class TestAgentOrchestrator(unittest.TestCase):
             result = orchestrator.run_workflow("mock_project", "mock_task")
 
             # Assert the workflow result
-            self.assertEqual(result, "Workflow completed")
+            self.assertEqual(result["status"], "approval_waiting")
 
             # Verify the sequence of operations
             mock_workflow_manager.create.assert_called_once_with("mock_task", "dev_branch")
