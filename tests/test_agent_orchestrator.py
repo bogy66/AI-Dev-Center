@@ -387,3 +387,108 @@ python -m pytest -q
     assert persisted["tester"]["result"] == "PASS"
     assert persisted["reviewer"]["status"] == "approved"
     assert persisted["user_approval"]["status"] == "waiting"
+
+def test_rework_workflow_reuses_existing_task_and_skips_planning():
+    mock_agent_manager = MagicMock()
+    mock_agent_executor = MagicMock()
+
+    mock_agent_executor.run.return_value = """
+## Dateien
+
+### Datei:
+app/example.py
+
+### Aktion:
+update
+
+### Inhalt:
+print("fixed")
+
+## Tests
+
+python -m pytest -q
+"""
+
+    orchestrator = AgentOrchestrator(
+        mock_agent_manager,
+        mock_agent_executor
+    )
+
+    workflow_state = {
+        "task": "Erstelle app/example.py",
+        "branch": "dev_branch",
+        "status": "changes_required",
+        "developer": {
+            "status": "completed",
+            "commit": "old123"
+        },
+        "tester": {
+            "status": "failed",
+            "commit": None,
+            "result": "Inhalt stimmt nicht"
+        },
+        "reviewer": {
+            "status": "changes_required",
+            "result": "Review fehlgeschlagen"
+        },
+        "user_approval": {
+            "status": "rejected",
+            "approved_by": "Udo",
+            "approved_at": "2026-08-19T20:40:01",
+            "comment": "Needs changes"
+        }
+    }
+
+    with patch(
+        "app.agent_orchestrator.WorkflowManager"
+    ) as workflow_class, patch(
+        "app.agent_orchestrator.GitManager"
+    ) as git_class, patch(
+        "app.agent_orchestrator.TesterAgent"
+    ) as tester_class, patch(
+        "app.agent_orchestrator.ReviewerAgent"
+    ) as reviewer_class, patch(
+        "app.agent_orchestrator.DeveloperFileApplier"
+    ) as applier_class:
+
+        workflow = workflow_class.return_value
+        workflow.load.return_value = workflow_state
+        workflow.storage = "mock_workflow_state.json"
+
+        git_class.return_value.commit_and_get_hash.return_value = {
+            "code": 0,
+            "commit": "new123",
+            "message": "DEV: Rework completed"
+        }
+
+        applier_class.return_value.apply.return_value = {
+            "applied": ["app/example.py"]
+        }
+
+        tester_class.return_value.test.return_value = {
+            "status": "completed",
+            "result": "PASS"
+        }
+
+        reviewer_class.return_value.review.return_value = {
+            "status": "approved",
+            "result": "Review erfolgreich"
+        }
+
+        result = orchestrator.rework_workflow(
+            "mock_project"
+        )
+
+    assert result["task"] == "Erstelle app/example.py"
+
+    assert result["user_approval"]["comment"] == "Needs changes"
+
+    workflow.create.assert_not_called()
+
+    calls = mock_agent_executor.run.call_args_list
+
+    assert len(calls) == 1
+    assert calls[0].args[3] == "developer"
+
+    tester_class.return_value.test.assert_called_once()
+    reviewer_class.return_value.review.assert_called_once()

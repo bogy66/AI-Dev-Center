@@ -313,6 +313,128 @@ class AgentOrchestrator:
 
         return state
 
+    def rework_workflow(self, project):
+        workflow_manager = WorkflowManager()
+        git_manager = GitManager()
+        tester_agent = TesterAgent()
+        reviewer_agent = ReviewerAgent()
+
+        state = self._ensure_workflow_state(
+            workflow_manager.load()
+        )
+
+        if state.get("user_approval", {}).get("status") != "rejected":
+            return state
+
+        task = state.get("task", "")
+        comment = (
+            state.get("user_approval", {})
+            .get("comment")
+            or ""
+        )
+
+        developer_task = f"""
+Ursprüngliche Aufgabe:
+
+{task}
+
+Der Benutzer hat die vorherige Umsetzung abgelehnt.
+
+Begründung des Benutzers:
+
+{comment}
+
+Überarbeite die bestehende Implementierung entsprechend der
+Rückmeldung.
+
+Ändere nur die Dateien, die für die Aufgabe notwendig sind.
+"""
+
+        developer_response = self.agent_executor.run(
+            AGENT_ROLES["developer"],
+            developer_task,
+            "",
+            "developer",
+            AGENT_CONFIG["developer"]["max_tokens"]
+        )
+
+        developer_changes = DeveloperChanges.parse(
+            developer_response
+        )
+
+        file_applier = DeveloperFileApplier(
+            project
+        )
+
+        apply_result = file_applier.apply(
+            developer_changes
+        )
+
+        if not apply_result.get("applied"):
+            state["status"] = "development_no_changes"
+            workflow_manager.save(state)
+            return workflow_manager.load()
+
+        commit_result = git_manager.commit_and_get_hash(
+            project,
+            "DEV: Rework completed"
+        )
+
+        if commit_result.get("code") != 0:
+            return workflow_manager.load()
+
+        workflow_manager.update_agent(
+            "developer",
+            "completed",
+            commit=commit_result["commit"]
+        )
+
+        tester_result = tester_agent.test(
+            project,
+            developer_changes
+        )
+
+        state = self._merge_tester_result(
+            workflow_manager.load(),
+            tester_result
+        )
+
+        workflow_manager.save(state)
+
+        if state["tester"]["status"] != "completed":
+            return state
+
+        if state["tester"]["result"] != "PASS":
+            return state
+
+        reviewer_result = reviewer_agent.review(
+            project,
+            state
+        )
+
+        state = self._merge_reviewer_result(
+            state,
+            reviewer_result
+        )
+
+        workflow_manager.save(state)
+
+        if state["reviewer"]["status"] != "approved":
+            return state
+
+        state["status"] = "approval_waiting"
+
+        state["user_approval"] = {
+            "status": "waiting",
+            "approved_by": None,
+            "approved_at": None,
+            "comment": comment
+        }
+
+        workflow_manager.save(state)
+
+        return state
+
     def run(
         self,
         project,
