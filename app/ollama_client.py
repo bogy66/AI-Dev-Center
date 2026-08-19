@@ -18,7 +18,11 @@ class OllamaClient:
         self.model = model
 
 
-    def generate(self, prompt):
+    def generate(
+        self,
+        prompt,
+        max_tokens=400
+    ):
 
         start = time.time()
 
@@ -35,7 +39,7 @@ class OllamaClient:
                 "stream": False,
 
                 "options": {
-                    "num_predict": 400,
+                    "num_predict": max_tokens,
                     "temperature": 0.2
                 }
             },

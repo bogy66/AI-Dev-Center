@@ -8,16 +8,21 @@ logger = get_logger("agent")
 
 class AgentExecutor:
 
-
-    def __init__(self):
-        self.llm = OllamaClient()
-
+    def __init__(
+        self,
+        model="llama3.2:3b"
+    ):
+        self.llm = OllamaClient(
+            model=model
+        )
 
     def run(
         self,
         agent_role,
         task,
-        project_context=""
+        project_context="",
+        role_name="",
+        max_tokens=400
     ):
 
         start = time.time()
@@ -80,7 +85,8 @@ Erstelle eine Reihenfolge der Umsetzung.
 
 
         result = self.llm.generate(
-            prompt
+            prompt,
+            max_tokens=max_tokens
         )
 
 

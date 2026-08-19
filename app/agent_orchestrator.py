@@ -1,5 +1,7 @@
+from app.agent_config import AGENT_CONFIG
 from app.agent_manager import AgentManager
 from app.agent_executor import AgentExecutor
+from app.agent_roles import AGENT_ROLES
 
 
 class AgentOrchestrator:
@@ -19,33 +21,60 @@ class AgentOrchestrator:
         task
     ):
 
-        # Agenten laden
         agents = self.agent_manager.load_agents(
             project
         )
 
-        # Projektkontext laden
         project_context = self.agent_manager.load_context(
             project
         )
 
         responses = {}
 
-        for role in [
-            "project_manager",
-            "architect",
-            "developer",
-            "tester",
-            "reviewer"
-        ]:
+        previous_results = ""
 
-            response = self.agent_executor.run(
-                agents["agents"][role],
-                task,
-                project_context
+
+        for role in AGENT_ROLES:
+
+            limit = AGENT_CONFIG[role]["max_context"]
+
+            context = f"""
+            Projektkontext:
+
+            {project_context[:1000]}
+
+
+            Vorherige Team-Ergebnisse:
+
+            {previous_results[-limit:]}
+            """
+
+            executor = AgentExecutor(
+                model=AGENT_CONFIG[role]["model"]
             )
 
+
+            response = self.agent_executor.run(
+                AGENT_ROLES[role],
+                task,
+                context,
+                role,
+                AGENT_CONFIG[role]["max_tokens"]
+            )
+
+
             responses[role] = response
+
+
+            limit = AGENT_CONFIG[role]["max_context"]
+
+            previous_results += f"""
+
+            ===== {role} =====
+
+            {response[:limit]}
+
+            """
 
 
         return responses

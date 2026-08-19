@@ -59,6 +59,9 @@ KI-Team starten
 
 async function runAI(){
 
+    document.getElementById("result").innerText =
+    "KI-Team arbeitet...\n\nProjektmanager wird gestartet...";
+
     let project =
         document.getElementById("project").value;
 
@@ -85,7 +88,7 @@ async function runAI(){
 
 
     document.getElementById("result").innerText =
-        JSON.stringify(data,null,2);
+    JSON.stringify(data,null,2);
 
 }
 
