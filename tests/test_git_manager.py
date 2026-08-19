@@ -24,3 +24,14 @@ def test_push_success():
         "git push",
         "mock_project"
     )
+
+def test_push_invalid_project():
+    manager = GitManager()
+
+    result = manager.push(
+        "/does/not/exist"
+    )
+
+    assert result["code"] != 0
+    assert result["stdout"] == ""
+    assert result["stderr"] != ""

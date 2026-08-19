@@ -3,22 +3,29 @@ import subprocess
 
 class GitManager:
 
-
     def run(self, command, cwd):
 
-        result = subprocess.run(
-            command,
-            cwd=cwd,
-            shell=True,
-            text=True,
-            capture_output=True
-        )
+        try:
+            result = subprocess.run(
+                command,
+                cwd=cwd,
+                shell=True,
+                text=True,
+                capture_output=True
+            )
 
-        return {
-            "code": result.returncode,
-            "stdout": result.stdout.strip(),
-            "stderr": result.stderr.strip()
-        }
+            return {
+                "code": result.returncode,
+                "stdout": result.stdout.strip(),
+                "stderr": result.stderr.strip()
+            }
+
+        except OSError as error:
+            return {
+                "code": 1,
+                "stdout": "",
+                "stderr": str(error)
+            }
 
     def commit_and_get_hash(
         self,
@@ -34,11 +41,9 @@ class GitManager:
         if result["code"] != 0:
             return result
 
-
         commit = self.last_commit(
             project
         )
-
 
         return {
             "code": 0,
@@ -66,7 +71,6 @@ class GitManager:
             "git push",
             project
         )
-
 
     def last_commit(
         self,
