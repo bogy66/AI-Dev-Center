@@ -89,3 +89,28 @@ def test_failed_push_does_not_complete_workflow():
     workflow.save.assert_not_called()
 
     assert result["status"] != "completed"
+
+def test_started_workflow_is_not_published():
+    workflow = MagicMock()
+    workflow.load.return_value = {
+        "status": "started",
+        "user_approval": {
+            "status": "approved",
+            "approved_by": "Udo",
+            "comment": "Looks good"
+        }
+    }
+
+    git = MagicMock()
+
+    publisher = WorkflowPublisher(
+        workflow_manager=workflow,
+        git_manager=git
+    )
+
+    result = publisher.publish("mock_project")
+
+    git.push.assert_not_called()
+    workflow.save.assert_not_called()
+
+    assert result["status"] == "started"
