@@ -75,6 +75,10 @@ def reject_approval(request: ApprovalRequest):
 
     return approval_manager.get_status()
 
+@app.get("/workflow")
+def get_workflow_status():
+    workflow_manager = WorkflowManager()
+    return workflow_manager.load()
 
 @app.post("/workflow/publish")
 def publish_workflow(request: PublishRequest):

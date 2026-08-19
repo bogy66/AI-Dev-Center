@@ -56,3 +56,20 @@ def test_publish_failed_workflow(mock_publisher):
     mock_publisher.publish.assert_called_once_with(
         "mock_project"
     )
+
+@patch("app.api.WorkflowManager")
+def test_get_workflow_status(mock_workflow_manager):
+
+    mock_workflow_manager.return_value.load.return_value = {
+        "status": "approval_waiting",
+        "task": "mock_task",
+        "user_approval": {
+            "status": "approved"
+        }
+    }
+
+    response = client.get("/workflow")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "approval_waiting"
+    assert response.json()["task"] == "mock_task"
