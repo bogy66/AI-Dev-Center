@@ -75,7 +75,9 @@ class AgentOrchestrator:
         workflow_manager = WorkflowManager()
         state = workflow_manager.load()
 
-        if not state or state["status"] == "started":
+        # Validate the existing state
+        if not state or "status" not in state or state["project"] != project or state["task"] != task:
+            state = workflow_manager.create(task, f"{project}-dev-branch")
             state = workflow_manager.create(task, "dev-branch")
 
         if state["status"] == "started":
