@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from app.git_manager import GitManager
 
@@ -6,25 +6,21 @@ from app.git_manager import GitManager
 def test_push_success():
     manager = GitManager()
 
-    mock_result = MagicMock()
-    mock_result.returncode = 0
-    mock_result.stdout = "Everything up-to-date\n"
-    mock_result.stderr = ""
+    manager.run = MagicMock(
+        return_value={
+            "code": 0,
+            "stdout": "Everything up-to-date",
+            "stderr": ""
+        }
+    )
 
-    with patch("subprocess.run", return_value=mock_result) as mock_run:
-        result = manager.run(
-            "git push",
-            "mock_project"
-        )
+    result = manager.push("mock_project")
 
     assert result["code"] == 0
     assert result["stdout"] == "Everything up-to-date"
     assert result["stderr"] == ""
 
-    mock_run.assert_called_once_with(
+    manager.run.assert_called_once_with(
         "git push",
-        cwd="mock_project",
-        shell=True,
-        text=True,
-        capture_output=True
+        "mock_project"
     )

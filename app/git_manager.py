@@ -57,6 +57,16 @@ class GitManager:
             project
         )
 
+    def push(
+        self,
+        project
+    ):
+
+        return self.run(
+            "git push",
+            project
+        )
+
 
     def last_commit(
         self,
