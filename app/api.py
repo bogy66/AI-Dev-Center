@@ -28,6 +28,10 @@ class Task(BaseModel):
 
 approval_manager = ApprovalManager()
 
+# Ensure the approval state is initialized
+if not approval_manager.get_status():
+    approval_manager.create_approval()
+
 
 @app.get("/approval")
 def get_approval_status():
@@ -35,13 +39,13 @@ def get_approval_status():
 
 
 @app.post("/approval/approve")
-def approve_approval(approved_by: str = "Udo", comment: str = None):
+def approve_approval(approved_by: str = "Udo", comment: str = ""):
     approval_manager.approve(approved_by=approved_by, comment=comment)
     return approval_manager.get_status()
 
 
 @app.post("/approval/reject")
-def reject_approval(approved_by: str = "Udo", comment: str = None):
+def reject_approval(approved_by: str = "Udo", comment: str = ""):
     approval_manager.reject(approved_by=approved_by, comment=comment)
     return approval_manager.get_status()
 
