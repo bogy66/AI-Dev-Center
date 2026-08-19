@@ -80,40 +80,20 @@ class AgentOrchestrator:
 
         return workflow_manager.load()
 
-        agents = self.agent_manager.load_agents(
-            project
-        )
-
-        project_context = self.agent_manager.load_context(
-            project
-        )
-
-        project_files = self.project_reader.read_files(
-            project
-        )
-
+    def run(self, project, task):
+        agents = self.agent_manager.load_agents(project)
+        project_context = self.agent_manager.load_context(project)
+        project_files = self.project_reader.read_files(project)
 
         files_context = ""
-
         for name, content in project_files.items():
-
-            files_context += f"""
-
-        ===== {name} =====
-
-        {content}
-
-        """
+            files_context += f"\n\n===== {name} =====\n\n{content}\n\n"
 
         responses = {}
-
         previous_results = ""
 
-
         for role in AGENT_ROLES:
-
             limit = AGENT_CONFIG[role]["max_context"]
-
             context = f"""
             Projektkontext:
 
@@ -130,11 +110,7 @@ class AgentOrchestrator:
             {previous_results[-limit:]}
             """
 
-            executor = AgentExecutor(
-                model=AGENT_CONFIG[role]["model"]
-            )
-
-
+            executor = AgentExecutor(model=AGENT_CONFIG[role]["model"])
             response = self.agent_executor.run(
                 AGENT_ROLES[role],
                 task,
@@ -143,19 +119,7 @@ class AgentOrchestrator:
                 AGENT_CONFIG[role]["max_tokens"]
             )
 
-
             responses[role] = response
-
-
-            limit = AGENT_CONFIG[role]["max_context"]
-
-            previous_results += f"""
-
-            ===== {role} =====
-
-            {response[:limit]}
-
-            """
-
+            previous_results += f"\n\n===== {role} =====\n\n{response[:limit]}\n\n"
 
         return responses
