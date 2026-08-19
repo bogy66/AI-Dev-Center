@@ -96,6 +96,14 @@ pre {
 🤖 AI Dev Center
 </div>
 
+<div class="card" id="approval-section">
+    <h2>Udo Freigabe</h2>
+    <div id="approval-status">Lade Status...</div>
+    <textarea id="approval-comment" placeholder="Kommentar"></textarea>
+    <button id="approve-button" onclick="approve()">✅ FREIGEBEN</button>
+    <button id="reject-button" onclick="reject()">❌ ABLEHNEN</button>
+</div>
+
 
 <div class="container">
 
@@ -172,7 +180,89 @@ Bereit...
 <script>
 
 
-async function runAI(){
+async function fetchApprovalStatus() {
+    try {
+        let response = await fetch("/approval");
+        let data = await response.json();
+        updateApprovalUI(data);
+    } catch (error) {
+        document.getElementById("approval-status").innerText = "Fehler beim Laden des Status";
+    }
+}
+
+function updateApprovalUI(data) {
+    const statusElement = document.getElementById("approval-status");
+    const commentElement = document.getElementById("approval-comment");
+    const approveButton = document.getElementById("approve-button");
+    const rejectButton = document.getElementById("reject-button");
+
+    switch (data.status) {
+        case "waiting":
+            statusElement.innerText = "WARTET AUF FREIGABE";
+            commentElement.style.display = "block";
+            approveButton.style.display = "inline-block";
+            rejectButton.style.display = "inline-block";
+            break;
+        case "approved":
+            statusElement.innerText = "FREIGEGEBEN";
+            commentElement.style.display = "none";
+            approveButton.style.display = "none";
+            rejectButton.style.display = "none";
+            break;
+        case "rejected":
+            statusElement.innerText = "ABGELEHNT";
+            commentElement.style.display = "none";
+            approveButton.style.display = "none";
+            rejectButton.style.display = "none";
+            break;
+        default:
+            statusElement.innerText = "Unbekannter Status";
+    }
+}
+
+async function approve() {
+    const comment = document.getElementById("approval-comment").value;
+    try {
+        let response = await fetch("/approval/approve", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                approved_by: "Udo",
+                comment: comment
+            })
+        });
+        let data = await response.json();
+        updateApprovalUI(data);
+    } catch (error) {
+        document.getElementById("approval-status").innerText = "Fehler beim Freigeben";
+    }
+}
+
+async function reject() {
+    const comment = document.getElementById("approval-comment").value;
+    try {
+        let response = await fetch("/approval/reject", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                approved_by: "Udo",
+                comment: comment
+            })
+        });
+        let data = await response.json();
+        updateApprovalUI(data);
+    } catch (error) {
+        document.getElementById("approval-status").innerText = "Fehler beim Ablehnen";
+    }
+}
+
+window.onload = function() {
+    fetchApprovalStatus();
+};
 
 
 document.getElementById("result").innerHTML =
