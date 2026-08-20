@@ -16,10 +16,12 @@ class AgentOrchestrator:
     def __init__(
         self,
         agent_manager: AgentManager,
-        agent_executor: AgentExecutor
+        agent_executor: AgentExecutor,
+        workflow_manager: WorkflowManager | None = None
     ):
         self.agent_manager = agent_manager
         self.agent_executor = agent_executor
+        self.workflow_manager = workflow_manager
         self.project_reader = ProjectReader()
 
     def _ensure_workflow_state(self, state):
@@ -157,7 +159,7 @@ class AgentOrchestrator:
         project,
         task
     ):
-        workflow_manager = WorkflowManager()
+        workflow_manager = self.workflow_manager or WorkflowManager()
         git_manager = GitManager()
         tester_agent = TesterAgent()
         reviewer_agent = ReviewerAgent()
@@ -314,7 +316,7 @@ class AgentOrchestrator:
         return state
 
     def rework_workflow(self, project):
-        workflow_manager = WorkflowManager()
+        workflow_manager = self.workflow_manager or WorkflowManager()
         git_manager = GitManager()
         tester_agent = TesterAgent()
         reviewer_agent = ReviewerAgent()

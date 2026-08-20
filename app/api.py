@@ -18,16 +18,27 @@ app = FastAPI(
 )
 
 
+# Gemeinsamer Workflow-State
+workflow_manager = WorkflowManager()
+
+
+# Orchestrator
 orchestrator = AgentOrchestrator(
     AgentManager(),
-    AgentExecutor()
+    AgentExecutor(),
+    workflow_manager
 )
 
 
-approval_manager = ApprovalManager()
+# Approval
+approval_manager = ApprovalManager(
+    storage=workflow_manager.storage
+)
 
+
+# Publisher
 workflow_publisher = WorkflowPublisher(
-    WorkflowManager(),
+    workflow_manager,
     GitManager()
 )
 
@@ -70,10 +81,12 @@ def reject_approval(request: ApprovalRequest):
 
     return approval_manager.get_status()
 
+
 @app.get("/workflow")
 def get_workflow_status():
-    workflow_manager = WorkflowManager()
-    return workflow_manager.load()
+    # Neue Instanz pro Request, damit Tests WorkflowManager patchen können.
+    return WorkflowManager().load()
+
 
 @app.post("/workflow/run")
 def run_workflow(task: Task):
@@ -81,6 +94,14 @@ def run_workflow(task: Task):
         task.project,
         task.task
     )
+
+
+@app.post("/workflow/rework")
+def rework_workflow(request: PublishRequest):
+    return orchestrator.rework_workflow(
+        request.project
+    )
+
 
 @app.post("/workflow/publish")
 def publish_workflow(request: PublishRequest):
