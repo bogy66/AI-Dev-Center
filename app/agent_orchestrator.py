@@ -229,9 +229,10 @@ class AgentOrchestrator:
                 state["status"] = "development_no_changes"
             else:
                 state["status"] = "development_failed"
-                state["developer"]["error"] = commit_result.get(
-                    "stdout",
-                    commit_result.get("stderr", "")
+                state["developer"]["error"] = (
+                    commit_result.get("stdout")
+                    or commit_result.get("stderr")
+                    or ""
                 )
 
             workflow_manager.save(state)
@@ -370,9 +371,10 @@ Rückmeldung.
 
         if commit_result.get("code") != 0:
             state["status"] = "rework_failed"
-            state["developer"]["error"] = commit_result.get(
-                "stdout",
-                commit_result.get("stderr", "")
+            state["developer"]["error"] = (
+                commit_result.get("stdout")
+                or commit_result.get("stderr")
+                or ""
             )
 
             workflow_manager.save(state)

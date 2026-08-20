@@ -30,14 +30,6 @@ def _developer_only_executor(response=DEVELOPER_RESPONSE):
     return executor_run
 
 
-# ---------------------------------------------------------------------------
-# TC-F1-01
-# Given: fresh workflow state, developer change applied successfully,
-#        git commit fails with a generic (non "nothing to commit") error.
-# When:  orchestrator.run_workflow() is called.
-# Then:  result["status"] must be an explicit, distinct failure marker,
-#        not silently left as the untouched prior state.
-# ---------------------------------------------------------------------------
 def test_tc_f1_01_git_commit_failure_not_signaled_in_run_workflow():
 
     mock_agent_manager = MagicMock()
@@ -121,13 +113,93 @@ def test_tc_f1_01_git_commit_failure_not_signaled_in_run_workflow():
     assert result["developer"]["commit"] is None
 
 
-# ---------------------------------------------------------------------------
-# TC-F2-01
-# Given: a rejected workflow state (rework scenario), developer change
-#        applied successfully, git commit fails with a generic error.
-# When:  orchestrator.rework_workflow() is called.
-# Then:  result["status"] must be an explicit, distinct failure marker.
-# ---------------------------------------------------------------------------
+def test_tc_f1_02_git_commit_failure_error_message_lost_when_stdout_empty():
+
+    mock_agent_manager = MagicMock()
+    mock_agent_executor = MagicMock()
+    mock_agent_executor.run.side_effect = _developer_only_executor()
+
+    orchestrator = AgentOrchestrator(
+        mock_agent_manager,
+        mock_agent_executor
+    )
+
+    git_manager = MagicMock()
+    git_manager.commit_and_get_hash.return_value = {
+        "code": 1,
+        "stdout": "",
+        "stderr": "fatal: ambiguous argument 'HEAD': unknown revision"
+    }
+
+    file_applier = MagicMock()
+    file_applier.apply.return_value = {
+        "applied": ["app/example.py"]
+    }
+
+    initial_state = {
+        "status": "started",
+        "developer": {
+            "status": "pending",
+            "commit": None
+        },
+        "tester": {
+            "status": "pending",
+            "commit": None,
+            "result": None
+        },
+        "reviewer": {
+            "status": "pending",
+            "result": None
+        },
+        "user_approval": {
+            "status": "waiting",
+            "approved_by": None,
+            "approved_at": None,
+            "comment": None
+        }
+    }
+
+    with patch(
+        "app.agent_orchestrator.GitManager",
+        return_value=git_manager
+    ), patch(
+        "app.agent_orchestrator.TesterAgent"
+    ), patch(
+        "app.agent_orchestrator.ReviewerAgent"
+    ) as reviewer_class, patch(
+        "app.agent_orchestrator.WorkflowManager"
+    ) as workflow_class, patch(
+        "app.agent_orchestrator.DeveloperFileApplier",
+        return_value=file_applier
+    ):
+
+        workflow_manager = workflow_class.return_value
+        workflow_manager.storage = "mock_workflow_state.json"
+        workflow_manager.load.return_value = initial_state
+
+        result = orchestrator.run_workflow(
+            "mock_project",
+            "mock_task"
+        )
+
+        reviewer_class.return_value.review.assert_not_called()
+
+    assert result["status"] == "development_failed"
+
+    assert result["developer"]["error"] == (
+        "fatal: ambiguous argument 'HEAD': unknown revision"
+    ), (
+        "Expected the actual git error message from stderr to be "
+        "persisted when commit_and_get_hash() fails with an empty "
+        "stdout, but got "
+        f"{result['developer']['error']!r}. The current implementation "
+        "used commit_result.get('stdout', commit_result.get('stderr', "
+        "'')) which returns the empty stdout value instead of falling "
+        "back to stderr, because dict.get() only falls back on a "
+        "missing key, not on a falsy value."
+    )
+
+
 def test_tc_f2_01_git_commit_failure_not_signaled_in_rework_workflow():
 
     mock_agent_manager = MagicMock()
@@ -207,13 +279,90 @@ def test_tc_f2_01_git_commit_failure_not_signaled_in_rework_workflow():
     assert result["user_approval"]["status"] == "rejected"
 
 
-# ---------------------------------------------------------------------------
-# TC-F3-01
-# Given: run_workflow, developer commit succeeds, tester reports FAIL.
-# When:  orchestrator.run_workflow() is called.
-# Then:  result["status"] must be an explicit "tester_failed" marker,
-#        distinct from "started".
-# ---------------------------------------------------------------------------
+def test_tc_f2_02_rework_git_commit_failure_error_message_lost_when_stdout_empty():
+
+    mock_agent_manager = MagicMock()
+    mock_agent_executor = MagicMock()
+    mock_agent_executor.run.return_value = DEVELOPER_RESPONSE
+
+    orchestrator = AgentOrchestrator(
+        mock_agent_manager,
+        mock_agent_executor
+    )
+
+    workflow_state = {
+        "task": "Erstelle app/example.py",
+        "branch": "dev_branch",
+        "status": "changes_required",
+        "developer": {
+            "status": "completed",
+            "commit": "old123"
+        },
+        "tester": {
+            "status": "failed",
+            "commit": None,
+            "result": "Inhalt stimmt nicht"
+        },
+        "reviewer": {
+            "status": "changes_required",
+            "result": "Review fehlgeschlagen"
+        },
+        "user_approval": {
+            "status": "rejected",
+            "approved_by": "Udo",
+            "approved_at": "2026-08-19T20:40:01",
+            "comment": "Needs changes"
+        }
+    }
+
+    with patch(
+        "app.agent_orchestrator.WorkflowManager"
+    ) as workflow_class, patch(
+        "app.agent_orchestrator.GitManager"
+    ) as git_class, patch(
+        "app.agent_orchestrator.TesterAgent"
+    ) as tester_class, patch(
+        "app.agent_orchestrator.ReviewerAgent"
+    ) as reviewer_class, patch(
+        "app.agent_orchestrator.DeveloperFileApplier"
+    ) as applier_class:
+
+        workflow = workflow_class.return_value
+        workflow.load.return_value = workflow_state
+        workflow.storage = "mock_workflow_state.json"
+
+        git_class.return_value.commit_and_get_hash.return_value = {
+            "code": 1,
+            "stdout": "",
+            "stderr": "fatal: not a valid object name HEAD"
+        }
+
+        applier_class.return_value.apply.return_value = {
+            "applied": ["app/example.py"]
+        }
+
+        result = orchestrator.rework_workflow(
+            "mock_project"
+        )
+
+        tester_class.return_value.test.assert_not_called()
+        reviewer_class.return_value.review.assert_not_called()
+
+    assert result["status"] == "rework_failed"
+
+    assert result["developer"]["error"] == (
+        "fatal: not a valid object name HEAD"
+    ), (
+        "Expected the actual git error message from stderr to be "
+        "persisted when commit_and_get_hash() fails during rework with "
+        "an empty stdout, but got "
+        f"{result['developer']['error']!r}. The current implementation "
+        "used commit_result.get('stdout', commit_result.get('stderr', "
+        "'')) which returns the empty stdout value instead of falling "
+        "back to stderr."
+    )
+
+
 def test_tc_f3_01_run_workflow_status_not_updated_on_tester_failure():
 
     mock_agent_manager = MagicMock()
@@ -290,12 +439,6 @@ def test_tc_f3_01_run_workflow_status_not_updated_on_tester_failure():
     )
 
 
-# ---------------------------------------------------------------------------
-# TC-F3-02
-# Given: run_workflow, tester passes, reviewer requests changes.
-# When:  orchestrator.run_workflow() is called.
-# Then:  result["status"] must be an explicit "review_failed" marker.
-# ---------------------------------------------------------------------------
 def test_tc_f3_02_run_workflow_status_not_updated_on_reviewer_rejection():
 
     mock_agent_manager = MagicMock()
@@ -377,13 +520,6 @@ def test_tc_f3_02_run_workflow_status_not_updated_on_reviewer_rejection():
     )
 
 
-# ---------------------------------------------------------------------------
-# TC-F3-03
-# Given: rework_workflow, developer commit succeeds, tester reports FAIL.
-# When:  orchestrator.rework_workflow() is called.
-# Then:  result["status"] must be an explicit "tester_failed" marker,
-#        distinct from the prior "changes_required" status.
-# ---------------------------------------------------------------------------
 def test_tc_f3_03_rework_workflow_status_not_updated_on_tester_failure():
 
     mock_agent_manager = MagicMock()
@@ -466,13 +602,6 @@ def test_tc_f3_03_rework_workflow_status_not_updated_on_tester_failure():
     )
 
 
-# ---------------------------------------------------------------------------
-# TC-F3-04
-# Given: rework_workflow, tester passes, reviewer requests changes again.
-# When:  orchestrator.rework_workflow() is called.
-# Then:  result["status"] must be an explicit "review_failed" marker,
-#        distinct from the prior "changes_required" status.
-# ---------------------------------------------------------------------------
 def test_tc_f3_04_rework_workflow_status_not_updated_on_reviewer_rejection():
 
     mock_agent_manager = MagicMock()
@@ -558,15 +687,6 @@ def test_tc_f3_04_rework_workflow_status_not_updated_on_reviewer_rejection():
     )
 
 
-# ---------------------------------------------------------------------------
-# TC-F4-01
-# Given: a persisted workflow state already in "approval_waiting" with a
-#        completed developer commit "abc123".
-# When:  orchestrator.run_workflow() is called again with a new task,
-#        before any approve/reject decision has been made.
-# Then:  the pending approval state must be preserved (developer.commit
-#        must still be "abc123"), not silently discarded.
-# ---------------------------------------------------------------------------
 def test_tc_f4_01_run_workflow_overwrites_pending_approval_state(tmp_path):
 
     storage = tmp_path / "workflow_state.json"
