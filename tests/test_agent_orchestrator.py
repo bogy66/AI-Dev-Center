@@ -314,7 +314,38 @@ python -m pytest -q
                 "mock_task"
             )
 
-        file_applier.apply.assert_called_once()
+        # Verify that file_applier.apply() was called for both developer and tester
+        assert file_applier.apply.call_count == 2, (
+            "Expected file_applier.apply() to be called twice (once for developer, once for tester)"
+        )
+
+        # Get all the calls to apply()
+        apply_calls = file_applier.apply.call_args_list
+
+        # Verify developer changes were applied
+        developer_call_found = False
+        tester_call_found = False
+
+        for call in apply_calls:
+            changes = call[0][0]  # First argument to apply() is the changes list
+            
+            for change in changes:
+                if change.get("file") == "app/example.py" and change.get("action") == "update":
+                    if 'print("changed")' in change.get("content", ""):
+                        developer_call_found = True
+                elif change.get("file") == "tests/test_example.py" and change.get("action") == "create":
+                    if "def test_example():" in change.get("content", ""):
+                        tester_call_found = True
+
+        assert developer_call_found, (
+            "Expected developer changes for app/example.py with update action and "
+            'print("changed") content to be applied'
+        )
+
+        assert tester_call_found, (
+            "Expected tester changes for tests/test_example.py with create action and "
+            "test function content to be applied"
+        )
 
         assert result["status"] == "approval_waiting"
 
