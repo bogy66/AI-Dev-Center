@@ -48,6 +48,10 @@ class DeveloperFileApplier:
 
             elif action == "update":
                 if not file_path.exists():
+                    skipped.append({
+                        "file": change["file"],
+                        "reason": "file_not_found"
+                    })
                     continue
 
                 file_path.write_text(
@@ -58,6 +62,10 @@ class DeveloperFileApplier:
 
             elif action == "delete":
                 if not file_path.exists():
+                    skipped.append({
+                        "file": change["file"],
+                        "reason": "file_not_found"
+                    })
                     continue
 
                 file_path.unlink()
