@@ -575,12 +575,23 @@ Rückmeldung.
                     workflow_manager.load()
                 )
 
-                state["status"] = "rework_failed"
-                state["developer"]["error"] = (
-                    commit_result.get("stdout")
-                    or commit_result.get("stderr")
-                    or ""
-                )
+                stdout = commit_result.get(
+                    "stdout",
+                    ""
+                ).lower()
+
+                if (
+                    "nothing to commit" in stdout
+                    and "working tree clean" in stdout
+                ):
+                    state["status"] = "development_no_changes"
+                else:
+                    state["status"] = "rework_failed"
+                    state["developer"]["error"] = (
+                        commit_result.get("stdout")
+                        or commit_result.get("stderr")
+                        or ""
+                    )
 
                 state = self._save_preserving_approval(
                     workflow_manager,
