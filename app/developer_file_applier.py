@@ -28,6 +28,9 @@ class DeveloperFileApplier:
                 continue
 
             if action == "create":
+                if file_path.exists():
+                    continue
+
                 file_path.parent.mkdir(
                     parents=True,
                     exist_ok=True
