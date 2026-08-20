@@ -590,8 +590,21 @@ python -m pytest -q
 
     calls = mock_agent_executor.run.call_args_list
 
-    assert len(calls) == 1
-    assert calls[0].args[3] == "developer"
+    # Verify exactly one developer call and one tester call, no project manager
+    developer_calls = [call for call in calls if call.args[3] == "developer"]
+    tester_calls = [call for call in calls if call.args[3] == "tester"]
+    project_manager_calls = [call for call in calls if call.args[3] == "project_manager"]
+
+    assert len(developer_calls) == 1, (
+        f"Expected exactly one developer call, but got {len(developer_calls)}"
+    )
+    assert len(tester_calls) == 1, (
+        f"Expected exactly one tester call, but got {len(tester_calls)}"
+    )
+    assert len(project_manager_calls) == 0, (
+        "Expected no project manager call during rework (no planning phase), "
+        f"but got {len(project_manager_calls)}"
+    )
 
     tester_class.return_value.test.assert_called_once()
     reviewer_class.return_value.review.assert_called_once()
