@@ -1,0 +1,10 @@
+def commit_and_get_hash(self, project, message):
+    result = self.commit(project, message)
+    if result["code"] != 0:
+        return result
+    commit = self.last_commit(project)
+    return {
+        "code": 0,
+        "commit": commit["stdout"],
+        "message": message
+    }

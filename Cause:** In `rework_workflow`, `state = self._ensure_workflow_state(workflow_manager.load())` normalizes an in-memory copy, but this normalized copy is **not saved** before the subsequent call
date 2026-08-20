@@ -1,0 +1,1 @@
+workflow_manager.update_agent("developer", "completed", commit=commit_result["commit"])
