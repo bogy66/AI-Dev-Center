@@ -382,7 +382,24 @@ python -m pytest -q
     ):
         if role_name == "developer":
             return developer_response
+        elif role_name == "tester":
+            return """
+## Dateien
 
+### Datei:
+tests/test_example.py
+
+### Aktion:
+create
+
+### Inhalt:
+def test_example():
+    assert True
+
+## Tests
+
+python -m pytest -q
+"""
         return "mock_response"
 
     mock_agent_executor.run.side_effect = executor_run
@@ -400,21 +417,13 @@ python -m pytest -q
         "message": "DEV: Development completed"
     }
 
-    tester_agent = MagicMock()
-
-    tester_agent.test.return_value = {
-        "status": "started",
-        "tester": {
-            "status": "completed",
-            "commit": "abc123",
-            "result": "PASS"
-        }
-    }
-
     reviewer_agent = MagicMock()
 
     reviewer_agent.review.return_value = {
-        "status": "approved"
+        "reviewer": {
+            "status": "approved",
+            "result": "Review successful"
+        }
     }
 
     storage = Path(git_repo) / "workflow_state.json"
@@ -430,20 +439,40 @@ python -m pytest -q
         "app.agent_orchestrator.GitManager",
         return_value=git_manager
     ), patch(
-        "app.agent_orchestrator.TesterAgent",
-        return_value=tester_agent
-    ), patch(
         "app.agent_orchestrator.ReviewerAgent",
         return_value=reviewer_agent
     ), patch(
         "app.agent_orchestrator.DeveloperFileApplier"
-    ) as file_applier_class:
+    ) as file_applier_class, patch(
+        "app.agent_orchestrator.WorkspaceManager"
+    ) as workspace_class, patch(
+        "app.agent_orchestrator.TestBench"
+    ) as testbench_class:
 
         file_applier = file_applier_class.return_value
 
         file_applier.apply.return_value = {
             "applied": ["app/example.py"]
         }
+
+        # Mock workspace manager
+        workspace_manager = workspace_class.return_value
+        workspace_manager.create_developer_workspace.return_value = {
+            "path": "/tmp/dev_workspace",
+            "branch": "dev-branch"
+        }
+        workspace_manager.create_tester_workspace.return_value = {
+            "path": "/tmp/test_workspace", 
+            "branch": "test-branch"
+        }
+
+        # Mock test bench to succeed completely
+        testbench_instance = MagicMock()
+        testbench_class.return_value = testbench_instance
+        testbench_instance.setup_testbench.return_value = "/tmp/testbench"
+        testbench_instance.merge_commits.return_value = True
+        testbench_instance.run_tests.return_value = {"success": True, "output": "All tests passed"}
+        testbench_instance.cleanup_testbench.return_value = None
 
         result = orchestrator.run_workflow(
             git_repo,
@@ -456,8 +485,9 @@ python -m pytest -q
 
     assert persisted["status"] == "approval_waiting"
     assert persisted["developer"]["status"] == "completed"
+    assert persisted["developer"]["commit"] == "abc123"
     assert persisted["tester"]["status"] == "completed"
-    assert persisted["tester"]["result"] == "PASS"
+    assert persisted["tester"]["commit"] == "abc123"
     assert persisted["reviewer"]["status"] == "approved"
     assert persisted["user_approval"]["status"] == "waiting"
 
