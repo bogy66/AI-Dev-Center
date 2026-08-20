@@ -47,9 +47,15 @@ class SpecificationTester:
                     )
                     continue
 
-                actual_content = path.read_text(
-                    encoding="utf-8"
-                )
+                try:
+                    actual_content = path.read_text(
+                        encoding="utf-8"
+                    )
+                except OSError as error:
+                    errors.append(
+                        f"Konnte Datei nicht lesen: {file_path}: {error}"
+                    )
+                    continue
 
                 if actual_content != expected_content:
                     errors.append(
