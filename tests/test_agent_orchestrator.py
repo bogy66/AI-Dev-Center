@@ -552,7 +552,11 @@ python -m pytest -q
         "app.agent_orchestrator.ReviewerAgent"
     ) as reviewer_class, patch(
         "app.agent_orchestrator.DeveloperFileApplier"
-    ) as applier_class:
+    ) as applier_class, patch(
+        "app.agent_orchestrator.WorkspaceManager"
+    ) as workspace_class, patch(
+        "app.agent_orchestrator.TestBench"
+    ) as testbench_class:
 
         workflow = workflow_class.return_value
         workflow.load.return_value = workflow_state
@@ -577,6 +581,25 @@ python -m pytest -q
             "status": "approved",
             "result": "Review erfolgreich"
         }
+
+        # Mock workspace manager
+        workspace_manager = workspace_class.return_value
+        workspace_manager.create_developer_workspace.return_value = {
+            "path": "/tmp/dev_workspace",
+            "branch": "dev-branch"
+        }
+        workspace_manager.create_tester_workspace.return_value = {
+            "path": "/tmp/test_workspace", 
+            "branch": "test-branch"
+        }
+
+        # Mock test bench to succeed completely
+        testbench_instance = MagicMock()
+        testbench_class.return_value = testbench_instance
+        testbench_instance.setup_testbench.return_value = "/tmp/testbench"
+        testbench_instance.merge_commits.return_value = True
+        testbench_instance.run_tests.return_value = {"success": True, "output": "All tests passed"}
+        testbench_instance.cleanup_testbench.return_value = None
 
         result = orchestrator.rework_workflow(
             git_repo
