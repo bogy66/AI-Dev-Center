@@ -36,14 +36,30 @@ class DeveloperFileApplier:
                     })
                     continue
 
-                file_path.parent.mkdir(
-                    parents=True,
-                    exist_ok=True
-                )
-                file_path.write_text(
-                    content,
-                    encoding="utf-8"
-                )
+                try:
+                    file_path.parent.mkdir(
+                        parents=True,
+                        exist_ok=True
+                    )
+                except OSError as error:
+                    skipped.append({
+                        "file": change["file"],
+                        "reason": f"mkdir_failed: {error}"
+                    })
+                    continue
+
+                try:
+                    file_path.write_text(
+                        content,
+                        encoding="utf-8"
+                    )
+                except OSError as error:
+                    skipped.append({
+                        "file": change["file"],
+                        "reason": f"write_failed: {error}"
+                    })
+                    continue
+
                 applied.append(change["file"])
 
             elif action == "update":

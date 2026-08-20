@@ -195,3 +195,29 @@ def test_apply_mixed_applied_and_skipped(tmp_path):
     ).read_text(encoding="utf-8") == 'print("new")'
 
     assert existing.read_text(encoding="utf-8") == 'print("original")'
+
+
+def test_apply_create_fails_on_mkdir_permission_error(tmp_path):
+    applier = DeveloperFileApplier(tmp_path)
+
+    # Create a file where we want the directory to be
+    # This will cause mkdir to fail
+    (tmp_path / "app").write_text("not a directory", encoding="utf-8")
+
+    result = applier.apply({
+        "changes": [
+            {
+                "file": "app/new_file.py",
+                "action": "create",
+                "content": 'print("new")'
+            }
+        ]
+    })
+
+    assert result["applied"] == []
+    assert result["skipped"] == [
+        {
+            "file": "app/new_file.py",
+            "reason": "mkdir_failed: [Errno 20] Not a directory: '/tmp"
+        }
+    ]
