@@ -1,20 +1,29 @@
-import subprocess
+import py_compile
+from pathlib import Path
 
 
 class TestRunner:
 
     def run(self, project):
 
-        result = subprocess.run(
-            "python -m py_compile app/*.py",
-            cwd=project,
-            shell=True,
-            text=True,
-            capture_output=True
-        )
+        app_dir = Path(project) / "app"
+
+        errors = []
+
+        for file in sorted(app_dir.rglob("*.py")):
+
+            try:
+                py_compile.compile(
+                    str(file),
+                    doraise=True
+                )
+            except py_compile.PyCompileError as error:
+                errors.append(str(error))
+
+        success = not errors
 
         return {
-            "success": result.returncode == 0,
-            "stdout": result.stdout.strip(),
-            "stderr": result.stderr.strip()
+            "success": success,
+            "stdout": "",
+            "stderr": "\n".join(errors)
         }

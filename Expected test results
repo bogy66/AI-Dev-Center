@@ -1,5 +1,5 @@
-python -m pytest tests/test_developer_file_applier.py -q
-========================= 6 passed =========================
+python -m pytest tests/test_test_runner.py -q
+========================= all passed =========================
 
 python -m pytest -q
 ========================= all tests passed =========================
