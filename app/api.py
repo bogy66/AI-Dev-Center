@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from app.agent_executor import AgentExecutor
@@ -25,6 +25,21 @@ TECHNICAL_FAILURE_STATUSES = {
     "review_failed",
     "rework_failed",
 }
+
+
+class WorkflowFailureException(HTTPException):
+    """Custom exception that returns workflow state as response body."""
+    def __init__(self, workflow_state):
+        super().__init__(status_code=500, detail=workflow_state)
+        self.workflow_state = workflow_state
+
+
+@app.exception_handler(WorkflowFailureException)
+async def workflow_failure_exception_handler(request, exc: WorkflowFailureException):
+    return JSONResponse(
+        status_code=500,
+        content=exc.workflow_state
+    )
 
 
 # Gemeinsamer Workflow-State
@@ -106,10 +121,7 @@ def run_workflow(task: Task):
     
     status = result.get("status", "")
     if status in TECHNICAL_FAILURE_STATUSES:
-        raise HTTPException(
-            status_code=500,
-            detail=result
-        )
+        raise WorkflowFailureException(result)
     
     return result
 
@@ -122,10 +134,7 @@ def rework_workflow(request: PublishRequest):
     
     status = result.get("status", "")
     if status in TECHNICAL_FAILURE_STATUSES:
-        raise HTTPException(
-            status_code=500,
-            detail=result
-        )
+        raise WorkflowFailureException(result)
     
     return result
 
