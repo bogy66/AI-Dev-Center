@@ -10,7 +10,7 @@ class TesterAgent:
 
     def test(self, project, changes):
 
-        result = self.runner.run(project)
+        result = self.runner.run(project, changes)
 
         if not result["success"]:
             return {
