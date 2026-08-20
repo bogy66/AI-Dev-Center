@@ -327,15 +327,17 @@ python -m pytest -q
         tester_call_found = False
 
         for call in apply_calls:
-            changes = call[0][0]  # First argument to apply() is the changes list
+            changes_dict = call[0][0]  # First argument to apply() is the DeveloperChanges dict
             
-            for change in changes:
-                if change.get("file") == "app/example.py" and change.get("action") == "update":
-                    if 'print("changed")' in change.get("content", ""):
-                        developer_call_found = True
-                elif change.get("file") == "tests/test_example.py" and change.get("action") == "create":
-                    if "def test_example():" in change.get("content", ""):
-                        tester_call_found = True
+            # Check if this is a developer call (has "changes" key with app/example.py)
+            if "changes" in changes_dict:
+                for change in changes_dict["changes"]:
+                    if change.get("file") == "app/example.py" and change.get("action") == "update":
+                        if 'print("changed")' in change.get("content", ""):
+                            developer_call_found = True
+                    elif change.get("file") == "tests/test_example.py" and change.get("action") == "create":
+                        if "def test_example():" in change.get("content", ""):
+                            tester_call_found = True
 
         assert developer_call_found, (
             "Expected developer changes for app/example.py with update action and "
