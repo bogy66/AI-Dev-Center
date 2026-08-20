@@ -284,17 +284,13 @@ class AgentOrchestrator:
             developer_workspace = workspace_manager.create_developer_workspace(workflow_id)
             tester_workspace = workspace_manager.create_tester_workspace(workflow_id)
 
-            # Developer and Tester run in parallel
-            from concurrent.futures import ThreadPoolExecutor, as_completed
-            
+            # Developer runs first
             developer_result = None
             tester_result = None
-            developer_error = None
-            tester_error = None
-            
+            developer_changes = None
+
             def run_developer():
-                nonlocal developer_result, developer_error
-                
+                nonlocal developer_result, developer_changes
                 try:
                     developer_response = self.agent_executor.run(
                         AGENT_ROLES["developer"],
@@ -344,7 +340,8 @@ class AgentOrchestrator:
 
                     return {
                         "status": "developer_completed",
-                        "commit": commit_result["commit"]
+                        "commit": commit_result["commit"],
+                        "changes": developer_changes
                     }
                     
                 except Exception as error:
@@ -353,15 +350,32 @@ class AgentOrchestrator:
                         "error": str(error)
                     }
 
-            def run_tester():
-                nonlocal tester_result, tester_error
-                
+            def run_tester(dev_changes):
+                nonlocal tester_result
                 try:
-                    # Generate tests based on requirements
+                    # Build context from developer changes
+                    dev_context = ""
+                    if dev_changes:
+                        try:
+                            change_lines = []
+                            for change in dev_changes:
+                                if isinstance(change, dict):
+                                    action = change.get("action", "")
+                                    path = change.get("file_path", "")
+                                else:
+                                    action = getattr(change, "action", "")
+                                    path = getattr(change, "file_path", "")
+                                change_lines.append(f"{action} {path}")
+                            dev_context = "Developer changes:\n" + "\n".join(change_lines)
+                        except Exception:
+                            dev_context = "Developer changes:\n" + str(dev_changes)
+                    else:
+                        dev_context = "No developer changes."
+
                     test_response = self.agent_executor.run(
                         AGENT_ROLES["tester"],
                         task,
-                        "",
+                        dev_context,
                         "tester",
                         AGENT_CONFIG["tester"]["max_tokens"]
                     )
@@ -414,28 +428,10 @@ class AgentOrchestrator:
                         "error": str(error)
                     }
 
-            # Run Developer and Tester in parallel
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                futures = {
-                    executor.submit(run_developer): "developer",
-                    executor.submit(run_tester): "tester"
-                }
-                
-                for future in as_completed(futures):
-                    role = futures[future]
-                    try:
-                        result = future.result()
-                        if role == "developer":
-                            developer_result = result
-                        else:
-                            tester_result = result
-                    except Exception as error:
-                        if role == "developer":
-                            developer_error = str(error)
-                        else:
-                            tester_error = str(error)
+            # Run Developer
+            developer_result = run_developer()
 
-            # Check for failures
+            # Check for developer failures
             if developer_result and developer_result.get("status") == "developer_incomplete":
                 state = self._ensure_workflow_state(workflow_manager.load())
                 state["status"] = "development_incomplete"
@@ -452,112 +448,132 @@ class AgentOrchestrator:
                 workspace_manager.cleanup_workspace(workflow_id)
                 return state
 
-            if tester_result and tester_result.get("status") in ("tester_failed", "tester_incomplete", "tester_no_changes"):
-                state = self._ensure_workflow_state(workflow_manager.load())
-                state["status"] = "tester_failed"
-                state["tester"]["error"] = tester_result.get("error") or "Tester failed"
-                state = self._save_preserving_approval(workflow_manager, state)
-                workspace_manager.cleanup_workspace(workflow_id)
-                return state
+            # Developer completed successfully, now run Tester
+            if developer_result and developer_result.get("status") == "developer_completed":
+                dev_changes = developer_result.get("changes", [])
+                tester_result = run_tester(dev_changes)
 
-            # Both Developer and Tester completed successfully
-            if developer_result and developer_result.get("status") == "developer_completed" and \
-               tester_result and tester_result.get("status") == "tester_completed":
-                
-                # Setup testbench
-                test_bench = TestBench(project)
-                testbench_path = test_bench.setup_testbench(
-                    developer_result["commit"],
-                    tester_result["commit"]
-                )
-                
-                # Merge commits
-                if not test_bench.merge_commits(
-                    testbench_path,
-                    developer_result["commit"],
-                    tester_result["commit"]
-                ):
+                # Check for tester failures
+                if tester_result and tester_result.get("status") == "tester_incomplete":
                     state = self._ensure_workflow_state(workflow_manager.load())
-                    state["status"] = "testbench_failed"
-                    state["testbench"] = {"error": "Failed to merge commits"}
+                    state["status"] = "tester_failed"
+                    state["tester"]["skipped"] = tester_result.get("skipped")
                     state = self._save_preserving_approval(workflow_manager, state)
-                    test_bench.cleanup_testbench()
                     workspace_manager.cleanup_workspace(workflow_id)
                     return state
-                
-                # Run tests
-                test_result = test_bench.run_tests(testbench_path)
-                
-                if test_result["success"]:
-                    # Testbench passed - proceed to Reviewer
+
+                if tester_result and tester_result.get("status") in ("tester_failed", "tester_no_changes"):
                     state = self._ensure_workflow_state(workflow_manager.load())
-                    state["status"] = "testbench_passed"
-                    state["developer"]["status"] = "completed"
-                    state["developer"]["commit"] = developer_result["commit"]
-                    state["tester"]["status"] = "completed"
-                    state["tester"]["commit"] = tester_result["commit"]
+                    state["status"] = "tester_failed"
+                    state["tester"]["error"] = tester_result.get("error") or "Tester failed"
                     state = self._save_preserving_approval(workflow_manager, state)
-                    
-                    # Cleanup
-                    test_bench.cleanup_testbench()
                     workspace_manager.cleanup_workspace(workflow_id)
-                    
-                    # Continue to Reviewer
-                    reviewer_result = reviewer_agent.review(
-                        project,
-                        state
+                    return state
+
+                # Both Developer and Tester completed successfully
+                if tester_result and tester_result.get("status") == "tester_completed":
+                    # Setup testbench
+                    test_bench = TestBench(project)
+                    testbench_path = test_bench.setup_testbench(
+                        developer_result["commit"],
+                        tester_result["commit"]
                     )
                     
-                    state = self._merge_reviewer_result(
-                        workflow_manager.load(),
-                        reviewer_result
-                    )
+                    # Merge commits
+                    if not test_bench.merge_commits(
+                        testbench_path,
+                        developer_result["commit"],
+                        tester_result["commit"]
+                    ):
+                        state = self._ensure_workflow_state(workflow_manager.load())
+                        state["status"] = "testbench_failed"
+                        state["testbench"] = {"error": "Failed to merge commits"}
+                        state = self._save_preserving_approval(workflow_manager, state)
+                        test_bench.cleanup_testbench()
+                        workspace_manager.cleanup_workspace(workflow_id)
+                        return state
                     
-                    if state["reviewer"]["status"] != "approved":
-                        state["status"] = "review_failed"
+                    # Run tests
+                    test_result = test_bench.run_tests(testbench_path)
+                    
+                    if test_result["success"]:
+                        # Testbench passed - proceed to Reviewer
+                        state = self._ensure_workflow_state(workflow_manager.load())
+                        state["status"] = "testbench_passed"
+                        state["developer"]["status"] = "completed"
+                        state["developer"]["commit"] = developer_result["commit"]
+                        state["tester"]["status"] = "completed"
+                        state["tester"]["commit"] = tester_result["commit"]
+                        state = self._save_preserving_approval(workflow_manager, state)
+                        
+                        # Cleanup
+                        test_bench.cleanup_testbench()
+                        workspace_manager.cleanup_workspace(workflow_id)
+                        
+                        # Continue to Reviewer
+                        reviewer_result = reviewer_agent.review(
+                            project,
+                            state
+                        )
+                        
+                        state = self._merge_reviewer_result(
+                            workflow_manager.load(),
+                            reviewer_result
+                        )
+                        
+                        if state["reviewer"]["status"] != "approved":
+                            state["status"] = "review_failed"
+                            state = self._save_preserving_approval(
+                                workflow_manager,
+                                state
+                            )
+                            return state
+                        
                         state = self._save_preserving_approval(
                             workflow_manager,
                             state
                         )
+                        
+                        state["status"] = "approval_waiting"
+                        new_approval = {
+                            "status": "waiting",
+                            "approved_by": None,
+                            "approved_at": None,
+                            "comment": None
+                        }
+                        state["user_approval"] = new_approval
+                        state = self._save_preserving_approval(
+                            workflow_manager,
+                            state,
+                            new_approval=new_approval
+                        )
                         return state
-                    
-                    state = self._save_preserving_approval(
-                        workflow_manager,
-                        state
-                    )
-                    
-                    state["status"] = "approval_waiting"
-                    new_approval = {
-                        "status": "waiting",
-                        "approved_by": None,
-                        "approved_at": None,
-                        "comment": None
-                    }
-                    state["user_approval"] = new_approval
-                    state = self._save_preserving_approval(
-                        workflow_manager,
-                        state,
-                        new_approval=new_approval
-                    )
-                    return state
+                    else:
+                        # Testbench failed
+                        state = self._ensure_workflow_state(workflow_manager.load())
+                        state["status"] = "testbench_failed"
+
+                        state["tester"]["status"] = "failed"
+                        state["tester"]["result"] = test_result.get("output", "")
+
+                        state["testbench"] = {
+                            "errors": test_result.get("errors", []),
+                            "output": test_result.get("output", "")
+                        }
+
+                        state = self._save_preserving_approval(
+                            workflow_manager,
+                            state
+                        )
+                        test_bench.cleanup_testbench()
+                        workspace_manager.cleanup_workspace(workflow_id)
+                        return state
                 else:
-                    # Testbench failed
+                    # Unexpected state
                     state = self._ensure_workflow_state(workflow_manager.load())
-                    state["status"] = "testbench_failed"
-
-                    state["tester"]["status"] = "failed"
-                    state["tester"]["result"] = test_result.get("output", "")
-
-                    state["testbench"] = {
-                        "errors": test_result.get("errors", []),
-                        "output": test_result.get("output", "")
-                    }
-
-                    state = self._save_preserving_approval(
-                        workflow_manager,
-                        state
-                    )
-                    test_bench.cleanup_testbench()
+                    state["status"] = "development_failed"
+                    state["developer"]["error"] = "Unexpected workflow state"
+                    state = self._save_preserving_approval(workflow_manager, state)
                     workspace_manager.cleanup_workspace(workflow_id)
                     return state
             else:
