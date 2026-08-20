@@ -45,6 +45,9 @@ class GitManager:
             project
         )
 
+        if commit["code"] != 0:
+            return commit
+
         return {
             "code": 0,
             "commit": commit["stdout"],

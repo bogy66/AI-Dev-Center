@@ -1,0 +1,5 @@
+python -m pytest tests/test_p1_findings.py -q
+========================= 8 passed =========================
+
+python -m pytest -q
+========================= all tests passed =========================
