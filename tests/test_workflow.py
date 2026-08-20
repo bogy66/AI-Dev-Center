@@ -215,9 +215,6 @@ class TestWorkflow(unittest.TestCase):
             "commit": "dev123"
         }
 
-        # Mock tester failure through TestBench
-        testbench_instance.run_tests.return_value = {"success": False, "output": "Tests failed"}
-
         # Mock workspace manager
         workspace_manager = MockWorkspaceManager.return_value
         workspace_manager.create_developer_workspace.return_value = {
@@ -229,12 +226,12 @@ class TestWorkflow(unittest.TestCase):
             "branch": "test-branch"
         }
 
-        # Mock test bench to succeed completely
+        # Mock test bench to fail tests
         testbench_instance = MagicMock()
         MockTestBench.return_value = testbench_instance
         testbench_instance.setup_testbench.return_value = "/tmp/testbench"
         testbench_instance.merge_commits.return_value = True
-        testbench_instance.run_tests.return_value = {"success": True, "output": "All tests passed"}
+        testbench_instance.run_tests.return_value = {"success": False, "output": "Tests failed"}
         testbench_instance.cleanup_testbench.return_value = None
 
         orchestrator = AgentOrchestrator(
