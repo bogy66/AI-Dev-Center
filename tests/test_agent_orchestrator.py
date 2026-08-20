@@ -1,4 +1,5 @@
 from unittest.mock import MagicMock, patch
+from pathlib import Path
 
 from app.agent_orchestrator import AgentOrchestrator
 
@@ -278,7 +279,7 @@ python -m pytest -q
 
         assert result["status"] == "approval_waiting"
 
-def test_run_workflow_persists_approval_waiting(tmp_path):
+def test_run_workflow_persists_approval_waiting(git_repo):
 
     mock_agent_manager = MagicMock()
     mock_agent_executor = MagicMock()
@@ -344,7 +345,7 @@ python -m pytest -q
         "status": "approved"
     }
 
-    storage = tmp_path / "workflow_state.json"
+    storage = Path(git_repo) / "workflow_state.json"
 
     from app.workflow_manager import WorkflowManager
 
@@ -373,7 +374,7 @@ python -m pytest -q
         }
 
         result = orchestrator.run_workflow(
-            "mock_project",
+            git_repo,
             "mock_task"
         )
 
@@ -388,7 +389,7 @@ python -m pytest -q
     assert persisted["reviewer"]["status"] == "approved"
     assert persisted["user_approval"]["status"] == "waiting"
 
-def test_rework_workflow_reuses_existing_task_and_skips_planning():
+def test_rework_workflow_reuses_existing_task_and_skips_planning(git_repo):
     mock_agent_manager = MagicMock()
     mock_agent_executor = MagicMock()
 
@@ -476,7 +477,7 @@ python -m pytest -q
         }
 
         result = orchestrator.rework_workflow(
-            "mock_project"
+            git_repo
         )
 
     assert result["task"] == "Erstelle app/example.py"

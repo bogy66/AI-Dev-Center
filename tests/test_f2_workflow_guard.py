@@ -1,5 +1,6 @@
 import threading
 from unittest.mock import MagicMock, patch
+from pathlib import Path
 
 from app.agent_orchestrator import AgentOrchestrator
 from app.workflow_manager import WorkflowManager
@@ -66,9 +67,9 @@ def _configure_success_mocks(git_class, tester_class, reviewer_class, applier_cl
     }
 
 
-def test_two_parallel_run_workflow_calls_only_one_actually_starts(tmp_path):
+def test_two_parallel_run_workflow_calls_only_one_actually_starts(git_repo):
 
-    project = str(tmp_path)
+    project = git_repo
 
     started = threading.Event()
     release = threading.Event()
@@ -89,7 +90,7 @@ def test_two_parallel_run_workflow_calls_only_one_actually_starts(tmp_path):
     orchestrator = AgentOrchestrator(
         mock_agent_manager,
         mock_agent_executor,
-        workflow_manager=WorkflowManager(tmp_path / "workflow_state.json")
+        workflow_manager=WorkflowManager(Path(git_repo) / "workflow_state.json")
     )
 
     results = {}
@@ -149,10 +150,10 @@ def test_two_parallel_run_workflow_calls_only_one_actually_starts(tmp_path):
     )
 
 
-def test_two_different_projects_can_run_in_parallel(tmp_path):
+def test_two_different_projects_can_run_in_parallel(git_repo_a, git_repo_b):
 
-    project_a = str(tmp_path / "project_a")
-    project_b = str(tmp_path / "project_b")
+    project_a = git_repo_a
+    project_b = git_repo_b
 
     started_a = threading.Event()
     release_a = threading.Event()
@@ -173,13 +174,13 @@ def test_two_different_projects_can_run_in_parallel(tmp_path):
     orchestrator_a = AgentOrchestrator(
         mock_agent_manager,
         mock_agent_executor,
-        workflow_manager=WorkflowManager(tmp_path / "workflow_state_a.json")
+        workflow_manager=WorkflowManager(Path(git_repo_a) / "workflow_state_a.json")
     )
 
     orchestrator_b = AgentOrchestrator(
         mock_agent_manager,
         mock_agent_executor,
-        workflow_manager=WorkflowManager(tmp_path / "workflow_state_b.json")
+        workflow_manager=WorkflowManager(Path(git_repo_b) / "workflow_state_b.json")
     )
 
     results = {}
@@ -236,10 +237,10 @@ def test_two_different_projects_can_run_in_parallel(tmp_path):
 
 
 def test_run_workflow_blocks_concurrent_rework_workflow_for_same_project(
-    tmp_path
+    git_repo
 ):
 
-    project = str(tmp_path)
+    project = git_repo
 
     started = threading.Event()
     release = threading.Event()
@@ -260,7 +261,7 @@ def test_run_workflow_blocks_concurrent_rework_workflow_for_same_project(
     orchestrator = AgentOrchestrator(
         mock_agent_manager,
         mock_agent_executor,
-        workflow_manager=WorkflowManager(tmp_path / "workflow_state.json")
+        workflow_manager=WorkflowManager(Path(git_repo) / "workflow_state.json")
     )
 
     results = {}
@@ -314,10 +315,10 @@ def test_run_workflow_blocks_concurrent_rework_workflow_for_same_project(
 
 
 def test_guard_is_released_after_completion_allowing_subsequent_call(
-    tmp_path
+    git_repo
 ):
 
-    project = str(tmp_path)
+    project = git_repo
 
     mock_agent_manager = MagicMock()
     mock_agent_executor = MagicMock()
@@ -326,7 +327,7 @@ def test_guard_is_released_after_completion_allowing_subsequent_call(
     orchestrator = AgentOrchestrator(
         mock_agent_manager,
         mock_agent_executor,
-        workflow_manager=WorkflowManager(tmp_path / "workflow_state.json")
+        workflow_manager=WorkflowManager(Path(git_repo) / "workflow_state.json")
     )
 
     with patch(

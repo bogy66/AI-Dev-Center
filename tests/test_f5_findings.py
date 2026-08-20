@@ -1,4 +1,5 @@
 from unittest.mock import MagicMock, patch
+from pathlib import Path
 
 from app.agent_orchestrator import AgentOrchestrator
 
@@ -90,7 +91,7 @@ def _rejected_workflow_state():
 #        different from "development_no_changes" (which means the LLM
 #        proposed no changes at all).
 # ---------------------------------------------------------------------------
-def test_run_workflow_create_on_existing_file_only_is_development_incomplete():
+def test_run_workflow_create_on_existing_file_only_is_development_incomplete(git_repo):
 
     mock_agent_manager = MagicMock()
     mock_agent_executor = MagicMock()
@@ -139,7 +140,7 @@ def test_run_workflow_create_on_existing_file_only_is_development_incomplete():
         workflow_manager.load.return_value = initial_state
 
         result = orchestrator.run_workflow(
-            "mock_project",
+            git_repo,
             "mock_task"
         )
 
@@ -172,7 +173,7 @@ def test_run_workflow_create_on_existing_file_only_is_development_incomplete():
 # Then:  the workflow must NOT silently continue to commit/test/review/
 #        approval as if everything succeeded.
 # ---------------------------------------------------------------------------
-def test_run_workflow_mixed_applied_and_skipped_does_not_reach_approval():
+def test_run_workflow_mixed_applied_and_skipped_does_not_reach_approval(git_repo):
 
     mock_agent_manager = MagicMock()
     mock_agent_executor = MagicMock()
@@ -221,7 +222,7 @@ def test_run_workflow_mixed_applied_and_skipped_does_not_reach_approval():
         workflow_manager.load.return_value = initial_state
 
         result = orchestrator.run_workflow(
-            "mock_project",
+            git_repo,
             "mock_task"
         )
 
@@ -256,7 +257,7 @@ def test_run_workflow_mixed_applied_and_skipped_does_not_reach_approval():
 #        approval, and the existing "rejected" approval must be kept
 #        untouched.
 # ---------------------------------------------------------------------------
-def test_rework_workflow_mixed_applied_and_skipped_does_not_reach_approval():
+def test_rework_workflow_mixed_applied_and_skipped_does_not_reach_approval(git_repo):
 
     mock_agent_manager = MagicMock()
     mock_agent_executor = MagicMock()
@@ -296,7 +297,7 @@ def test_rework_workflow_mixed_applied_and_skipped_does_not_reach_approval():
         }
 
         result = orchestrator.rework_workflow(
-            "mock_project"
+            git_repo
         )
 
         git_class.return_value.commit_and_get_hash.assert_not_called()
@@ -331,10 +332,10 @@ def test_rework_workflow_mixed_applied_and_skipped_does_not_reach_approval():
 #        choose "update" instead of "create" for it.
 # ---------------------------------------------------------------------------
 def test_rework_workflow_provides_existing_file_context_to_developer(
-    tmp_path
+    git_repo
 ):
 
-    app_dir = tmp_path / "app"
+    app_dir = Path(git_repo) / "app"
     app_dir.mkdir(parents=True)
 
     (app_dir / "existing.py").write_text(
@@ -391,7 +392,7 @@ def test_rework_workflow_provides_existing_file_context_to_developer(
         }
 
         orchestrator.rework_workflow(
-            str(tmp_path)
+            git_repo
         )
 
     calls = mock_agent_executor.run.call_args_list

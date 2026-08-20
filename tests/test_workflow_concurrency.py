@@ -1,6 +1,7 @@
 import threading
 import time
 from unittest.mock import MagicMock, patch
+from pathlib import Path
 
 from app.agent_orchestrator import AgentOrchestrator
 from app.approval_manager import ApprovalManager
@@ -25,7 +26,7 @@ python -m pytest -q
 """
 
 
-def test_reject_during_reviewer_call_is_not_lost_on_review_failure(tmp_path):
+def test_reject_during_reviewer_call_is_not_lost_on_review_failure(git_repo):
     """
     Reproduces the concrete F4 lost-update case:
 
@@ -38,7 +39,7 @@ def test_reject_during_reviewer_call_is_not_lost_on_review_failure(tmp_path):
       concurrently persisted "rejected" approval back to "waiting",
       since this save does not establish a new approval phase.
     """
-    storage = tmp_path / "workflow_state.json"
+    storage = Path(git_repo) / "workflow_state.json"
 
     real_workflow = WorkflowManager(storage)
     approval = ApprovalManager(storage=storage)
@@ -107,7 +108,7 @@ def test_reject_during_reviewer_call_is_not_lost_on_review_failure(tmp_path):
 
         def run():
             result_container["result"] = orchestrator.run_workflow(
-                str(tmp_path),
+                git_repo,
                 "mock_task"
             )
 
@@ -146,9 +147,9 @@ def test_reject_during_reviewer_call_is_not_lost_on_review_failure(tmp_path):
 
 
 def test_save_preserving_approval_keeps_current_approval_when_no_new_phase(
-    tmp_path
+    git_repo
 ):
-    storage = tmp_path / "workflow_state.json"
+    storage = Path(git_repo) / "workflow_state.json"
     workflow = WorkflowManager(storage)
 
     workflow.save({
@@ -218,8 +219,8 @@ def test_save_preserving_approval_keeps_current_approval_when_no_new_phase(
     assert persisted["status"] == "tester_failed"
 
 
-def test_save_preserving_approval_applies_explicit_new_phase(tmp_path):
-    storage = tmp_path / "workflow_state.json"
+def test_save_preserving_approval_applies_explicit_new_phase(git_repo):
+    storage = Path(git_repo) / "workflow_state.json"
     workflow = WorkflowManager(storage)
 
     workflow.save({
@@ -284,13 +285,13 @@ def test_save_preserving_approval_applies_explicit_new_phase(tmp_path):
     assert merged["status"] == "approval_waiting"
 
 
-def test_update_agent_does_not_lose_concurrent_updates(tmp_path):
+def test_update_agent_does_not_lose_concurrent_updates(git_repo):
     """
     Forces an interleaving between two update_agent() calls on
     different WorkflowManager instances pointing at the same file,
     proving that the shared lock prevents a lost update.
     """
-    storage = tmp_path / "workflow_state.json"
+    storage = Path(git_repo) / "workflow_state.json"
 
     workflow_a = WorkflowManager(storage)
     workflow_a.create("mock_task", "dev_branch")

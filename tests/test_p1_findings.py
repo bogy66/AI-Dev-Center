@@ -1,4 +1,5 @@
 from unittest.mock import MagicMock, patch
+from pathlib import Path
 
 from app.agent_orchestrator import AgentOrchestrator
 from app.workflow_manager import WorkflowManager
@@ -30,7 +31,7 @@ def _developer_only_executor(response=DEVELOPER_RESPONSE):
     return executor_run
 
 
-def test_tc_f1_01_git_commit_failure_not_signaled_in_run_workflow():
+def test_tc_f1_01_git_commit_failure_not_signaled_in_run_workflow(git_repo):
 
     mock_agent_manager = MagicMock()
     mock_agent_executor = MagicMock()
@@ -95,7 +96,7 @@ def test_tc_f1_01_git_commit_failure_not_signaled_in_run_workflow():
         workflow_manager.load.return_value = initial_state
 
         result = orchestrator.run_workflow(
-            "mock_project",
+            git_repo,
             "mock_task"
         )
 
@@ -113,7 +114,7 @@ def test_tc_f1_01_git_commit_failure_not_signaled_in_run_workflow():
     assert result["developer"]["commit"] is None
 
 
-def test_tc_f1_02_git_commit_failure_error_message_lost_when_stdout_empty():
+def test_tc_f1_02_git_commit_failure_error_message_lost_when_stdout_empty(git_repo):
 
     mock_agent_manager = MagicMock()
     mock_agent_executor = MagicMock()
@@ -178,7 +179,7 @@ def test_tc_f1_02_git_commit_failure_error_message_lost_when_stdout_empty():
         workflow_manager.load.return_value = initial_state
 
         result = orchestrator.run_workflow(
-            "mock_project",
+            git_repo,
             "mock_task"
         )
 
@@ -200,7 +201,7 @@ def test_tc_f1_02_git_commit_failure_error_message_lost_when_stdout_empty():
     )
 
 
-def test_tc_f2_01_git_commit_failure_not_signaled_in_rework_workflow():
+def test_tc_f2_01_git_commit_failure_not_signaled_in_rework_workflow(git_repo):
 
     mock_agent_manager = MagicMock()
     mock_agent_executor = MagicMock()
@@ -262,7 +263,7 @@ def test_tc_f2_01_git_commit_failure_not_signaled_in_rework_workflow():
         }
 
         result = orchestrator.rework_workflow(
-            "mock_project"
+            git_repo
         )
 
         tester_class.return_value.test.assert_not_called()
@@ -279,7 +280,7 @@ def test_tc_f2_01_git_commit_failure_not_signaled_in_rework_workflow():
     assert result["user_approval"]["status"] == "rejected"
 
 
-def test_tc_f2_02_rework_git_commit_failure_error_message_lost_when_stdout_empty():
+def test_tc_f2_02_rework_git_commit_failure_error_message_lost_when_stdout_empty(git_repo):
 
     mock_agent_manager = MagicMock()
     mock_agent_executor = MagicMock()
@@ -342,7 +343,7 @@ def test_tc_f2_02_rework_git_commit_failure_error_message_lost_when_stdout_empty
         }
 
         result = orchestrator.rework_workflow(
-            "mock_project"
+            git_repo
         )
 
         tester_class.return_value.test.assert_not_called()
@@ -363,7 +364,7 @@ def test_tc_f2_02_rework_git_commit_failure_error_message_lost_when_stdout_empty
     )
 
 
-def test_tc_f3_01_run_workflow_status_not_updated_on_tester_failure():
+def test_tc_f3_01_run_workflow_status_not_updated_on_tester_failure(git_repo):
 
     mock_agent_manager = MagicMock()
     mock_agent_executor = MagicMock()
@@ -424,7 +425,7 @@ def test_tc_f3_01_run_workflow_status_not_updated_on_tester_failure():
         }
 
         result = orchestrator.run_workflow(
-            "mock_project",
+            git_repo,
             "mock_task"
         )
 
@@ -439,7 +440,7 @@ def test_tc_f3_01_run_workflow_status_not_updated_on_tester_failure():
     )
 
 
-def test_tc_f3_02_run_workflow_status_not_updated_on_reviewer_rejection():
+def test_tc_f3_02_run_workflow_status_not_updated_on_reviewer_rejection(git_repo):
 
     mock_agent_manager = MagicMock()
     mock_agent_executor = MagicMock()
@@ -507,7 +508,7 @@ def test_tc_f3_02_run_workflow_status_not_updated_on_reviewer_rejection():
         }
 
         result = orchestrator.run_workflow(
-            "mock_project",
+            git_repo,
             "mock_task"
         )
 
@@ -520,7 +521,7 @@ def test_tc_f3_02_run_workflow_status_not_updated_on_reviewer_rejection():
     )
 
 
-def test_tc_f3_03_rework_workflow_status_not_updated_on_tester_failure():
+def test_tc_f3_03_rework_workflow_status_not_updated_on_tester_failure(git_repo):
 
     mock_agent_manager = MagicMock()
     mock_agent_executor = MagicMock()
@@ -588,7 +589,7 @@ def test_tc_f3_03_rework_workflow_status_not_updated_on_tester_failure():
         }
 
         result = orchestrator.rework_workflow(
-            "mock_project"
+            git_repo
         )
 
         reviewer_class.return_value.review.assert_not_called()
@@ -602,7 +603,7 @@ def test_tc_f3_03_rework_workflow_status_not_updated_on_tester_failure():
     )
 
 
-def test_tc_f3_04_rework_workflow_status_not_updated_on_reviewer_rejection():
+def test_tc_f3_04_rework_workflow_status_not_updated_on_reviewer_rejection(git_repo):
 
     mock_agent_manager = MagicMock()
     mock_agent_executor = MagicMock()
@@ -675,7 +676,7 @@ def test_tc_f3_04_rework_workflow_status_not_updated_on_reviewer_rejection():
         }
 
         result = orchestrator.rework_workflow(
-            "mock_project"
+            git_repo
         )
 
     assert result["status"] == "review_failed", (
@@ -687,9 +688,9 @@ def test_tc_f3_04_rework_workflow_status_not_updated_on_reviewer_rejection():
     )
 
 
-def test_tc_f4_01_run_workflow_overwrites_pending_approval_state(tmp_path):
+def test_tc_f4_01_run_workflow_overwrites_pending_approval_state(git_repo):
 
-    storage = tmp_path / "workflow_state.json"
+    storage = Path(git_repo) / "workflow_state.json"
     real_workflow = WorkflowManager(storage)
 
     pending_state = {
@@ -771,7 +772,7 @@ def test_tc_f4_01_run_workflow_overwrites_pending_approval_state(tmp_path):
         }
 
         orchestrator.run_workflow(
-            "mock_project",
+            git_repo,
             "New conflicting task"
         )
 
