@@ -127,7 +127,8 @@ def test_workflow_stops_at_approval(
 
     assert result["status"] == "approval_waiting"
 
-    MockDeveloperFileApplier.return_value.apply.assert_called_once()
+    # Expect two apply calls: one for developer changes, one for tester changes
+    assert MockDeveloperFileApplier.return_value.apply.call_count == 2
 
     MockGitManager.return_value.commit_and_get_hash.assert_called_once_with(
         "mock_project",
