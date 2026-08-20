@@ -121,3 +121,49 @@ print("hello")
     result = DeveloperChanges.parse(response)
 
     assert result["changes"] == []
+
+
+def test_parse_empty_response_raises_error():
+    with pytest.raises(ValueError) as exc_info:
+        DeveloperChanges.parse("")
+
+    assert "empty or non-string" in str(exc_info.value)
+
+
+def test_parse_none_response_raises_error():
+    with pytest.raises(ValueError) as exc_info:
+        DeveloperChanges.parse(None)
+
+    assert "empty or non-string" in str(exc_info.value)
+
+
+def test_parse_missing_dateien_section_raises_error():
+    response = """
+## Analyse
+
+Keine Dateien hier.
+
+## Tests
+
+python -m pytest -q
+"""
+
+    with pytest.raises(ValueError) as exc_info:
+        DeveloperChanges.parse(response)
+
+    assert "missing '## Dateien' section" in str(exc_info.value)
+
+
+def test_parse_valid_response_with_no_changes():
+    response = """
+## Dateien
+
+## Tests
+
+python -m pytest -q
+"""
+
+    result = DeveloperChanges.parse(response)
+
+    assert result["changes"] == []
+    assert result["tests"] == ["python -m pytest -q"]

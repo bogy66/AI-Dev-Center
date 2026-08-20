@@ -46,13 +46,15 @@ class DeveloperChanges:
         changes = []
         tests = []
 
+        if not response or not isinstance(response, str):
+            raise ValueError("Invalid LLM response: empty or non-string")
+
         files_section = response.split("## Dateien", 1)
 
         if len(files_section) != 2:
-            return {
-                "changes": [],
-                "tests": []
-            }
+            raise ValueError(
+                "Invalid LLM response: missing '## Dateien' section"
+            )
 
         files_text = files_section[1]
 

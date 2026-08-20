@@ -275,9 +275,24 @@ class AgentOrchestrator:
                 AGENT_CONFIG["developer"]["max_tokens"]
             )
 
-            developer_changes = DeveloperChanges.parse(
-                developer_response
-            )
+            try:
+                developer_changes = DeveloperChanges.parse(
+                    developer_response
+                )
+            except ValueError as error:
+                state = self._ensure_workflow_state(
+                    workflow_manager.load()
+                )
+
+                state["status"] = "development_failed"
+                state["developer"]["error"] = str(error)
+
+                state = self._save_preserving_approval(
+                    workflow_manager,
+                    state
+                )
+
+                return state
 
             file_applier = DeveloperFileApplier(
                 project
@@ -492,9 +507,24 @@ Rückmeldung.
                 AGENT_CONFIG["developer"]["max_tokens"]
             )
 
-            developer_changes = DeveloperChanges.parse(
-                developer_response
-            )
+            try:
+                developer_changes = DeveloperChanges.parse(
+                    developer_response
+                )
+            except ValueError as error:
+                state = self._ensure_workflow_state(
+                    workflow_manager.load()
+                )
+
+                state["status"] = "rework_failed"
+                state["developer"]["error"] = str(error)
+
+                state = self._save_preserving_approval(
+                    workflow_manager,
+                    state
+                )
+
+                return state
 
             file_applier = DeveloperFileApplier(
                 project
