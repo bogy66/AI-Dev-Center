@@ -631,7 +631,7 @@ Rückmeldung.
 """
                     
                     existing_files_context = self._existing_files_context(
-                        developer_workspace["path"]
+                        project
                     )
 
                     developer_response = self.agent_executor.run(
