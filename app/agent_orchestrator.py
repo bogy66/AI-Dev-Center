@@ -10,6 +10,7 @@ from app.reviewer_agent import ReviewerAgent
 from app.developer_changes import DeveloperChanges
 from app.developer_file_applier import DeveloperFileApplier
 from app.state_lock import get_state_lock
+from app.workflow_execution_guard import try_start, finish
 
 
 class AgentOrchestrator:
@@ -214,229 +215,255 @@ class AgentOrchestrator:
         project,
         task
     ):
-        workflow_manager = self.workflow_manager or WorkflowManager()
-        git_manager = GitManager()
-        tester_agent = TesterAgent()
-        reviewer_agent = ReviewerAgent()
+        if not try_start(project):
+            return {
+                "status": "workflow_already_running",
+                "project": project,
+                "message": (
+                    "A workflow run is already in progress for this "
+                    "project. Please wait until it completes before "
+                    "starting a new one."
+                )
+            }
 
-        existing_state = workflow_manager.load()
+        try:
+            workflow_manager = self.workflow_manager or WorkflowManager()
+            git_manager = GitManager()
+            tester_agent = TesterAgent()
+            reviewer_agent = ReviewerAgent()
 
-        if (
-            existing_state.get("status") == "approval_waiting"
-            and existing_state.get("developer", {}).get("commit")
-        ):
-            return existing_state
-
-        workflow_manager.create(
-            task,
-            "dev_branch"
-        )
-
-        state = self._ensure_workflow_state(
-            workflow_manager.load()
-        )
-
-        workflow_manager.save(state)
-
-        self.agent_executor.run(
-            AGENT_ROLES["project_manager"],
-            task,
-            "",
-            "project_manager",
-            AGENT_CONFIG["project_manager"]["max_tokens"]
-        )
-
-        self.agent_executor.run(
-            AGENT_ROLES["architect"],
-            task,
-            "",
-            "architect",
-            AGENT_CONFIG["architect"]["max_tokens"]
-        )
-
-        developer_response = self.agent_executor.run(
-            AGENT_ROLES["developer"],
-            task,
-            "",
-            "developer",
-            AGENT_CONFIG["developer"]["max_tokens"]
-        )
-
-        developer_changes = DeveloperChanges.parse(
-            developer_response
-        )
-
-        file_applier = DeveloperFileApplier(
-            project
-        )
-
-        apply_result = file_applier.apply(
-            developer_changes
-        )
-
-        skipped = apply_result.get("skipped") or []
-
-        if skipped:
-            state = self._ensure_workflow_state(
-                workflow_manager.load()
-            )
-
-            state["status"] = "development_incomplete"
-            state["developer"]["skipped"] = skipped
-
-            state = self._save_preserving_approval(
-                workflow_manager,
-                state
-            )
-
-            return state
-
-        if not apply_result.get("applied"):
-            state = self._ensure_workflow_state(
-                workflow_manager.load()
-            )
-
-            state["status"] = "development_no_changes"
-
-            state = self._save_preserving_approval(
-                workflow_manager,
-                state
-            )
-
-            return workflow_manager.load()
-
-        commit_result = git_manager.commit_and_get_hash(
-            project,
-            "DEV: Development completed"
-        )
-
-        if commit_result.get("code") != 0:
-            state = self._ensure_workflow_state(
-                workflow_manager.load()
-            )
-
-            stdout = commit_result.get(
-                "stdout",
-                ""
-            ).lower()
+            existing_state = workflow_manager.load()
 
             if (
-                "nothing to commit" in stdout
-                and "working tree clean" in stdout
+                existing_state.get("status") == "approval_waiting"
+                and existing_state.get("developer", {}).get("commit")
             ):
-                state["status"] = "development_no_changes"
-            else:
-                state["status"] = "development_failed"
-                state["developer"]["error"] = (
-                    commit_result.get("stdout")
-                    or commit_result.get("stderr")
-                    or ""
+                return existing_state
+
+            workflow_manager.create(
+                task,
+                "dev_branch"
+            )
+
+            state = self._ensure_workflow_state(
+                workflow_manager.load()
+            )
+
+            workflow_manager.save(state)
+
+            self.agent_executor.run(
+                AGENT_ROLES["project_manager"],
+                task,
+                "",
+                "project_manager",
+                AGENT_CONFIG["project_manager"]["max_tokens"]
+            )
+
+            self.agent_executor.run(
+                AGENT_ROLES["architect"],
+                task,
+                "",
+                "architect",
+                AGENT_CONFIG["architect"]["max_tokens"]
+            )
+
+            developer_response = self.agent_executor.run(
+                AGENT_ROLES["developer"],
+                task,
+                "",
+                "developer",
+                AGENT_CONFIG["developer"]["max_tokens"]
+            )
+
+            developer_changes = DeveloperChanges.parse(
+                developer_response
+            )
+
+            file_applier = DeveloperFileApplier(
+                project
+            )
+
+            apply_result = file_applier.apply(
+                developer_changes
+            )
+
+            skipped = apply_result.get("skipped") or []
+
+            if skipped:
+                state = self._ensure_workflow_state(
+                    workflow_manager.load()
                 )
 
+                state["status"] = "development_incomplete"
+                state["developer"]["skipped"] = skipped
+
+                state = self._save_preserving_approval(
+                    workflow_manager,
+                    state
+                )
+
+                return state
+
+            if not apply_result.get("applied"):
+                state = self._ensure_workflow_state(
+                    workflow_manager.load()
+                )
+
+                state["status"] = "development_no_changes"
+
+                state = self._save_preserving_approval(
+                    workflow_manager,
+                    state
+                )
+
+                return workflow_manager.load()
+
+            commit_result = git_manager.commit_and_get_hash(
+                project,
+                "DEV: Development completed"
+            )
+
+            if commit_result.get("code") != 0:
+                state = self._ensure_workflow_state(
+                    workflow_manager.load()
+                )
+
+                stdout = commit_result.get(
+                    "stdout",
+                    ""
+                ).lower()
+
+                if (
+                    "nothing to commit" in stdout
+                    and "working tree clean" in stdout
+                ):
+                    state["status"] = "development_no_changes"
+                else:
+                    state["status"] = "development_failed"
+                    state["developer"]["error"] = (
+                        commit_result.get("stdout")
+                        or commit_result.get("stderr")
+                        or ""
+                    )
+
+                state = self._save_preserving_approval(
+                    workflow_manager,
+                    state
+                )
+
+                return state
+
+            workflow_manager.update_agent(
+                "developer",
+                "completed",
+                commit=commit_result["commit"]
+            )
+
+            tester_result = tester_agent.test(
+                project,
+                developer_changes
+            )
+
+            state = self._merge_tester_result(
+                workflow_manager.load(),
+                tester_result
+            )
+
+            if (
+                state["tester"]["status"] != "completed"
+                or state["tester"]["result"] != "PASS"
+            ):
+                state["status"] = "tester_failed"
+                state = self._save_preserving_approval(
+                    workflow_manager,
+                    state
+                )
+                return state
+
             state = self._save_preserving_approval(
                 workflow_manager,
                 state
             )
 
-            return state
+            reviewer_result = reviewer_agent.review(
+                project,
+                state
+            )
 
-        workflow_manager.update_agent(
-            "developer",
-            "completed",
-            commit=commit_result["commit"]
-        )
+            state = self._merge_reviewer_result(
+                workflow_manager.load(),
+                reviewer_result
+            )
 
-        tester_result = tester_agent.test(
-            project,
-            developer_changes
-        )
+            if state["reviewer"]["status"] != "approved":
+                state["status"] = "review_failed"
+                state = self._save_preserving_approval(
+                    workflow_manager,
+                    state
+                )
+                return state
 
-        state = self._merge_tester_result(
-            workflow_manager.load(),
-            tester_result
-        )
-
-        if (
-            state["tester"]["status"] != "completed"
-            or state["tester"]["result"] != "PASS"
-        ):
-            state["status"] = "tester_failed"
             state = self._save_preserving_approval(
                 workflow_manager,
                 state
             )
-            return state
 
-        state = self._save_preserving_approval(
-            workflow_manager,
-            state
-        )
+            state["status"] = "approval_waiting"
 
-        reviewer_result = reviewer_agent.review(
-            project,
-            state
-        )
+            new_approval = {
+                "status": "waiting",
+                "approved_by": None,
+                "approved_at": None,
+                "comment": None
+            }
 
-        state = self._merge_reviewer_result(
-            workflow_manager.load(),
-            reviewer_result
-        )
+            state["user_approval"] = new_approval
 
-        if state["reviewer"]["status"] != "approved":
-            state["status"] = "review_failed"
             state = self._save_preserving_approval(
                 workflow_manager,
-                state
+                state,
+                new_approval=new_approval
             )
+
             return state
-
-        state = self._save_preserving_approval(
-            workflow_manager,
-            state
-        )
-
-        state["status"] = "approval_waiting"
-
-        new_approval = {
-            "status": "waiting",
-            "approved_by": None,
-            "approved_at": None,
-            "comment": None
-        }
-
-        state["user_approval"] = new_approval
-
-        state = self._save_preserving_approval(
-            workflow_manager,
-            state,
-            new_approval=new_approval
-        )
-
-        return state
+        finally:
+            finish(project)
 
     def rework_workflow(self, project):
-        workflow_manager = self.workflow_manager or WorkflowManager()
-        git_manager = GitManager()
-        tester_agent = TesterAgent()
-        reviewer_agent = ReviewerAgent()
+        if not try_start(project):
+            return {
+                "status": "workflow_already_running",
+                "project": project,
+                "message": (
+                    "A workflow run is already in progress for this "
+                    "project. Please wait until it completes before "
+                    "starting a new one."
+                )
+            }
 
-        state = self._ensure_workflow_state(
-            workflow_manager.load()
-        )
+        try:
+            workflow_manager = self.workflow_manager or WorkflowManager()
+            git_manager = GitManager()
+            tester_agent = TesterAgent()
+            reviewer_agent = ReviewerAgent()
 
-        workflow_manager.save(state)
+            state = self._ensure_workflow_state(
+                workflow_manager.load()
+            )
 
-        if state.get("user_approval", {}).get("status") != "rejected":
-            return state
+            workflow_manager.save(state)
 
-        task = state.get("task", "")
-        comment = (
-            state.get("user_approval", {})
-            .get("comment")
-            or ""
-        )
+            if state.get("user_approval", {}).get("status") != "rejected":
+                return state
 
-        developer_task = f"""
+            task = state.get("task", "")
+            comment = (
+                state.get("user_approval", {})
+                .get("comment")
+                or ""
+            )
+
+            developer_task = f"""
 Ursprüngliche Aufgabe:
 
 {task}
@@ -453,158 +480,160 @@ Rückmeldung.
 Ändere nur die Dateien, die für die Aufgabe notwendig sind.
 """
 
-        existing_files_context = self._existing_files_context(
-            project
-        )
-
-        developer_response = self.agent_executor.run(
-            AGENT_ROLES["developer"],
-            developer_task,
-            existing_files_context,
-            "developer",
-            AGENT_CONFIG["developer"]["max_tokens"]
-        )
-
-        developer_changes = DeveloperChanges.parse(
-            developer_response
-        )
-
-        file_applier = DeveloperFileApplier(
-            project
-        )
-
-        apply_result = file_applier.apply(
-            developer_changes
-        )
-
-        skipped = apply_result.get("skipped") or []
-
-        if skipped:
-            state = self._ensure_workflow_state(
-                workflow_manager.load()
+            existing_files_context = self._existing_files_context(
+                project
             )
 
-            state["status"] = "development_incomplete"
-            state["developer"]["skipped"] = skipped
+            developer_response = self.agent_executor.run(
+                AGENT_ROLES["developer"],
+                developer_task,
+                existing_files_context,
+                "developer",
+                AGENT_CONFIG["developer"]["max_tokens"]
+            )
+
+            developer_changes = DeveloperChanges.parse(
+                developer_response
+            )
+
+            file_applier = DeveloperFileApplier(
+                project
+            )
+
+            apply_result = file_applier.apply(
+                developer_changes
+            )
+
+            skipped = apply_result.get("skipped") or []
+
+            if skipped:
+                state = self._ensure_workflow_state(
+                    workflow_manager.load()
+                )
+
+                state["status"] = "development_incomplete"
+                state["developer"]["skipped"] = skipped
+
+                state = self._save_preserving_approval(
+                    workflow_manager,
+                    state
+                )
+
+                return state
+
+            if not apply_result.get("applied"):
+                state = self._ensure_workflow_state(
+                    workflow_manager.load()
+                )
+
+                state["status"] = "development_no_changes"
+
+                state = self._save_preserving_approval(
+                    workflow_manager,
+                    state
+                )
+
+                return workflow_manager.load()
+
+            commit_result = git_manager.commit_and_get_hash(
+                project,
+                "DEV: Rework completed"
+            )
+
+            if commit_result.get("code") != 0:
+                state = self._ensure_workflow_state(
+                    workflow_manager.load()
+                )
+
+                state["status"] = "rework_failed"
+                state["developer"]["error"] = (
+                    commit_result.get("stdout")
+                    or commit_result.get("stderr")
+                    or ""
+                )
+
+                state = self._save_preserving_approval(
+                    workflow_manager,
+                    state
+                )
+
+                return state
+
+            workflow_manager.update_agent(
+                "developer",
+                "completed",
+                commit=commit_result["commit"]
+            )
+
+            tester_result = tester_agent.test(
+                project,
+                developer_changes
+            )
+
+            state = self._merge_tester_result(
+                workflow_manager.load(),
+                tester_result
+            )
+
+            if (
+                state["tester"]["status"] != "completed"
+                or state["tester"]["result"] != "PASS"
+            ):
+                state["status"] = "tester_failed"
+                state = self._save_preserving_approval(
+                    workflow_manager,
+                    state
+                )
+                return state
 
             state = self._save_preserving_approval(
                 workflow_manager,
                 state
+            )
+
+            reviewer_result = reviewer_agent.review(
+                project,
+                state
+            )
+
+            state = self._merge_reviewer_result(
+                workflow_manager.load(),
+                reviewer_result
+            )
+
+            if state["reviewer"]["status"] != "approved":
+                state["status"] = "review_failed"
+                state = self._save_preserving_approval(
+                    workflow_manager,
+                    state
+                )
+                return state
+
+            state = self._save_preserving_approval(
+                workflow_manager,
+                state
+            )
+
+            state["status"] = "approval_waiting"
+
+            new_approval = {
+                "status": "waiting",
+                "approved_by": None,
+                "approved_at": None,
+                "comment": comment
+            }
+
+            state["user_approval"] = new_approval
+
+            state = self._save_preserving_approval(
+                workflow_manager,
+                state,
+                new_approval=new_approval
             )
 
             return state
-
-        if not apply_result.get("applied"):
-            state = self._ensure_workflow_state(
-                workflow_manager.load()
-            )
-
-            state["status"] = "development_no_changes"
-
-            state = self._save_preserving_approval(
-                workflow_manager,
-                state
-            )
-
-            return workflow_manager.load()
-
-        commit_result = git_manager.commit_and_get_hash(
-            project,
-            "DEV: Rework completed"
-        )
-
-        if commit_result.get("code") != 0:
-            state = self._ensure_workflow_state(
-                workflow_manager.load()
-            )
-
-            state["status"] = "rework_failed"
-            state["developer"]["error"] = (
-                commit_result.get("stdout")
-                or commit_result.get("stderr")
-                or ""
-            )
-
-            state = self._save_preserving_approval(
-                workflow_manager,
-                state
-            )
-
-            return state
-
-        workflow_manager.update_agent(
-            "developer",
-            "completed",
-            commit=commit_result["commit"]
-        )
-
-        tester_result = tester_agent.test(
-            project,
-            developer_changes
-        )
-
-        state = self._merge_tester_result(
-            workflow_manager.load(),
-            tester_result
-        )
-
-        if (
-            state["tester"]["status"] != "completed"
-            or state["tester"]["result"] != "PASS"
-        ):
-            state["status"] = "tester_failed"
-            state = self._save_preserving_approval(
-                workflow_manager,
-                state
-            )
-            return state
-
-        state = self._save_preserving_approval(
-            workflow_manager,
-            state
-        )
-
-        reviewer_result = reviewer_agent.review(
-            project,
-            state
-        )
-
-        state = self._merge_reviewer_result(
-            workflow_manager.load(),
-            reviewer_result
-        )
-
-        if state["reviewer"]["status"] != "approved":
-            state["status"] = "review_failed"
-            state = self._save_preserving_approval(
-                workflow_manager,
-                state
-            )
-            return state
-
-        state = self._save_preserving_approval(
-            workflow_manager,
-            state
-        )
-
-        state["status"] = "approval_waiting"
-
-        new_approval = {
-            "status": "waiting",
-            "approved_by": None,
-            "approved_at": None,
-            "comment": comment
-        }
-
-        state["user_approval"] = new_approval
-
-        state = self._save_preserving_approval(
-            workflow_manager,
-            state,
-            new_approval=new_approval
-        )
-
-        return state
+        finally:
+            finish(project)
 
     def run(
         self,

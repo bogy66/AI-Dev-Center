@@ -1,2 +1,2 @@
-python -m pytest tests/test_developer_file_applier.py tests/test_f5_findings.py -q
+python -m pytest tests/test_f2_workflow_guard.py -q
 python -m pytest -q
