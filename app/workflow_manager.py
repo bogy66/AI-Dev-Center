@@ -5,6 +5,7 @@ from pathlib import Path
 from datetime import datetime
 
 from app.logger import get_logger
+from app.state_lock import get_state_lock
 
 
 logger = get_logger("workflow_manager")
@@ -17,6 +18,7 @@ class WorkflowManager:
 
     def __init__(self, storage="workflow_state.json"):
         self.storage = Path(storage)
+        self._lock = get_state_lock(self.storage)
 
     def _default_state(self, status="not_started", task=None, branch=None):
         return {
@@ -130,16 +132,17 @@ class WorkflowManager:
             raise
 
     def update_agent(self, agent, status, commit=_UNSET, result=_UNSET):
-        state = self.load()
+        with self._lock:
+            state = self.load()
 
-        state[agent]["status"] = status
+            state[agent]["status"] = status
 
-        if commit is not _UNSET:
-            state[agent]["commit"] = commit
+            if commit is not _UNSET:
+                state[agent]["commit"] = commit
 
-        if result is not _UNSET:
-            state[agent]["result"] = result
+            if result is not _UNSET:
+                state[agent]["result"] = result
 
-        self.save(state)
+            self.save(state)
 
-        return state
+            return state

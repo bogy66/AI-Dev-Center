@@ -9,6 +9,7 @@ from app.tester_agent import TesterAgent
 from app.reviewer_agent import ReviewerAgent
 from app.developer_changes import DeveloperChanges
 from app.developer_file_applier import DeveloperFileApplier
+from app.state_lock import get_state_lock
 
 
 class AgentOrchestrator:
@@ -131,6 +132,54 @@ class AgentOrchestrator:
 
         return state
 
+    def _save_preserving_approval(
+        self,
+        workflow_manager,
+        state,
+        new_approval=None
+    ):
+        """
+        Reloads the current persisted state and writes back only the
+        fields the orchestrator itself owns (status, developer, tester,
+        reviewer), while preserving whatever user_approval is currently
+        persisted.
+
+        This closes the lost-update window where the orchestrator
+        holds a stale full-state copy in memory across long-running
+        LLM/Git/review calls, and would otherwise overwrite a
+        concurrently saved approve()/reject() decision.
+
+        If new_approval is given, the orchestrator is explicitly
+        establishing a new approval phase at this point (e.g. reaching
+        approval_waiting for a freshly completed commit), and the
+        current user_approval is intentionally replaced.
+
+        The critical section (reload + merge + save) is kept short and
+        never spans LLM calls or git subprocess calls.
+        """
+        lock = get_state_lock(workflow_manager.storage)
+
+        with lock:
+            current = workflow_manager.load()
+
+            merged = dict(current)
+
+            for key in ("status", "developer", "tester", "reviewer"):
+                if key in state:
+                    merged[key] = state[key]
+
+            if new_approval is not None:
+                merged["user_approval"] = new_approval
+            else:
+                merged["user_approval"] = current.get(
+                    "user_approval",
+                    state.get("user_approval")
+                )
+
+            workflow_manager.save(merged)
+
+            return merged
+
     def run_workflow(
         self,
         project,
@@ -203,7 +252,10 @@ class AgentOrchestrator:
 
             state["status"] = "development_no_changes"
 
-            workflow_manager.save(state)
+            state = self._save_preserving_approval(
+                workflow_manager,
+                state
+            )
 
             return workflow_manager.load()
 
@@ -235,7 +287,10 @@ class AgentOrchestrator:
                     or ""
                 )
 
-            workflow_manager.save(state)
+            state = self._save_preserving_approval(
+                workflow_manager,
+                state
+            )
 
             return state
 
@@ -260,10 +315,16 @@ class AgentOrchestrator:
             or state["tester"]["result"] != "PASS"
         ):
             state["status"] = "tester_failed"
-            workflow_manager.save(state)
+            state = self._save_preserving_approval(
+                workflow_manager,
+                state
+            )
             return state
 
-        workflow_manager.save(state)
+        state = self._save_preserving_approval(
+            workflow_manager,
+            state
+        )
 
         reviewer_result = reviewer_agent.review(
             project,
@@ -271,32 +332,39 @@ class AgentOrchestrator:
         )
 
         state = self._merge_reviewer_result(
-            state,
+            workflow_manager.load(),
             reviewer_result
         )
 
         if state["reviewer"]["status"] != "approved":
             state["status"] = "review_failed"
-            workflow_manager.save(state)
+            state = self._save_preserving_approval(
+                workflow_manager,
+                state
+            )
             return state
 
-        workflow_manager.save(state)
+        state = self._save_preserving_approval(
+            workflow_manager,
+            state
+        )
 
         state["status"] = "approval_waiting"
 
-        state.setdefault(
-            "user_approval",
-            {
-                "status": "waiting",
-                "approved_by": None,
-                "approved_at": None,
-                "comment": None
-            }
+        new_approval = {
+            "status": "waiting",
+            "approved_by": None,
+            "approved_at": None,
+            "comment": None
+        }
+
+        state["user_approval"] = new_approval
+
+        state = self._save_preserving_approval(
+            workflow_manager,
+            state,
+            new_approval=new_approval
         )
-
-        state["user_approval"]["status"] = "waiting"
-
-        workflow_manager.save(state)
 
         return state
 
@@ -360,8 +428,17 @@ Rückmeldung.
         )
 
         if not apply_result.get("applied"):
+            state = self._ensure_workflow_state(
+                workflow_manager.load()
+            )
+
             state["status"] = "development_no_changes"
-            workflow_manager.save(state)
+
+            state = self._save_preserving_approval(
+                workflow_manager,
+                state
+            )
+
             return workflow_manager.load()
 
         commit_result = git_manager.commit_and_get_hash(
@@ -370,6 +447,10 @@ Rückmeldung.
         )
 
         if commit_result.get("code") != 0:
+            state = self._ensure_workflow_state(
+                workflow_manager.load()
+            )
+
             state["status"] = "rework_failed"
             state["developer"]["error"] = (
                 commit_result.get("stdout")
@@ -377,7 +458,10 @@ Rückmeldung.
                 or ""
             )
 
-            workflow_manager.save(state)
+            state = self._save_preserving_approval(
+                workflow_manager,
+                state
+            )
 
             return state
 
@@ -402,10 +486,16 @@ Rückmeldung.
             or state["tester"]["result"] != "PASS"
         ):
             state["status"] = "tester_failed"
-            workflow_manager.save(state)
+            state = self._save_preserving_approval(
+                workflow_manager,
+                state
+            )
             return state
 
-        workflow_manager.save(state)
+        state = self._save_preserving_approval(
+            workflow_manager,
+            state
+        )
 
         reviewer_result = reviewer_agent.review(
             project,
@@ -413,27 +503,39 @@ Rückmeldung.
         )
 
         state = self._merge_reviewer_result(
-            state,
+            workflow_manager.load(),
             reviewer_result
         )
 
         if state["reviewer"]["status"] != "approved":
             state["status"] = "review_failed"
-            workflow_manager.save(state)
+            state = self._save_preserving_approval(
+                workflow_manager,
+                state
+            )
             return state
 
-        workflow_manager.save(state)
+        state = self._save_preserving_approval(
+            workflow_manager,
+            state
+        )
 
         state["status"] = "approval_waiting"
 
-        state["user_approval"] = {
+        new_approval = {
             "status": "waiting",
             "approved_by": None,
             "approved_at": None,
             "comment": comment
         }
 
-        workflow_manager.save(state)
+        state["user_approval"] = new_approval
+
+        state = self._save_preserving_approval(
+            workflow_manager,
+            state,
+            new_approval=new_approval
+        )
 
         return state
 

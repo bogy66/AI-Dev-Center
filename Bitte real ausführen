@@ -1,2 +1,2 @@
-python -m pytest tests/test_git_manager.py -q
+python -m pytest tests/test_workflow_concurrency.py -q
 python -m pytest -q
