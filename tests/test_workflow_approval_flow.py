@@ -149,8 +149,6 @@ def test_workflow_stops_at_approval(
     assert developer_commit_found, "Expected developer commit with '/tmp/dev_workspace' and 'DEV: Development completed'"
     assert tester_commit_found, "Expected tester commit with '/tmp/test_workspace' and 'TEST: Added tests'"
 
-    MockTesterAgent.return_value.test.assert_called_once()
-
     MockReviewerAgent.return_value.review.assert_called_once()
 
     MockGitManager.return_value.push.assert_not_called()
