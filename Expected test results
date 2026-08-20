@@ -1,8 +1,5 @@
-python -m pytest tests/test_p1_findings.py -q
-...
-1 passed (test_tc_f4_01_run_workflow_overwrites_pending_approval_state)
-(other F1/F2/F3 tests in that file are out of scope for F4 and unaffected)
+python -m pytest tests/test_developer_file_applier.py -q
+========================= 6 passed =========================
 
 python -m pytest -q
-...
-all tests pass, including tests/test_agent_orchestrator.py
+========================= all tests passed =========================
