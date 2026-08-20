@@ -101,3 +101,25 @@ def test_apply_rejects_invalid_action(tmp_path):
 
     assert result["applied"] == []
     assert not (tmp_path / "app/example.py").exists()
+
+def test_apply_create_does_not_overwrite_existing_file(tmp_path):
+    applier = DeveloperFileApplier(tmp_path)
+
+    existing = tmp_path / "existing.py"
+    existing.write_text(
+        'print("original")',
+        encoding="utf-8"
+    )
+
+    result = applier.apply({
+        "changes": [
+            {
+                "file": "existing.py",
+                "action": "create",
+                "content": 'print("replacement")'
+            }
+        ]
+    })
+
+    assert existing.read_text(encoding="utf-8") == 'print("original")'
+    assert result["applied"] == []
