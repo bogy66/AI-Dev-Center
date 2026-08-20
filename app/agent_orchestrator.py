@@ -436,7 +436,15 @@ class AgentOrchestrator:
                             tester_error = str(error)
 
             # Check for failures
-            if developer_result and developer_result.get("status") in ("developer_failed", "developer_incomplete", "developer_no_changes"):
+            if developer_result and developer_result.get("status") == "developer_incomplete":
+                state = self._ensure_workflow_state(workflow_manager.load())
+                state["status"] = "development_incomplete"
+                state["developer"]["skipped"] = developer_result.get("skipped")
+                state = self._save_preserving_approval(workflow_manager, state)
+                workspace_manager.cleanup_workspace(workflow_id)
+                return state
+
+            if developer_result and developer_result.get("status") in ("developer_failed", "developer_no_changes"):
                 state = self._ensure_workflow_state(workflow_manager.load())
                 state["status"] = "development_failed"
                 state["developer"]["error"] = developer_result.get("error") or "Developer failed"
@@ -766,7 +774,15 @@ Rückmeldung.
                             tester_error = str(error)
 
             # Check for failures
-            if developer_result and developer_result.get("status") in ("developer_failed", "developer_incomplete", "developer_no_changes"):
+            if developer_result and developer_result.get("status") == "developer_incomplete":
+                state = self._ensure_workflow_state(workflow_manager.load())
+                state["status"] = "development_incomplete"
+                state["developer"]["skipped"] = developer_result.get("skipped")
+                state = self._save_preserving_approval(workflow_manager, state)
+                workspace_manager.cleanup_workspace(workflow_id)
+                return state
+
+            if developer_result and developer_result.get("status") in ("developer_failed", "developer_no_changes"):
                 state = self._ensure_workflow_state(workflow_manager.load())
                 state["status"] = "rework_failed"
                 state["developer"]["error"] = developer_result.get("error") or "Developer failed"
