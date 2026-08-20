@@ -444,7 +444,32 @@ def test_tc_f3_02_run_workflow_status_not_updated_on_reviewer_rejection(git_repo
 
     mock_agent_manager = MagicMock()
     mock_agent_executor = MagicMock()
-    mock_agent_executor.run.side_effect = _developer_only_executor()
+
+    # Mock executor responses for developer and tester
+    def executor_run(agent_role, task, project_context, role_name, max_tokens):
+        if role_name == "developer":
+            return DEVELOPER_RESPONSE
+        elif role_name == "tester":
+            return """
+## Dateien
+
+### Datei:
+tests/test_example.py
+
+### Aktion:
+create
+
+### Inhalt:
+def test_example():
+    assert True
+
+## Tests
+
+python -m pytest -q
+"""
+        return "mock_response"
+
+    mock_agent_executor.run.side_effect = executor_run
 
     orchestrator = AgentOrchestrator(
         mock_agent_manager,
@@ -472,34 +497,49 @@ def test_tc_f3_02_run_workflow_status_not_updated_on_reviewer_rejection(git_repo
     ) as workflow_class, patch(
         "app.agent_orchestrator.GitManager"
     ) as git_class, patch(
-        "app.agent_orchestrator.TesterAgent"
-    ) as tester_class, patch(
         "app.agent_orchestrator.ReviewerAgent"
     ) as reviewer_class, patch(
         "app.agent_orchestrator.DeveloperFileApplier"
-    ) as applier_class:
+    ) as applier_class, patch(
+        "app.agent_orchestrator.WorkspaceManager"
+    ) as workspace_class, patch(
+        "app.agent_orchestrator.TestBench"
+    ) as testbench_class:
 
         workflow = workflow_class.return_value
         workflow.storage = "mock_workflow_state.json"
         workflow.create.return_value = state
         workflow.load.return_value = state
 
+        # Mock file applier for both developer and tester
         applier_class.return_value.apply.return_value = {
             "applied": ["app/example.py"]
         }
 
+        # Mock git manager for successful commits
         git_class.return_value.commit_and_get_hash.return_value = {
             "code": 0,
             "commit": "dev123"
         }
 
-        tester_class.return_value.test.return_value = {
-            "tester": {
-                "status": "completed",
-                "result": "PASS"
-            }
+        # Mock workspace manager
+        workspace_manager = workspace_class.return_value
+        workspace_manager.create_developer_workspace.return_value = {
+            "path": "/tmp/dev_workspace",
+            "branch": "dev-branch"
+        }
+        workspace_manager.create_tester_workspace.return_value = {
+            "path": "/tmp/test_workspace", 
+            "branch": "test-branch"
         }
 
+        # Mock test bench
+        testbench = testbench_class.return_value
+        testbench.setup_testbench.return_value = "/tmp/testbench"
+        testbench.merge_commits.return_value = True
+        testbench.run_tests.return_value = {"success": True}
+
+        # Mock reviewer to reject
         reviewer_class.return_value.review.return_value = {
             "reviewer": {
                 "status": "changes_required",
