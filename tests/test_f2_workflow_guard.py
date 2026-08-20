@@ -375,7 +375,31 @@ def test_guard_is_released_after_completion_allowing_subsequent_call(
 
     mock_agent_manager = MagicMock()
     mock_agent_executor = MagicMock()
-    mock_agent_executor.run.return_value = DEVELOPER_RESPONSE
+
+    def executor_run(agent_role, task, project_context, role_name, max_tokens):
+        if role_name == "developer":
+            return DEVELOPER_RESPONSE
+        elif role_name == "tester":
+            return """
+## Dateien
+
+### Datei:
+tests/test_example.py
+
+### Aktion:
+create
+
+### Inhalt:
+def test_example():
+    assert True
+
+## Tests
+
+python -m pytest -q
+"""
+        return "mock_response"
+
+    mock_agent_executor.run.side_effect = executor_run
 
     orchestrator = AgentOrchestrator(
         mock_agent_manager,
@@ -386,19 +410,54 @@ def test_guard_is_released_after_completion_allowing_subsequent_call(
     with patch(
         "app.agent_orchestrator.GitManager"
     ) as git_class, patch(
-        "app.agent_orchestrator.TesterAgent"
-    ) as tester_class, patch(
         "app.agent_orchestrator.ReviewerAgent"
     ) as reviewer_class, patch(
         "app.agent_orchestrator.DeveloperFileApplier"
-    ) as applier_class:
+    ) as applier_class, patch(
+        "app.agent_orchestrator.WorkspaceManager"
+    ) as workspace_class, patch(
+        "app.agent_orchestrator.TestBench"
+    ) as testbench_class:
 
-        _configure_success_mocks(
-            git_class,
-            tester_class,
-            reviewer_class,
-            applier_class
-        )
+        # Mock git manager for successful commits
+        git_class.return_value.commit_and_get_hash.return_value = {
+            "code": 0,
+            "commit": "abc123",
+            "message": "DEV: Development completed"
+        }
+
+        # Mock file applier for both developer and tester
+        applier_class.return_value.apply.return_value = {
+            "applied": ["app/example.py"],
+            "skipped": []
+        }
+
+        # Mock workspace manager
+        workspace_manager = workspace_class.return_value
+        workspace_manager.create_developer_workspace.return_value = {
+            "path": "/tmp/dev_workspace",
+            "branch": "dev-branch"
+        }
+        workspace_manager.create_tester_workspace.return_value = {
+            "path": "/tmp/test_workspace", 
+            "branch": "test-branch"
+        }
+
+        # Mock test bench to succeed completely
+        testbench_instance = MagicMock()
+        testbench_class.return_value = testbench_instance
+        testbench_instance.setup_testbench.return_value = "/tmp/testbench"
+        testbench_instance.merge_commits.return_value = True
+        testbench_instance.run_tests.return_value = {"success": True, "output": "All tests passed"}
+        testbench_instance.cleanup_testbench.return_value = None
+
+        # Mock reviewer to approve
+        reviewer_class.return_value.review.return_value = {
+            "reviewer": {
+                "status": "approved",
+                "result": "Review successful"
+            }
+        }
 
         first_result = orchestrator.run_workflow(
             project,
