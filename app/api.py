@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
@@ -16,6 +16,15 @@ from app.workflow_publisher import WorkflowPublisher
 app = FastAPI(
     title="AI Dev Center"
 )
+
+
+# Technical workflow failure statuses that should return HTTP 500
+TECHNICAL_FAILURE_STATUSES = {
+    "development_failed",
+    "tester_failed",
+    "review_failed",
+    "rework_failed",
+}
 
 
 # Gemeinsamer Workflow-State
@@ -90,17 +99,41 @@ def get_workflow_status():
 
 @app.post("/workflow/run")
 def run_workflow(task: Task):
-    return orchestrator.run_workflow(
+    result = orchestrator.run_workflow(
         task.project,
         task.task
     )
+    
+    status = result.get("status", "")
+    if status in TECHNICAL_FAILURE_STATUSES:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "status": status,
+                "message": f"Workflow failed: {status}"
+            }
+        )
+    
+    return result
 
 
 @app.post("/workflow/rework")
 def rework_workflow(request: PublishRequest):
-    return orchestrator.rework_workflow(
+    result = orchestrator.rework_workflow(
         request.project
     )
+    
+    status = result.get("status", "")
+    if status in TECHNICAL_FAILURE_STATUSES:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "status": status,
+                "message": f"Workflow failed: {status}"
+            }
+        )
+    
+    return result
 
 
 @app.post("/workflow/publish")

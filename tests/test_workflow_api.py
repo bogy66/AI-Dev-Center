@@ -134,3 +134,156 @@ def test_rework_workflow_does_not_save_non_rejected_state(mock_orchestrator):
     # Verify that rework_workflow was called (but the state was not saved
     # because it wasn't rejected)
     mock_orchestrator.rework_workflow.assert_called_once_with("mock_project")
+
+
+@patch("app.api.orchestrator")
+def test_run_workflow_returns_200_for_approval_waiting(mock_orchestrator):
+    mock_orchestrator.run_workflow.return_value = {
+        "status": "approval_waiting",
+        "task": "mock_task",
+        "user_approval": {
+            "status": "waiting"
+        }
+    }
+
+    response = client.post(
+        "/workflow/run",
+        json={
+            "project": "mock_project",
+            "task": "mock_task"
+        }
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "approval_waiting"
+
+
+@patch("app.api.orchestrator")
+def test_run_workflow_returns_200_for_changes_required(mock_orchestrator):
+    mock_orchestrator.run_workflow.return_value = {
+        "status": "changes_required",
+        "task": "mock_task",
+        "reviewer": {
+            "status": "changes_required",
+            "result": "Review failed"
+        }
+    }
+
+    response = client.post(
+        "/workflow/run",
+        json={
+            "project": "mock_project",
+            "task": "mock_task"
+        }
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "changes_required"
+
+
+@patch("app.api.orchestrator")
+def test_run_workflow_returns_200_for_development_no_changes(mock_orchestrator):
+    mock_orchestrator.run_workflow.return_value = {
+        "status": "development_no_changes",
+        "task": "mock_task"
+    }
+
+    response = client.post(
+        "/workflow/run",
+        json={
+            "project": "mock_project",
+            "task": "mock_task"
+        }
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "development_no_changes"
+
+
+@patch("app.api.orchestrator")
+def test_run_workflow_returns_500_for_development_failed(mock_orchestrator):
+    mock_orchestrator.run_workflow.return_value = {
+        "status": "development_failed",
+        "task": "mock_task",
+        "developer": {
+            "error": "Git commit failed"
+        }
+    }
+
+    response = client.post(
+        "/workflow/run",
+        json={
+            "project": "mock_project",
+            "task": "mock_task"
+        }
+    )
+
+    assert response.status_code == 500
+    assert response.json()["status"] == "development_failed"
+
+
+@patch("app.api.orchestrator")
+def test_run_workflow_returns_500_for_tester_failed(mock_orchestrator):
+    mock_orchestrator.run_workflow.return_value = {
+        "status": "tester_failed",
+        "task": "mock_task",
+        "tester": {
+            "status": "failed",
+            "result": "Tests failed"
+        }
+    }
+
+    response = client.post(
+        "/workflow/run",
+        json={
+            "project": "mock_project",
+            "task": "mock_task"
+        }
+    )
+
+    assert response.status_code == 500
+    assert response.json()["status"] == "tester_failed"
+
+
+@patch("app.api.orchestrator")
+def test_run_workflow_returns_500_for_review_failed(mock_orchestrator):
+    mock_orchestrator.run_workflow.return_value = {
+        "status": "review_failed",
+        "task": "mock_task",
+        "reviewer": {
+            "status": "changes_required",
+            "result": "Review failed"
+        }
+    }
+
+    response = client.post(
+        "/workflow/run",
+        json={
+            "project": "mock_project",
+            "task": "mock_task"
+        }
+    )
+
+    assert response.status_code == 500
+    assert response.json()["status"] == "review_failed"
+
+
+@patch("app.api.orchestrator")
+def test_rework_workflow_returns_500_for_development_failed(mock_orchestrator):
+    mock_orchestrator.rework_workflow.return_value = {
+        "status": "rework_failed",
+        "task": "mock_task",
+        "developer": {
+            "error": "Git commit failed"
+        }
+    }
+
+    response = client.post(
+        "/workflow/rework",
+        json={
+            "project": "mock_project"
+        }
+    )
+
+    assert response.status_code == 500
+    assert response.json()["status"] == "rework_failed"
