@@ -24,7 +24,7 @@ class ReviewerAgent:
 
         if diff["code"] != 0:
             return {
-                "status": "changes_required",
+                "status": "review_failed",
                 "result": diff["stderr"]
             }
 
