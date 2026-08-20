@@ -25,11 +25,6 @@ class AgentOrchestrator:
         self.project_reader = ProjectReader()
 
     def _ensure_workflow_state(self, state):
-        """
-        Stellt sicher, dass ein vollständiger Workflow-State vorhanden ist.
-
-        Das ist insbesondere für Tests mit vereinfachten Mock-States wichtig.
-        """
         state = dict(state or {})
 
         state.setdefault("status", "started")
@@ -76,15 +71,6 @@ class AgentOrchestrator:
         state,
         tester_result
     ):
-        """
-        Übernimmt sowohl den neuen Tester-Vertrag
-
-            {"status": "...", "result": "..."}
-
-        als auch ältere/Mock-Rückgaben mit
-
-            {"tester": {...}}
-        """
         state = self._ensure_workflow_state(state)
         tester_result = tester_result or {}
 
@@ -119,15 +105,6 @@ class AgentOrchestrator:
         state,
         reviewer_result
     ):
-        """
-        Übernimmt sowohl den neuen Reviewer-Vertrag
-
-            {"status": "...", "result": "..."}
-
-        als auch ältere/Mock-Rückgaben mit
-
-            {"reviewer": {...}}
-        """
         state = self._ensure_workflow_state(state)
         reviewer_result = reviewer_result or {}
 
@@ -164,7 +141,14 @@ class AgentOrchestrator:
         tester_agent = TesterAgent()
         reviewer_agent = ReviewerAgent()
 
-        # 1. Workflow erstellen
+        existing_state = workflow_manager.load()
+
+        if (
+            existing_state.get("status") == "approval_waiting"
+            and existing_state.get("developer", {}).get("commit")
+        ):
+            return existing_state
+
         workflow_manager.create(
             task,
             "dev_branch"
@@ -176,7 +160,6 @@ class AgentOrchestrator:
 
         workflow_manager.save(state)
 
-        # 2. Project Manager
         self.agent_executor.run(
             AGENT_ROLES["project_manager"],
             task,
@@ -185,7 +168,6 @@ class AgentOrchestrator:
             AGENT_CONFIG["project_manager"]["max_tokens"]
         )
 
-        # 3. Architect
         self.agent_executor.run(
             AGENT_ROLES["architect"],
             task,
@@ -194,7 +176,6 @@ class AgentOrchestrator:
             AGENT_CONFIG["architect"]["max_tokens"]
         )
 
-        # 4. Developer
         developer_response = self.agent_executor.run(
             AGENT_ROLES["developer"],
             task,
@@ -203,12 +184,10 @@ class AgentOrchestrator:
             AGENT_CONFIG["developer"]["max_tokens"]
         )
 
-        # 5. Developer-Antwort parsen
         developer_changes = DeveloperChanges.parse(
             developer_response
         )
 
-        # 6. Änderungen anwenden
         file_applier = DeveloperFileApplier(
             project
         )
@@ -228,7 +207,6 @@ class AgentOrchestrator:
 
             return workflow_manager.load()
 
-        # 7. DEV Commit
         commit_result = git_manager.commit_and_get_hash(
             project,
             "DEV: Development completed"
@@ -249,9 +227,16 @@ class AgentOrchestrator:
                 and "working tree clean" in stdout
             ):
                 state["status"] = "development_no_changes"
-                workflow_manager.save(state)
+            else:
+                state["status"] = "development_failed"
+                state["developer"]["error"] = commit_result.get(
+                    "stdout",
+                    commit_result.get("stderr", "")
+                )
 
-            return workflow_manager.load()
+            workflow_manager.save(state)
+
+            return state
 
         workflow_manager.update_agent(
             "developer",
@@ -259,7 +244,6 @@ class AgentOrchestrator:
             commit=commit_result["commit"]
         )
 
-        # 8. Tester
         tester_result = tester_agent.test(
             project,
             developer_changes
@@ -270,16 +254,16 @@ class AgentOrchestrator:
             tester_result
         )
 
+        if (
+            state["tester"]["status"] != "completed"
+            or state["tester"]["result"] != "PASS"
+        ):
+            state["status"] = "tester_failed"
+            workflow_manager.save(state)
+            return state
+
         workflow_manager.save(state)
 
-        # Tester muss erfolgreich sein
-        if state["tester"]["status"] != "completed":
-            return state
-
-        if state["tester"]["result"] != "PASS":
-            return state
-
-        # 9. Reviewer
         reviewer_result = reviewer_agent.review(
             project,
             state
@@ -290,13 +274,13 @@ class AgentOrchestrator:
             reviewer_result
         )
 
-        workflow_manager.save(state)
-
-        # Reviewer muss freigeben
         if state["reviewer"]["status"] != "approved":
+            state["status"] = "review_failed"
+            workflow_manager.save(state)
             return state
 
-        # 10. Auf Benutzerfreigabe warten
+        workflow_manager.save(state)
+
         state["status"] = "approval_waiting"
 
         state.setdefault(
@@ -383,7 +367,15 @@ Rückmeldung.
         )
 
         if commit_result.get("code") != 0:
-            return workflow_manager.load()
+            state["status"] = "rework_failed"
+            state["developer"]["error"] = commit_result.get(
+                "stdout",
+                commit_result.get("stderr", "")
+            )
+
+            workflow_manager.save(state)
+
+            return state
 
         workflow_manager.update_agent(
             "developer",
@@ -401,13 +393,15 @@ Rückmeldung.
             tester_result
         )
 
+        if (
+            state["tester"]["status"] != "completed"
+            or state["tester"]["result"] != "PASS"
+        ):
+            state["status"] = "tester_failed"
+            workflow_manager.save(state)
+            return state
+
         workflow_manager.save(state)
-
-        if state["tester"]["status"] != "completed":
-            return state
-
-        if state["tester"]["result"] != "PASS":
-            return state
 
         reviewer_result = reviewer_agent.review(
             project,
@@ -419,10 +413,12 @@ Rückmeldung.
             reviewer_result
         )
 
-        workflow_manager.save(state)
-
         if state["reviewer"]["status"] != "approved":
+            state["status"] = "review_failed"
+            workflow_manager.save(state)
             return state
+
+        workflow_manager.save(state)
 
         state["status"] = "approval_waiting"
 
