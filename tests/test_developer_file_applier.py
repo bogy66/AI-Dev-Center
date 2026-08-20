@@ -123,3 +123,75 @@ def test_apply_create_does_not_overwrite_existing_file(tmp_path):
 
     assert existing.read_text(encoding="utf-8") == 'print("original")'
     assert result["applied"] == []
+
+
+def test_apply_reports_skipped_when_create_targets_existing_file(tmp_path):
+    applier = DeveloperFileApplier(tmp_path)
+
+    existing = tmp_path / "existing.py"
+    existing.write_text(
+        'print("original")',
+        encoding="utf-8"
+    )
+
+    result = applier.apply({
+        "changes": [
+            {
+                "file": "existing.py",
+                "action": "create",
+                "content": 'print("replacement")'
+            }
+        ]
+    })
+
+    assert existing.read_text(encoding="utf-8") == 'print("original")'
+    assert result["applied"] == []
+    assert result["skipped"] == [
+        {
+            "file": "existing.py",
+            "reason": "already_exists"
+        }
+    ], (
+        "Expected a create-on-existing-file attempt to be reported as "
+        "a visible, structured 'skipped' entry instead of being "
+        "silently discarded."
+    )
+
+
+def test_apply_mixed_applied_and_skipped(tmp_path):
+    applier = DeveloperFileApplier(tmp_path)
+
+    existing = tmp_path / "existing.py"
+    existing.write_text(
+        'print("original")',
+        encoding="utf-8"
+    )
+
+    result = applier.apply({
+        "changes": [
+            {
+                "file": "new_file.py",
+                "action": "create",
+                "content": 'print("new")'
+            },
+            {
+                "file": "existing.py",
+                "action": "create",
+                "content": 'print("replacement")'
+            }
+        ]
+    })
+
+    assert result["applied"] == ["new_file.py"]
+    assert result["skipped"] == [
+        {
+            "file": "existing.py",
+            "reason": "already_exists"
+        }
+    ]
+
+    assert (
+        tmp_path / "new_file.py"
+    ).read_text(encoding="utf-8") == 'print("new")'
+
+    assert existing.read_text(encoding="utf-8") == 'print("original")'

@@ -18,6 +18,7 @@ class DeveloperFileApplier:
 
     def apply(self, changes):
         applied = []
+        skipped = []
 
         for change in changes.get("changes", []):
             file_path = self._safe_path(change.get("file", ""))
@@ -29,6 +30,10 @@ class DeveloperFileApplier:
 
             if action == "create":
                 if file_path.exists():
+                    skipped.append({
+                        "file": change["file"],
+                        "reason": "already_exists"
+                    })
                     continue
 
                 file_path.parent.mkdir(
@@ -59,5 +64,6 @@ class DeveloperFileApplier:
                 applied.append(change["file"])
 
         return {
-            "applied": applied
+            "applied": applied,
+            "skipped": skipped
         }

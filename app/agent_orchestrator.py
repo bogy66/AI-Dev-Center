@@ -180,6 +180,35 @@ class AgentOrchestrator:
 
             return merged
 
+    def _existing_files_context(self, project, max_chars=2000):
+        """
+        Builds a bounded context string listing files that already
+        exist in the project, so the developer LLM can distinguish
+        between "create" (new file) and "update" (existing file)
+        actions during rework.
+
+        Reuses the existing ProjectReader instead of introducing a new
+        scanning mechanism. Only file paths are listed (not their
+        content) to keep the context small and cheap.
+        """
+        try:
+            project_files = self.project_reader.read_files(project)
+        except Exception:
+            return ""
+
+        if not project_files:
+            return ""
+
+        file_list = "\n".join(sorted(project_files.keys()))
+
+        context = (
+            "Bereits vorhandene Dateien im Projekt "
+            "(verwende 'update' statt 'create' fuer diese Dateien):\n\n"
+            f"{file_list}"
+        )
+
+        return context[:max_chars]
+
     def run_workflow(
         self,
         project,
@@ -244,6 +273,23 @@ class AgentOrchestrator:
         apply_result = file_applier.apply(
             developer_changes
         )
+
+        skipped = apply_result.get("skipped") or []
+
+        if skipped:
+            state = self._ensure_workflow_state(
+                workflow_manager.load()
+            )
+
+            state["status"] = "development_incomplete"
+            state["developer"]["skipped"] = skipped
+
+            state = self._save_preserving_approval(
+                workflow_manager,
+                state
+            )
+
+            return state
 
         if not apply_result.get("applied"):
             state = self._ensure_workflow_state(
@@ -407,10 +453,14 @@ Rückmeldung.
 Ändere nur die Dateien, die für die Aufgabe notwendig sind.
 """
 
+        existing_files_context = self._existing_files_context(
+            project
+        )
+
         developer_response = self.agent_executor.run(
             AGENT_ROLES["developer"],
             developer_task,
-            "",
+            existing_files_context,
             "developer",
             AGENT_CONFIG["developer"]["max_tokens"]
         )
@@ -426,6 +476,23 @@ Rückmeldung.
         apply_result = file_applier.apply(
             developer_changes
         )
+
+        skipped = apply_result.get("skipped") or []
+
+        if skipped:
+            state = self._ensure_workflow_state(
+                workflow_manager.load()
+            )
+
+            state["status"] = "development_incomplete"
+            state["developer"]["skipped"] = skipped
+
+            state = self._save_preserving_approval(
+                workflow_manager,
+                state
+            )
+
+            return state
 
         if not apply_result.get("applied"):
             state = self._ensure_workflow_state(
