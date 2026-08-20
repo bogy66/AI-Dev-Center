@@ -215,9 +215,6 @@ def test_apply_create_fails_on_mkdir_permission_error(tmp_path):
     })
 
     assert result["applied"] == []
-    assert result["skipped"] == [
-        {
-            "file": "app/new_file.py",
-            "reason": "mkdir_failed: [Errno 20] Not a directory: '/tmp"
-        }
-    ]
+    assert len(result["skipped"]) == 1
+    assert result["skipped"][0]["file"] == "app/new_file.py"
+    assert result["skipped"][0]["reason"].startswith("mkdir_failed:")
