@@ -544,11 +544,19 @@ class AgentOrchestrator:
                     # Testbench failed
                     state = self._ensure_workflow_state(workflow_manager.load())
                     state["status"] = "testbench_failed"
+
+                    state["tester"]["status"] = "failed"
+                    state["tester"]["result"] = test_result.get("output", "")
+
                     state["testbench"] = {
-                        "errors": test_result["errors"],
-                        "output": test_result["output"]
+                        "errors": test_result.get("errors", []),
+                        "output": test_result.get("output", "")
                     }
-                    state = self._save_preserving_approval(workflow_manager, state)
+
+                    state = self._save_preserving_approval(
+                        workflow_manager,
+                        state
+                    )
                     test_bench.cleanup_testbench()
                     workspace_manager.cleanup_workspace(workflow_id)
                     return state
