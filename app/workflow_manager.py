@@ -1,6 +1,13 @@
 import json
+import os
+import tempfile
 from pathlib import Path
 from datetime import datetime
+
+from app.logger import get_logger
+
+
+logger = get_logger("workflow_manager")
 
 
 _UNSET = object()
@@ -37,6 +44,27 @@ class WorkflowManager:
             }
         }
 
+    def _merge_with_defaults(self, default, state):
+        if not isinstance(state, dict):
+            return default
+
+        merged = dict(default)
+
+        for key, value in state.items():
+            if (
+                key in merged
+                and isinstance(merged[key], dict)
+                and isinstance(value, dict)
+            ):
+                merged[key] = self._merge_with_defaults(
+                    merged[key],
+                    value
+                )
+            else:
+                merged[key] = value
+
+        return merged
+
     def create(self, task, branch):
         state = self._default_state(
             status="started",
@@ -54,15 +82,52 @@ class WorkflowManager:
         if not self.storage.exists():
             return self._default_state(status="not_started")
 
-        return json.loads(
-            self.storage.read_text(encoding="utf-8")
+        try:
+            raw = self.storage.read_text(encoding="utf-8")
+            state = json.loads(raw)
+
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError) as error:
+            logger.error(
+                f"Failed to load workflow state from {self.storage}: "
+                f"{error}. Falling back to default state."
+            )
+            return self._default_state(status="not_started")
+
+        if not isinstance(state, dict):
+            logger.error(
+                f"Workflow state in {self.storage} is not a JSON "
+                "object. Falling back to default state."
+            )
+            return self._default_state(status="not_started")
+
+        return self._merge_with_defaults(
+            self._default_state(),
+            state
         )
 
     def save(self, state):
-        self.storage.write_text(
-            json.dumps(state, indent=2, ensure_ascii=False),
-            encoding="utf-8"
+        data = json.dumps(state, indent=2, ensure_ascii=False)
+
+        directory = str(self.storage.parent)
+
+        fd, tmp_name = tempfile.mkstemp(
+            dir=directory,
+            prefix=f".{self.storage.name}.",
+            suffix=".tmp"
         )
+
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+
+            os.replace(tmp_name, self.storage)
+
+        except Exception:
+            if os.path.exists(tmp_name):
+                os.remove(tmp_name)
+            raise
 
     def update_agent(self, agent, status, commit=_UNSET, result=_UNSET):
         state = self.load()

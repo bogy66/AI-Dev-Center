@@ -1,6 +1,13 @@
 import json
+import os
+import tempfile
 from pathlib import Path
 from datetime import datetime
+
+from app.logger import get_logger
+
+
+logger = get_logger("approval_manager")
 
 
 class ApprovalManager:
@@ -39,15 +46,60 @@ class ApprovalManager:
 
     def get_status(self):
         state = self.load_state()
-        return state.get("user_approval", {})
+        return state.get(
+            "user_approval",
+            {
+                "status": "not_started",
+                "approved_by": None,
+                "approved_at": None,
+                "comment": None
+            }
+        )
 
     def load_state(self):
         if not self.storage.exists():
             return {}
-        return json.loads(self.storage.read_text(encoding="utf-8"))
+
+        try:
+            raw = self.storage.read_text(encoding="utf-8")
+            state = json.loads(raw)
+
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError) as error:
+            logger.error(
+                f"Failed to load approval state from {self.storage}: "
+                f"{error}. Falling back to empty state."
+            )
+            return {}
+
+        if not isinstance(state, dict):
+            logger.error(
+                f"Approval state in {self.storage} is not a JSON "
+                "object. Falling back to empty state."
+            )
+            return {}
+
+        return state
 
     def save_state(self, state):
-        self.storage.write_text(
-            json.dumps(state, indent=2, ensure_ascii=False),
-            encoding="utf-8"
+        data = json.dumps(state, indent=2, ensure_ascii=False)
+
+        directory = str(self.storage.parent)
+
+        fd, tmp_name = tempfile.mkstemp(
+            dir=directory,
+            prefix=f".{self.storage.name}.",
+            suffix=".tmp"
         )
+
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+
+            os.replace(tmp_name, self.storage)
+
+        except Exception:
+            if os.path.exists(tmp_name):
+                os.remove(tmp_name)
+            raise
