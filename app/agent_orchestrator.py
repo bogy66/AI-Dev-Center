@@ -492,7 +492,9 @@ class AgentOrchestrator:
                     # Testbench passed - proceed to Reviewer
                     state = self._ensure_workflow_state(workflow_manager.load())
                     state["status"] = "testbench_passed"
+                    state["developer"]["status"] = "completed"
                     state["developer"]["commit"] = developer_result["commit"]
+                    state["tester"]["status"] = "completed"
                     state["tester"]["commit"] = tester_result["commit"]
                     state = self._save_preserving_approval(workflow_manager, state)
                     
@@ -830,7 +832,9 @@ Rückmeldung.
                     # Testbench passed - proceed to Reviewer
                     state = self._ensure_workflow_state(workflow_manager.load())
                     state["status"] = "testbench_passed"
+                    state["developer"]["status"] = "completed"
                     state["developer"]["commit"] = developer_result["commit"]
+                    state["tester"]["status"] = "completed"
                     state["tester"]["commit"] = tester_result["commit"]
                     state = self._save_preserving_approval(workflow_manager, state)
                     
