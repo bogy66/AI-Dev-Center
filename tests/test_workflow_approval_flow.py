@@ -130,10 +130,24 @@ def test_workflow_stops_at_approval(
     # Expect two apply calls: one for developer changes, one for tester changes
     assert MockDeveloperFileApplier.return_value.apply.call_count == 2
 
-    MockGitManager.return_value.commit_and_get_hash.assert_called_once_with(
-        "mock_project",
-        "DEV: Development completed"
-    )
+    # Expect two commit calls: one for developer workspace, one for tester workspace
+    assert MockGitManager.return_value.commit_and_get_hash.call_count == 2
+    
+    commit_calls = MockGitManager.return_value.commit_and_get_hash.call_args_list
+    
+    # Verify developer commit
+    developer_commit_found = False
+    tester_commit_found = False
+    
+    for call in commit_calls:
+        workspace_path, commit_message = call[0]
+        if workspace_path == "/tmp/dev_workspace" and commit_message == "DEV: Development completed":
+            developer_commit_found = True
+        elif workspace_path == "/tmp/test_workspace" and commit_message == "TEST: Added tests":
+            tester_commit_found = True
+    
+    assert developer_commit_found, "Expected developer commit with '/tmp/dev_workspace' and 'DEV: Development completed'"
+    assert tester_commit_found, "Expected tester commit with '/tmp/test_workspace' and 'TEST: Added tests'"
 
     MockTesterAgent.return_value.test.assert_called_once()
 
