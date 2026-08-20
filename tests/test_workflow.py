@@ -146,7 +146,6 @@ class TestWorkflow(unittest.TestCase):
         # Expect two apply calls: one for developer changes, one for tester changes
         self.assertEqual(MockDeveloperFileApplier.return_value.apply.call_count, 2)
 
-        MockTesterAgent.return_value.test.assert_called_once()
         MockReviewerAgent.return_value.review.assert_called_once()
 
         # Expect two commit calls: one for developer workspace, one for tester workspace
@@ -216,14 +215,8 @@ class TestWorkflow(unittest.TestCase):
             "commit": "dev123"
         }
 
-        MockTesterAgent.return_value.test.return_value = {
-            **state,
-            "status": "tester_failed",
-            "tester": {
-                "status": "failed",
-                "result": "Tests failed"
-            }
-        }
+        # Mock tester failure through TestBench
+        testbench_instance.run_tests.return_value = {"success": False, "output": "Tests failed"}
 
         # Mock workspace manager
         workspace_manager = MockWorkspaceManager.return_value
