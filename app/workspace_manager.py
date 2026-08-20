@@ -21,6 +21,9 @@ class WorkspaceManager:
         workspace_dir = self.worktrees_dir / "developer" / workflow_id
         branch_name = f"dev-{workflow_id}"
         
+        # Ensure parent directory exists
+        workspace_dir.parent.mkdir(parents=True, exist_ok=True)
+        
         # Create the worktree
         try:
             subprocess.run(
@@ -46,6 +49,9 @@ class WorkspaceManager:
         
         workspace_dir = self.worktrees_dir / "tester" / workflow_id
         branch_name = f"test-{workflow_id}"
+        
+        # Ensure parent directory exists
+        workspace_dir.parent.mkdir(parents=True, exist_ok=True)
         
         # Create the worktree
         try:
