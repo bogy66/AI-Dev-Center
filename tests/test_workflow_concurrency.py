@@ -46,7 +46,32 @@ def test_reject_during_reviewer_call_is_not_lost_on_review_failure(git_repo):
 
     mock_agent_manager = MagicMock()
     mock_agent_executor = MagicMock()
-    mock_agent_executor.run.return_value = DEVELOPER_RESPONSE
+
+    # Mock executor responses for developer and tester
+    def executor_run(agent_role, task, project_context, role_name, max_tokens):
+        if role_name == "developer":
+            return DEVELOPER_RESPONSE
+        elif role_name == "tester":
+            return """
+## Dateien
+
+### Datei:
+tests/test_example.py
+
+### Aktion:
+create
+
+### Inhalt:
+def test_example():
+    assert True
+
+## Tests
+
+python -m pytest -q
+"""
+        return "mock_response"
+
+    mock_agent_executor.run.side_effect = executor_run
 
     orchestrator = AgentOrchestrator(
         mock_agent_manager,
@@ -61,15 +86,6 @@ def test_reject_during_reviewer_call_is_not_lost_on_review_failure(git_repo):
         "message": "DEV: Development completed"
     }
 
-    tester_agent = MagicMock()
-    tester_agent.test.return_value = {
-        "tester": {
-            "status": "completed",
-            "commit": "abc123",
-            "result": "PASS"
-        }
-    }
-
     reviewer_started = threading.Event()
     reject_done = threading.Event()
 
@@ -79,8 +95,10 @@ def test_reject_during_reviewer_call_is_not_lost_on_review_failure(git_repo):
         reviewer_started.set()
         reject_done.wait(timeout=5)
         return {
-            "status": "changes_required",
-            "result": "Review fehlgeschlagen"
+            "reviewer": {
+                "status": "changes_required",
+                "result": "Review fehlgeschlagen"
+            }
         }
 
     reviewer_agent.review.side_effect = blocking_review
@@ -94,15 +112,35 @@ def test_reject_during_reviewer_call_is_not_lost_on_review_failure(git_repo):
         "app.agent_orchestrator.GitManager",
         return_value=git_manager
     ), patch(
-        "app.agent_orchestrator.TesterAgent",
-        return_value=tester_agent
-    ), patch(
         "app.agent_orchestrator.ReviewerAgent",
         return_value=reviewer_agent
     ), patch(
         "app.agent_orchestrator.DeveloperFileApplier",
         return_value=file_applier
-    ):
+    ), patch(
+        "app.agent_orchestrator.WorkspaceManager"
+    ) as workspace_class, patch(
+        "app.agent_orchestrator.TestBench"
+    ) as testbench_class:
+
+        # Mock workspace manager
+        workspace_manager = workspace_class.return_value
+        workspace_manager.create_developer_workspace.return_value = {
+            "path": "/tmp/dev_workspace",
+            "branch": "dev-branch"
+        }
+        workspace_manager.create_tester_workspace.return_value = {
+            "path": "/tmp/test_workspace", 
+            "branch": "test-branch"
+        }
+
+        # Mock test bench to succeed completely
+        testbench_instance = MagicMock()
+        testbench_class.return_value = testbench_instance
+        testbench_instance.setup_testbench.return_value = "/tmp/testbench"
+        testbench_instance.merge_commits.return_value = True
+        testbench_instance.run_tests.return_value = {"success": True, "output": "All tests passed"}
+        testbench_instance.cleanup_testbench.return_value = None
 
         result_container = {}
 
