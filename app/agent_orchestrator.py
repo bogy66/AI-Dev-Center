@@ -451,10 +451,10 @@ class AgentOrchestrator:
                 workflow_manager.load()
             )
 
-            workflow_manager.save(state)
-
             if state.get("user_approval", {}).get("status") != "rejected":
                 return state
+
+            workflow_manager.save(state)
 
             task = state.get("task", "")
             comment = (

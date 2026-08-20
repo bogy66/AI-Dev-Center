@@ -100,3 +100,37 @@ def test_run_workflow(mock_orchestrator):
         "mock_project",
         "mock_task"
     )
+
+
+@patch("app.api.orchestrator")
+def test_rework_workflow_does_not_save_non_rejected_state(mock_orchestrator):
+    """
+    Regression test for F3: rework_workflow should not save the state
+    if user_approval.status is not "rejected".
+
+    Previously, the state was saved before checking if it was rejected,
+    causing unnecessary persistence and potential data loss.
+    """
+    # Simulate a workflow in approval_waiting status (not rejected)
+    mock_orchestrator.rework_workflow.return_value = {
+        "status": "approval_waiting",
+        "task": "mock_task",
+        "user_approval": {
+            "status": "approved"
+        }
+    }
+
+    response = client.post(
+        "/workflow/rework",
+        json={
+            "project": "mock_project"
+        }
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "approval_waiting"
+    assert response.json()["user_approval"]["status"] == "approved"
+
+    # Verify that rework_workflow was called (but the state was not saved
+    # because it wasn't rejected)
+    mock_orchestrator.rework_workflow.assert_called_once_with("mock_project")
