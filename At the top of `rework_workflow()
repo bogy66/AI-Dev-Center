@@ -1,0 +1,3 @@
+state = self._ensure_workflow_state(
+    workflow_manager.load()
+)
