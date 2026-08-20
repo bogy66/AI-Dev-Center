@@ -671,3 +671,28 @@ def test_tc_f4_01_run_workflow_overwrites_pending_approval_state(tmp_path):
         "workflow to be preserved, but it was overwritten by the new "
         "task, confirming the unconditional state overwrite."
     )
+
+def test_tc_git_01_commit_and_get_hash_propagates_last_commit_failure():
+    from app.git_manager import GitManager
+
+    git = GitManager()
+
+    git.commit = lambda project, message: {
+        "code": 0,
+        "stdout": "commit successful",
+        "stderr": ""
+    }
+
+    git.last_commit = lambda project: {
+        "code": 1,
+        "stdout": "",
+        "stderr": "fatal: not a git repository"
+    }
+
+    result = git.commit_and_get_hash(
+        "/tmp/project",
+        "test commit"
+    )
+
+    assert result["code"] != 0
+    assert "fatal: not a git repository" in result["stderr"]
