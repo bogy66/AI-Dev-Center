@@ -1,0 +1,2 @@
+python -m pytest tests/test_git_manager.py -q
+python -m pytest -q

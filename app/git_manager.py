@@ -27,6 +27,30 @@ class GitManager:
                 "stderr": str(error)
             }
 
+    def _run_args(self, args, cwd):
+
+        try:
+            result = subprocess.run(
+                args,
+                cwd=cwd,
+                shell=False,
+                text=True,
+                capture_output=True
+            )
+
+            return {
+                "code": result.returncode,
+                "stdout": result.stdout.strip(),
+                "stderr": result.stderr.strip()
+            }
+
+        except OSError as error:
+            return {
+                "code": 1,
+                "stdout": "",
+                "stderr": str(error)
+            }
+
     def commit_and_get_hash(
         self,
         project,
@@ -60,8 +84,16 @@ class GitManager:
         message
     ):
 
-        return self.run(
-            f'git add . && git commit -m "{message}"',
+        add_result = self._run_args(
+            ["git", "add", "."],
+            project
+        )
+
+        if add_result["code"] != 0:
+            return add_result
+
+        return self._run_args(
+            ["git", "commit", "-m", message],
             project
         )
 
