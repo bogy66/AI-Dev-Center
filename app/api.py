@@ -108,10 +108,7 @@ def run_workflow(task: Task):
     if status in TECHNICAL_FAILURE_STATUSES:
         raise HTTPException(
             status_code=500,
-            detail={
-                "status": status,
-                "message": f"Workflow failed: {status}"
-            }
+            detail=result
         )
     
     return result
@@ -127,10 +124,7 @@ def rework_workflow(request: PublishRequest):
     if status in TECHNICAL_FAILURE_STATUSES:
         raise HTTPException(
             status_code=500,
-            detail={
-                "status": status,
-                "message": f"Workflow failed: {status}"
-            }
+            detail=result
         )
     
     return result
