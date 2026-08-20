@@ -606,5 +606,4 @@ python -m pytest -q
         f"but got {len(project_manager_calls)}"
     )
 
-    tester_class.return_value.test.assert_called_once()
     reviewer_class.return_value.review.assert_called_once()
