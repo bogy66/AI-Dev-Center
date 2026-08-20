@@ -565,7 +565,16 @@ def test_tc_f3_03_rework_workflow_status_not_updated_on_tester_failure(git_repo)
 
     mock_agent_manager = MagicMock()
     mock_agent_executor = MagicMock()
-    mock_agent_executor.run.return_value = DEVELOPER_RESPONSE
+
+    # Mock executor responses - developer succeeds, tester fails
+    def executor_run(agent_role, task, project_context, role_name, max_tokens):
+        if role_name == "developer":
+            return DEVELOPER_RESPONSE
+        elif role_name == "tester":
+            raise Exception("tester failed")
+        return "mock_response"
+
+    mock_agent_executor.run.side_effect = executor_run
 
     orchestrator = AgentOrchestrator(
         mock_agent_manager,
@@ -602,31 +611,47 @@ def test_tc_f3_03_rework_workflow_status_not_updated_on_tester_failure(git_repo)
     ) as workflow_class, patch(
         "app.agent_orchestrator.GitManager"
     ) as git_class, patch(
-        "app.agent_orchestrator.TesterAgent"
-    ) as tester_class, patch(
         "app.agent_orchestrator.ReviewerAgent"
     ) as reviewer_class, patch(
         "app.agent_orchestrator.DeveloperFileApplier"
-    ) as applier_class:
+    ) as applier_class, patch(
+        "app.agent_orchestrator.WorkspaceManager"
+    ) as workspace_class, patch(
+        "app.agent_orchestrator.TestBench"
+    ) as testbench_class:
 
         workflow = workflow_class.return_value
         workflow.load.return_value = workflow_state
         workflow.storage = "mock_workflow_state.json"
 
+        # Mock git manager for successful developer commits
         git_class.return_value.commit_and_get_hash.return_value = {
             "code": 0,
             "commit": "new123",
             "message": "DEV: Rework completed"
         }
 
+        # Mock file applier for developer
         applier_class.return_value.apply.return_value = {
             "applied": ["app/example.py"]
         }
 
-        tester_class.return_value.test.return_value = {
-            "status": "completed",
-            "result": "FAIL"
+        # Mock workspace manager
+        workspace_manager = workspace_class.return_value
+        workspace_manager.create_developer_workspace.return_value = {
+            "path": "/tmp/dev_workspace",
+            "branch": "dev-branch"
         }
+        workspace_manager.create_tester_workspace.return_value = {
+            "path": "/tmp/test_workspace", 
+            "branch": "test-branch"
+        }
+
+        # Mock test bench (should not be reached)
+        testbench = testbench_class.return_value
+        testbench.setup_testbench.return_value = "/tmp/testbench"
+        testbench.merge_commits.return_value = True
+        testbench.run_tests.return_value = {"success": True}
 
         result = orchestrator.rework_workflow(
             git_repo
