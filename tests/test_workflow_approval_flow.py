@@ -30,7 +30,11 @@ python -m pytest -q
 @patch("app.agent_orchestrator.TesterAgent")
 @patch("app.agent_orchestrator.ReviewerAgent")
 @patch("app.agent_orchestrator.DeveloperFileApplier")
+@patch("app.agent_orchestrator.WorkspaceManager")
+@patch("app.agent_orchestrator.TestBench")
 def test_workflow_stops_at_approval(
+    MockTestBench,
+    MockWorkspaceManager,
     MockDeveloperFileApplier,
     MockReviewerAgent,
     MockTesterAgent,
@@ -88,6 +92,25 @@ def test_workflow_stops_at_approval(
             "result": "Review passed"
         }
     }
+
+    # Mock workspace manager
+    workspace_manager = MockWorkspaceManager.return_value
+    workspace_manager.create_developer_workspace.return_value = {
+        "path": "/tmp/dev_workspace",
+        "branch": "dev-branch"
+    }
+    workspace_manager.create_tester_workspace.return_value = {
+        "path": "/tmp/test_workspace", 
+        "branch": "test-branch"
+    }
+
+    # Mock test bench to succeed completely
+    testbench_instance = MagicMock()
+    MockTestBench.return_value = testbench_instance
+    testbench_instance.setup_testbench.return_value = "/tmp/testbench"
+    testbench_instance.merge_commits.return_value = True
+    testbench_instance.run_tests.return_value = {"success": True, "output": "All tests passed"}
+    testbench_instance.cleanup_testbench.return_value = None
 
     executor = MagicMock()
     executor.run.return_value = DEVELOPER_RESPONSE
