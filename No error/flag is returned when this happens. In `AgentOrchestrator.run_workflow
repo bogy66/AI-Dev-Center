@@ -1,2 +1,0 @@
-if not apply_result.get("applied"):
-    state["status"] = "development_no_changes"
