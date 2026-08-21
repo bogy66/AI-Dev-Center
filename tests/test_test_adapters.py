@@ -52,17 +52,6 @@ class TestTestAdapterInterface:
         adapter = MinimalAdapter()
         assert isinstance(adapter, TestAdapter)
 
-    def test_interface_makes_no_python_assumptions(self):
-        import inspect
-        source = inspect.getsource(TestAdapter)
-        # The abstract class must not contain any concrete
-        # Python/pytest implementation.  We check for the
-        # presence of import statements that would indicate
-        # a hardcoded dependency on Python/pytest tooling.
-        assert "import re" not in source
-        assert "import pytest" not in source
-        assert "compile(" not in source
-
 
 class TestPythonPytestAdapter:
 

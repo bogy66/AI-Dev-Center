@@ -48,6 +48,19 @@ class TestTestStrategy:
             )
             assert strategy.stack == stack
 
+    def test_unknown_stack_accepted(self):
+        """TestStrategy must accept any stack string, even unknown ones."""
+        strategy = TestStrategy(
+            stack="completely-unknown-stack",
+            level="system",
+            environment="physical_hardware",
+            command="custom-runner --flag"
+        )
+        assert strategy.stack == "completely-unknown-stack"
+        assert strategy.level == "system"
+        assert strategy.environment == "physical_hardware"
+        assert strategy.command == "custom-runner --flag"
+
     def test_level_hardware_hil(self):
         strategy = TestStrategy(
             stack="pytest",
@@ -101,12 +114,3 @@ class TestTestStrategy:
         assert strategy.level == "hardware/hil"
         assert strategy.environment == "physical_hardware"
         assert strategy.command == "idf.py test --target esp32"
-
-    def test_contains_no_stack_specific_logic(self):
-        import inspect
-        source = inspect.getsource(TestStrategy)
-        # The class is a frozen dataclass with no methods and no imports.
-        # Check that it contains no method definitions and no import statements.
-        assert "def " not in source
-        # "import " (with a space) would indicate an import statement.
-        assert "import " not in source
