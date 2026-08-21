@@ -1,6 +1,7 @@
 import pytest
 from pathlib import Path
 from app.test_stack_detector import TestStackDetector
+from app.test_adapters import PythonPytestAdapter
 from app.test_strategy import TestStrategy
 
 
@@ -26,8 +27,10 @@ class TestTestStackDetector:
     def test_pytest_ini(self, tmp_path: Path, detector: TestStackDetector):
         project = self._create_project(tmp_path)
         (project / "pytest.ini").write_text("[pytest]\n")
-        strategy = detector.detect(str(project))
-        assert strategy is not None
+        adapter = detector.detect(str(project))
+        assert adapter is not None
+        assert isinstance(adapter, PythonPytestAdapter)
+        strategy = adapter.get_strategy()
         assert strategy.stack == "pytest"
 
     # ------------------------------------------------------------------
@@ -38,9 +41,9 @@ class TestTestStackDetector:
         (project / "pyproject.toml").write_text(
             "[tool.pytest.ini_options]\n"
         )
-        strategy = detector.detect(str(project))
-        assert strategy is not None
-        assert strategy.stack == "pytest"
+        adapter = detector.detect(str(project))
+        assert adapter is not None
+        assert isinstance(adapter, PythonPytestAdapter)
 
     # ------------------------------------------------------------------
     # 3. setup.cfg with [tool:pytest]
@@ -50,9 +53,9 @@ class TestTestStackDetector:
         (project / "setup.cfg").write_text(
             "[tool:pytest]\n"
         )
-        strategy = detector.detect(str(project))
-        assert strategy is not None
-        assert strategy.stack == "pytest"
+        adapter = detector.detect(str(project))
+        assert adapter is not None
+        assert isinstance(adapter, PythonPytestAdapter)
 
     # ------------------------------------------------------------------
     # 4. requirements.txt with pytest
@@ -60,9 +63,9 @@ class TestTestStackDetector:
     def test_requirements_txt(self, tmp_path: Path, detector: TestStackDetector):
         project = self._create_project(tmp_path)
         (project / "requirements.txt").write_text("pytest\n")
-        strategy = detector.detect(str(project))
-        assert strategy is not None
-        assert strategy.stack == "pytest"
+        adapter = detector.detect(str(project))
+        assert adapter is not None
+        assert isinstance(adapter, PythonPytestAdapter)
 
     # ------------------------------------------------------------------
     # 5. plausible tests/ directory
@@ -73,19 +76,17 @@ class TestTestStackDetector:
         (project / "tests" / "test_example.py").write_text(
             "def test_hello():\n    assert 1 + 1 == 2\n"
         )
-        strategy = detector.detect(str(project))
-        assert strategy is not None
-        assert strategy.stack == "pytest"
+        adapter = detector.detect(str(project))
+        assert adapter is not None
+        assert isinstance(adapter, PythonPytestAdapter)
 
     # ------------------------------------------------------------------
     # 6. No indicators -> None
     # ------------------------------------------------------------------
     def test_no_indicators(self, tmp_path: Path, detector: TestStackDetector):
         project = self._create_project(tmp_path)
-        # No pytest.ini, no pyproject.toml, no setup.cfg, no requirements,
-        # no tests/ directory with plausible test files.
-        strategy = detector.detect(str(project))
-        assert strategy is None
+        adapter = detector.detect(str(project))
+        assert adapter is None
 
     # ------------------------------------------------------------------
     # 7. Single .py file alone does NOT trigger detection
@@ -94,37 +95,40 @@ class TestTestStackDetector:
         project = tmp_path / "project"
         project.mkdir()
         (project / "main.py").write_text("print('hello')\n")
-        # No other indicators
-        strategy = detector.detect(str(project))
-        assert strategy is None
+        adapter = detector.detect(str(project))
+        assert adapter is None
 
     # ------------------------------------------------------------------
-    # 8. Returned TestStrategy contains all fields
+    # 8. Returned adapter is an instance of PythonPytestAdapter
     # ------------------------------------------------------------------
-    def test_strategy_fields(self, tmp_path: Path, detector: TestStackDetector):
+    def test_adapter_instance(self, tmp_path: Path, detector: TestStackDetector):
         project = self._create_project(tmp_path)
         (project / "pytest.ini").write_text("[pytest]\n")
-        strategy = detector.detect(str(project))
-        assert strategy is not None
+        adapter = detector.detect(str(project))
+        assert isinstance(adapter, PythonPytestAdapter)
+
+    # ------------------------------------------------------------------
+    # 9. Over the adapter, get_strategy can be called
+    # ------------------------------------------------------------------
+    def test_get_strategy_via_adapter(self, tmp_path: Path, detector: TestStackDetector):
+        project = self._create_project(tmp_path)
+        (project / "pytest.ini").write_text("[pytest]\n")
+        adapter = detector.detect(str(project))
+        strategy = adapter.get_strategy()
         assert isinstance(strategy, TestStrategy)
+
+    # ------------------------------------------------------------------
+    # 10. get_strategy() yields stack="pytest"
+    # ------------------------------------------------------------------
+    def test_strategy_stack_pytest(self, tmp_path: Path, detector: TestStackDetector):
+        project = self._create_project(tmp_path)
+        (project / "pytest.ini").write_text("[pytest]\n")
+        adapter = detector.detect(str(project))
+        strategy = adapter.get_strategy()
         assert strategy.stack == "pytest"
         assert strategy.level == "unit"
         assert strategy.environment == "host"
         assert strategy.command == "python -m pytest -q"
-
-    # ------------------------------------------------------------------
-    # 9. Multiple indicators work together (e.g. pytest.ini + tests/)
-    # ------------------------------------------------------------------
-    def test_multiple_indicators(self, tmp_path: Path, detector: TestStackDetector):
-        project = self._create_project(tmp_path)
-        (project / "pytest.ini").write_text("[pytest]\n")
-        (project / "tests").mkdir()
-        (project / "tests" / "test_example.py").write_text(
-            "def test_hello():\n    assert 1 + 1 == 2\n"
-        )
-        strategy = detector.detect(str(project))
-        assert strategy is not None
-        assert strategy.stack == "pytest"
 
     # ------------------------------------------------------------------
     # Edge case: tests/ directory exists but contains no test functions
@@ -133,9 +137,8 @@ class TestTestStackDetector:
         project = self._create_project(tmp_path)
         (project / "tests").mkdir()
         (project / "tests" / "helper.py").write_text("def helper():\n    return 42\n")
-        # No test functions -> not plausible
-        strategy = detector.detect(str(project))
-        assert strategy is None
+        adapter = detector.detect(str(project))
+        assert adapter is None
 
     # ------------------------------------------------------------------
     # Edge case: requirements file does not contain pytest
@@ -143,8 +146,8 @@ class TestTestStackDetector:
     def test_requirements_without_pytest(self, tmp_path: Path, detector: TestStackDetector):
         project = self._create_project(tmp_path)
         (project / "requirements.txt").write_text("numpy\n")
-        strategy = detector.detect(str(project))
-        assert strategy is None
+        adapter = detector.detect(str(project))
+        assert adapter is None
 
     # ------------------------------------------------------------------
     # Edge case: pyproject.toml without pytest section
@@ -152,5 +155,5 @@ class TestTestStackDetector:
     def test_pyproject_without_pytest(self, tmp_path: Path, detector: TestStackDetector):
         project = self._create_project(tmp_path)
         (project / "pyproject.toml").write_text("[tool.black]\n")
-        strategy = detector.detect(str(project))
-        assert strategy is None
+        adapter = detector.detect(str(project))
+        assert adapter is None

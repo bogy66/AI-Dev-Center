@@ -1,14 +1,16 @@
 from pathlib import Path
-from app.test_strategy import TestStrategy
+from app.test_adapters import PythonPytestAdapter
 
 
 class TestStackDetector:
-    """Detects the test stack used by a project and returns a TestStrategy."""
+    """Detects the test stack used by a project and returns a corresponding
+    TestAdapter instance (currently PythonPytestAdapter).
+    """
 
-    def detect(self, project_root: str) -> TestStrategy | None:
+    def detect(self, project_root: str) -> PythonPytestAdapter | None:
         """
-        Examine the project at *project_root* and return a TestStrategy
-        if a supported test stack is recognised, otherwise None.
+        Examine the project at *project_root* and return a PythonPytestAdapter
+        if a Python/pytest project is recognised, otherwise None.
 
         Currently only Python / pytest is supported.
         """
@@ -18,36 +20,27 @@ class TestStackDetector:
 
         # 1. Strong indicators: configuration files
         if self._has_pytest_ini(root):
-            return self._pytest_strategy()
+            return PythonPytestAdapter()
 
         if self._has_pyproject_with_pytest(root):
-            return self._pytest_strategy()
+            return PythonPytestAdapter()
 
         if self._has_setup_cfg_with_pytest(root):
-            return self._pytest_strategy()
+            return PythonPytestAdapter()
 
         # 2. Requirements file mentioning pytest
         if self._has_requirements_with_pytest(root):
-            return self._pytest_strategy()
+            return PythonPytestAdapter()
 
         # 3. Weak indicator: existing tests/ directory with plausible pytest files
         if self._has_plausible_tests_dir(root):
-            return self._pytest_strategy()
+            return PythonPytestAdapter()
 
         return None
 
     # ------------------------------------------------------------------
-    # Internal helpers
+    # Internal helpers (unchanged)
     # ------------------------------------------------------------------
-
-    @staticmethod
-    def _pytest_strategy() -> TestStrategy:
-        return TestStrategy(
-            stack="pytest",
-            level="unit",
-            environment="host",
-            command="python -m pytest -q"
-        )
 
     @staticmethod
     def _has_pytest_ini(root: Path) -> bool:
