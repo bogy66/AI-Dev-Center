@@ -2,12 +2,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from types import MappingProxyType
 from collections.abc import Mapping
-from typing import Optional, Any
+from typing import Any, Optional
 
 
-# ---------------------------------------------------------------------------
-# Generic status and type constants (framework‑ and stack‑neutral)
-# ---------------------------------------------------------------------------
 class Status:
     """Lifecycle status values for a single requirement."""
     DISCOVERED = "discovered"
@@ -41,21 +38,18 @@ class RequirementType:
 
 
 def _as_tuple(value):
-    """Return *value* as a tuple, converting lists and other iterables."""
+    if value is None:
+        return ()
     if isinstance(value, tuple):
         return value
     if isinstance(value, list):
         return tuple(value)
-    # Fallback for any other iterable, e.g. a generator
     try:
         return tuple(value)
     except TypeError:
         return ()
 
 
-# ---------------------------------------------------------------------------
-# Data models
-# ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class RequirementEvidence:
     """Structured evidence explaining why a requirement was proposed."""
@@ -87,10 +81,8 @@ class Requirement:
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
-        # Make evidence immutable by converting to tuple.
         object.__setattr__(self, "evidence", _as_tuple(self.evidence))
 
-        # Make metadata immutable by converting to MappingProxyType.
         if not isinstance(self.metadata, Mapping):
             raise TypeError("metadata must be a mapping")
         if not isinstance(self.metadata, MappingProxyType):
@@ -146,10 +138,18 @@ class ValidationResult:
         object.__setattr__(self, "requirements", _as_tuple(self.requirements))
         object.__setattr__(self, "errors", _as_tuple(self.errors))
         object.__setattr__(self, "warnings", _as_tuple(self.warnings))
-        object.__setattr__(self, "normalized_requirements", _as_tuple(self.normalized_requirements))
-        object.__setattr__(self, "required_requirements", _as_tuple(self.required_requirements))
-        object.__setattr__(self, "optional_requirements", _as_tuple(self.optional_requirements))
-        object.__setattr__(self, "rejected_requirements", _as_tuple(self.rejected_requirements))
+        object.__setattr__(
+            self, "normalized_requirements", _as_tuple(self.normalized_requirements)
+        )
+        object.__setattr__(
+            self, "required_requirements", _as_tuple(self.required_requirements)
+        )
+        object.__setattr__(
+            self, "optional_requirements", _as_tuple(self.optional_requirements)
+        )
+        object.__setattr__(
+            self, "rejected_requirements", _as_tuple(self.rejected_requirements)
+        )
 
 
 @dataclass(frozen=True)
@@ -178,8 +178,12 @@ class PreflightResult:
 
     def __post_init__(self):
         object.__setattr__(self, "results", _as_tuple(self.results))
-        object.__setattr__(self, "missing_requirements", _as_tuple(self.missing_requirements))
-        object.__setattr__(self, "already_installed", _as_tuple(self.already_installed))
+        object.__setattr__(
+            self, "missing_requirements", _as_tuple(self.missing_requirements)
+        )
+        object.__setattr__(
+            self, "already_installed", _as_tuple(self.already_installed)
+        )
         object.__setattr__(self, "warnings", _as_tuple(self.warnings))
 
 
