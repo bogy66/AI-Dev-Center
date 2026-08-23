@@ -1,24 +1,26 @@
 from pathlib import Path
-from app.test_adapters import PythonPytestAdapter
+from app.test_adapters import PythonPytestAdapter, ESPHomeAdapter
 
 
 class TestStackDetector:
     """Detects the test stack used by a project and returns a corresponding
-    TestAdapter instance (currently PythonPytestAdapter).
+    TestAdapter instance.
     """
 
-    def detect(self, project_root: str) -> PythonPytestAdapter | None:
+    def detect(self, project_root: str) -> PythonPytestAdapter | ESPHomeAdapter | None:
         """
-        Examine the project at *project_root* and return a PythonPytestAdapter
-        if a Python/pytest project is recognised, otherwise None.
+        Examine the project at *project_root* and return a TestAdapter
+        if a supported test stack is recognised, otherwise None.
 
-        Currently only Python / pytest is supported.
+        Currently supports:
+        - Python / pytest (via PythonPytestAdapter)
+        - ESPHome (via ESPHomeAdapter)
         """
         root = Path(project_root)
         if not root.is_dir():
             return None
 
-        # 1. Strong indicators: configuration files
+        # 1. Try Python/pytest detection
         if self._has_pytest_ini(root):
             return PythonPytestAdapter()
 
@@ -28,13 +30,16 @@ class TestStackDetector:
         if self._has_setup_cfg_with_pytest(root):
             return PythonPytestAdapter()
 
-        # 2. Requirements file mentioning pytest
         if self._has_requirements_with_pytest(root):
             return PythonPytestAdapter()
 
-        # 3. Weak indicator: existing tests/ directory with plausible pytest files
         if self._has_plausible_tests_dir(root):
             return PythonPytestAdapter()
+
+        # 2. Try ESPHome detection (uses ESPHomeAdapter.detect)
+        esphome_adapter = ESPHomeAdapter()
+        if esphome_adapter.detect(str(root)):
+            return esphome_adapter
 
         return None
 

@@ -1,7 +1,7 @@
 import pytest
 from pathlib import Path
 from app.test_stack_detector import TestStackDetector
-from app.test_adapters import PythonPytestAdapter
+from app.test_adapters import PythonPytestAdapter, ESPHomeAdapter
 from app.test_strategy import TestStrategy
 
 
@@ -157,3 +157,59 @@ class TestTestStackDetector:
         (project / "pyproject.toml").write_text("[tool.black]\n")
         adapter = detector.detect(str(project))
         assert adapter is None
+
+    # ------------------------------------------------------------------
+    # ESPHome detection tests
+    # ------------------------------------------------------------------
+    def test_esphome_yaml_detected(self, tmp_path: Path, detector: TestStackDetector):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "esphome.yaml").write_text(
+            "esphome:\n  name: test\n"
+        )
+        adapter = detector.detect(str(project))
+        assert adapter is not None
+        assert isinstance(adapter, ESPHomeAdapter)
+
+    def test_esphome_yml_detected(self, tmp_path: Path, detector: TestStackDetector):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "config.yml").write_text(
+            "esphome:\n  name: test\n"
+        )
+        adapter = detector.detect(str(project))
+        assert adapter is not None
+        assert isinstance(adapter, ESPHomeAdapter)
+
+    def test_esphome_detection_without_esphome_cli(self, tmp_path: Path, detector: TestStackDetector):
+        # No real ESPHome CLI needed – detection is file‑based
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "esphome.yaml").write_text(
+            "esphome:\n  name: test\n"
+        )
+        adapter = detector.detect(str(project))
+        assert adapter is not None
+        assert isinstance(adapter, ESPHomeAdapter)
+
+    def test_esphome_detection_no_hardware(self, tmp_path: Path, detector: TestStackDetector):
+        # No hardware access needed
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "esphome.yaml").write_text(
+            "esphome:\n  name: test\n"
+        )
+        adapter = detector.detect(str(project))
+        assert adapter is not None
+        assert isinstance(adapter, ESPHomeAdapter)
+
+    def test_esphome_adapter_returns_strategy(self, tmp_path: Path, detector: TestStackDetector):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "esphome.yaml").write_text(
+            "esphome:\n  name: test\n"
+        )
+        adapter = detector.detect(str(project))
+        strategy = adapter.get_strategy()
+        assert strategy.stack == "esphome"
+        assert strategy.command == "esphome run"
