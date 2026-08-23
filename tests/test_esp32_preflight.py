@@ -30,6 +30,8 @@ class TestESP32Preflight:
         assert result.esphome_available is True
         assert result.serial_ports == ["/dev/ttyUSB0"]
         assert result.missing == []
+        assert "python" in result.available_executables
+        assert "esphome" in result.available_executables
 
     # ------------------------------------------------------------------
     # 2. ESPHome missing → ready=False
@@ -44,6 +46,8 @@ class TestESP32Preflight:
         assert result.ready is False
         assert result.esphome_available is False
         assert "ESPHome" in result.missing
+        assert "python" in result.available_executables
+        assert "esphome" not in result.available_executables
 
     # ------------------------------------------------------------------
     # 3. Python missing → ready=False
@@ -58,6 +62,8 @@ class TestESP32Preflight:
         assert result.ready is False
         assert result.python_available is False
         assert "Python" in result.missing
+        assert "python" not in result.available_executables
+        assert "esphome" in result.available_executables
 
     # ------------------------------------------------------------------
     # 4. No serial port → ready=False
@@ -111,6 +117,7 @@ class TestESP32Preflight:
         assert "Python" in result.missing
         assert "ESPHome" in result.missing
         assert "Kein ESP32/serieller Port gefunden." in result.missing
+        assert result.available_executables == []
 
     # ------------------------------------------------------------------
     # 8. Warnings are correctly handled (pyserial not available)
@@ -147,3 +154,27 @@ class TestESP32Preflight:
         result = preflight.check()
         assert result.ready is False
         assert result.esphome_available is False
+
+    # ------------------------------------------------------------------
+    # 11. available_executables reflects python3 when python is not found
+    # ------------------------------------------------------------------
+    def test_available_executables_with_python3(self):
+        def which(cmd: str) -> str | None:
+            if cmd == "python":
+                return None
+            if cmd == "python3":
+                return "/usr/bin/python3"
+            if cmd == "esphome":
+                return "/usr/bin/esphome"
+            return None
+
+        preflight = ESP32Preflight(
+            which=which,
+            list_ports=lambda: ["/dev/ttyUSB0"]
+        )
+        result = preflight.check()
+        # python_available should be True because python3 was found
+        assert result.python_available is True
+        # The executable name stored is "python" (the generic name)
+        assert "python" in result.available_executables
+        assert "esphome" in result.available_executables

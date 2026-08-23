@@ -11,6 +11,7 @@ class PreflightResult:
     serial_ports: list[str] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    available_executables: list[str] = field(default_factory=list)
 
 
 class ESP32Preflight:
@@ -38,12 +39,16 @@ class ESP32Preflight:
         result.python_available = python_path is not None
         if not result.python_available:
             result.missing.append("Python")
+        else:
+            result.available_executables.append("python")
 
         # 2. ESPHome availability
         esphome_path = self._which("esphome")
         result.esphome_available = esphome_path is not None
         if not result.esphome_available:
             result.missing.append("ESPHome")
+        else:
+            result.available_executables.append("esphome")
 
         # 3. Serial ports
         if self._list_ports is not None:
