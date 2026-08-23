@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import re
 from app.test_strategy import TestStrategy
+from app.test_requirements import TestRequirements
 
 
 class TestAdapter(ABC):
@@ -43,6 +44,11 @@ class TestAdapter(ABC):
     @abstractmethod
     def get_command(self, level: str = "unit", environment: str = "host") -> str:
         """Return the concrete test command for the given *level* and *environment*."""
+        ...
+
+    @abstractmethod
+    def get_requirements(self) -> TestRequirements:
+        """Return the TestRequirements needed by this test stack."""
         ...
 
 
@@ -92,3 +98,51 @@ class PythonPytestAdapter(TestAdapter):
 
     def get_command(self, level: str = "unit", environment: str = "host") -> str:
         return "python -m pytest -q"
+
+    def get_requirements(self) -> TestRequirements:
+        return TestRequirements()
+
+
+class ESPHomeAdapter(TestAdapter):
+    """Adapter for ESPHome projects targeting ESP32."""
+
+    def detect(self, project_root: str) -> bool:
+        # Detection will be implemented later.
+        return False
+
+    def is_test_file(self, file_path: str) -> bool:
+        # ESPHome test files are YAML configuration files.
+        # For now, we accept any .yaml file under tests/.
+        return file_path.startswith("tests/") and file_path.endswith(".yaml")
+
+    def validate_test_file(self, file_path: str, content: str) -> dict:
+        # Basic YAML syntax check (placeholder).
+        errors = []
+        try:
+            import yaml
+            yaml.safe_load(content)
+        except ImportError:
+            errors.append("PyYAML is not installed; cannot validate YAML syntax.")
+        except Exception as e:
+            errors.append(f"YAML syntax error in '{file_path}': {e}")
+        success = len(errors) == 0
+        return {"success": success, "errors": errors}
+
+    def get_strategy(self, level: str = "unit", environment: str = "host") -> TestStrategy:
+        return TestStrategy(
+            stack="esphome",
+            level=level,
+            environment=environment,
+            command="esphome run"
+        )
+
+    def get_command(self, level: str = "unit", environment: str = "host") -> str:
+        return "esphome run"
+
+    def get_requirements(self) -> TestRequirements:
+        return TestRequirements(
+            executables=["python", "esphome"],
+            capabilities=["build", "flash", "serial_log"],
+            target="esp32",
+            connection="serial"
+        )

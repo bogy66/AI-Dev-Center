@@ -1,7 +1,8 @@
 import pytest
 from pathlib import Path
-from app.test_adapters import TestAdapter, PythonPytestAdapter
+from app.test_adapters import TestAdapter, PythonPytestAdapter, ESPHomeAdapter
 from app.test_strategy import TestStrategy
+from app.test_requirements import TestRequirements
 
 
 class TestTestAdapterInterface:
@@ -26,6 +27,10 @@ class TestTestAdapterInterface:
         assert hasattr(TestAdapter, "get_command")
         assert callable(TestAdapter.get_command)
 
+    def test_interface_has_get_requirements(self):
+        assert hasattr(TestAdapter, "get_requirements")
+        assert callable(TestAdapter.get_requirements)
+
     def test_minimal_concrete_adapter_can_be_created(self):
         # A minimal concrete adapter that implements all abstract methods
         class MinimalAdapter(TestAdapter):
@@ -48,6 +53,9 @@ class TestTestAdapterInterface:
 
             def get_command(self, level: str = "unit", environment: str = "host") -> str:
                 return "echo 'no tests'"
+
+            def get_requirements(self) -> TestRequirements:
+                return TestRequirements()
 
         adapter = MinimalAdapter()
         assert isinstance(adapter, TestAdapter)
@@ -137,3 +145,63 @@ class TestPythonPytestAdapter:
     def test_get_command_custom(self, adapter: PythonPytestAdapter):
         cmd = adapter.get_command(level="system", environment="target")
         assert cmd == "python -m pytest -q"
+
+    # ------------------------------------------------------------------
+    # get_requirements
+    # ------------------------------------------------------------------
+    def test_get_requirements(self, adapter: PythonPytestAdapter):
+        req = adapter.get_requirements()
+        assert isinstance(req, TestRequirements)
+        # PythonPytestAdapter returns empty requirements
+        assert req.executables == []
+        assert req.capabilities == []
+
+
+class TestESPHomeAdapter:
+
+    @pytest.fixture
+    def adapter(self):
+        return ESPHomeAdapter()
+
+    # ------------------------------------------------------------------
+    # get_requirements
+    # ------------------------------------------------------------------
+    def test_get_requirements_returns_test_requirements(self, adapter: ESPHomeAdapter):
+        req = adapter.get_requirements()
+        assert isinstance(req, TestRequirements)
+
+    def test_executables_contain_python_and_esphome(self, adapter: ESPHomeAdapter):
+        req = adapter.get_requirements()
+        assert "python" in req.executables
+        assert "esphome" in req.executables
+
+    def test_capabilities_contain_build_flash_serial_log(self, adapter: ESPHomeAdapter):
+        req = adapter.get_requirements()
+        assert "build" in req.capabilities
+        assert "flash" in req.capabilities
+        assert "serial_log" in req.capabilities
+
+    def test_target_is_esp32(self, adapter: ESPHomeAdapter):
+        req = adapter.get_requirements()
+        assert req.target == "esp32"
+
+    def test_connection_is_serial(self, adapter: ESPHomeAdapter):
+        req = adapter.get_requirements()
+        assert req.connection == "serial"
+
+    def test_requirements_are_independent(self, adapter: ESPHomeAdapter):
+        req1 = adapter.get_requirements()
+        req2 = adapter.get_requirements()
+        # Both should be the same value but not the same mutable object
+        # (TestRequirements is frozen, so it's safe)
+        assert req1 == req2
+
+    def test_no_real_esphome_call(self, adapter: ESPHomeAdapter):
+        # This test itself proves the point: no real ESPHome is called.
+        req = adapter.get_requirements()
+        assert req.executables == ["python", "esphome"]
+
+    def test_no_hardware_needed(self, adapter: ESPHomeAdapter):
+        req = adapter.get_requirements()
+        assert req.target == "esp32"
+        # No hardware access is performed.
