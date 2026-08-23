@@ -1,123 +1,83 @@
 from dataclasses import dataclass, field
-from app.test_requirements import TestRequirements
-from app.environment_resolver import EnvironmentPlan
-
-
-@dataclass
-class SetupStep:
-    """Describes a single setup action that needs to be performed."""
-    requirement: str
-    kind: str  # "install_python_package", "hardware_required", "unknown"
-    action: str
-    automatic: bool
-    reason: str
+from datetime import datetime
+from app.requirement_model import Requirement, SetupStep, SetupPlan
 
 
 class SetupPlanner:
-    """Plans which setup steps are needed based on requirements and
-    the current environment plan.
+    """Stack‑neutral planner that produces a SetupPlan from a list of
+    Requirement objects.
 
-    The planner is stack‑neutral and does not perform any installation.
+    The planner does **not** contain any knowledge of specific packages,
+    frameworks, or installation commands.  It reads *only* the data
+    provided by each Requirement (name, type, required, required_version,
+    install_method, verification_method, metadata) and translates it into
+    SetupStep objects without inventing commands.
     """
-
-    # Known Python packages that can be installed automatically
-    _KNOWN_PYTHON_PACKAGES = {
-        "esphome",
-        "pyserial",
-    }
 
     def plan(
         self,
-        requirements: TestRequirements,
-        plan: EnvironmentPlan,
-    ) -> list[SetupStep]:
+        requirements: list[Requirement],
+        project_id: str = "",
+    ) -> SetupPlan:
+        """Return a SetupPlan built solely from the given Requirement list.
+
+        Parameters:
+            requirements: The requirements that should be turned into a plan.
+            project_id: Identifier used for the generated SetupPlan.id.
+
+        Returns:
+            A SetupPlan containing one step per input Requirement.
+        """
         steps: list[SetupStep] = []
+        warnings: list[str] = []
 
-        # 1. Missing executables
-        for exe in requirements.executables:
-            if exe in plan.missing:
-                step = self._classify_executable(exe)
-                steps.append(step)
-
-        # 2. Missing Python packages (already in requirements, but
-        #    we also check if the executable requirement included them)
-        #    We treat python_packages from requirements as well.
-        for pkg in requirements.python_packages:
-            if pkg in self._KNOWN_PYTHON_PACKAGES:
-                steps.append(SetupStep(
-                    requirement=pkg,
-                    kind="install_python_package",
-                    action=f"pip install {pkg}",
-                    automatic=True,
-                    reason=f"Python package '{pkg}' is not installed."
-                ))
+        for req in requirements:
+            # Determine the action text.
+            action_text = ""
+            if req.install_method:
+                # Transparently use whatever install_method the
+                # requirement specifies.  The planner does not validate
+                # it and does not add anything on its own.
+                action_text = req.install_method
             else:
-                steps.append(SetupStep(
-                    requirement=pkg,
-                    kind="unknown",
-                    action="",
-                    automatic=False,
-                    reason=f"Python package '{pkg}' could not be "
-                           f"automatically resolved."
-                ))
+                # No install method → no automatic action.
+                action_text = (
+                    f"No install method defined for '{req.name}'."
+                )
 
-        # 3. Missing serial port (hardware)
-        if not plan.missing:
-            pass  # no missing items
-        else:
-            for missing_item in plan.missing:
-                # If it's already handled as an executable or package,
-                # skip. We only add hardware/unknown items here.
-                if missing_item in requirements.executables:
-                    continue
-                # Check if it's a known Python package (already handled above)
-                if missing_item in self._KNOWN_PYTHON_PACKAGES:
-                    continue
-                # If the missing item is the serial port message
-                if "Port" in missing_item or "seriell" in missing_item:
-                    steps.append(SetupStep(
-                        requirement=missing_item,
-                        kind="hardware_required",
-                        action="",
-                        automatic=False,
-                        reason=missing_item
-                    ))
-                else:
-                    steps.append(SetupStep(
-                        requirement=missing_item,
-                        kind="unknown",
-                        action="",
-                        automatic=False,
-                        reason=missing_item
-                    ))
+            # Determine verification after install.
+            verification_after = None
+            if req.verification_method:
+                verification_after = req.verification_method
 
-        # 4. Remove duplicates (by requirement)
-        seen = set()
-        unique_steps = []
-        for step in steps:
-            if step.requirement not in seen:
-                seen.add(step.requirement)
-                unique_steps.append(step)
-
-        return unique_steps
-
-    def _classify_executable(self, exe: str) -> SetupStep:
-        # Check if the executable is known to be installable as a Python package
-        if exe in self._KNOWN_PYTHON_PACKAGES:
-            return SetupStep(
-                requirement=exe,
-                kind="install_python_package",
-                action=f"pip install {exe}",
-                automatic=True,
-                reason=f"Executable '{exe}' is missing but can be installed "
-                       f"as a Python package."
+            # Build the step using the data from the Requirement.
+            step = SetupStep(
+                id=f"step-{req.id}",
+                requirement_id=req.id,
+                action=action_text,
+                install_method=req.install_method,
+                package=req.name if req.type in ("python_package", "system_package") else None,
+                version=req.required_version,
+                command=req.install_method,  # command equals install_method when available
+                verification_after=verification_after,
+                is_approved=False,
             )
-        else:
-            return SetupStep(
-                requirement=exe,
-                kind="unknown",
-                action="",
-                automatic=False,
-                reason=f"Executable '{exe}' is missing and no automatic "
-                       f"installation strategy is known."
-            )
+            steps.append(step)
+
+            # If something that is required has no install method, add a
+            # warning so that callers are informed.
+            if req.required and not req.install_method:
+                warnings.append(
+                    f"Requirement '{req.name}' is required but has no install method."
+                )
+
+        plan = SetupPlan(
+            id=f"plan-{project_id}",
+            project_id=project_id,
+            steps=tuple(steps),
+            requires_user_approval=True,
+            rollback_steps=(),  # no rollback information available at this stage
+            warnings=tuple(warnings),
+            status="pending_approval",
+        )
+        return plan
