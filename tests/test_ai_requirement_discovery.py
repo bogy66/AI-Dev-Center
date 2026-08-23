@@ -1,54 +1,72 @@
 import pytest
-from app.ai_requirement_discovery import (
-    AIRequirementDiscovery,
-    DiscoveredRequirement,
+from app.ai_requirement_discovery import AIRequirementDiscovery, DiscoverySource
+from app.requirement_model import (
+    Requirement,
     RequirementSet,
-    DiscoverySource,
+    RequirementEvidence,
+    Status,
+    RequirementType,
 )
 
 
-class TestDiscoveredRequirement:
+class TestRequirementCreation:
+    """Basic tests for requirement model used by ai discovery."""
 
     def test_can_create_with_all_fields(self):
-        req = DiscoveredRequirement(
+        evidence = RequirementEvidence(
+            id="ev-1",
+            source_type="file",
+            description="found in config",
+            source_file="somefile.yaml",
+            snippet="esphome:",
+            confidence_contribution=0.8,
+        )
+        req = Requirement(
+            id="req-1",
             name="esphome",
-            kind="python_package",
-            required_for="build+flash",
-            source="test-source",
-            evidence="found in config",
-            confidence="high",
+            type=RequirementType.PYTHON_PACKAGE,
+            purpose="build+flash",
+            required=True,
+            confidence=0.9,
+            evidence=[evidence],
+            metadata={"source": "test-source"},
         )
         assert req.name == "esphome"
-        assert req.kind == "python_package"
-        assert req.required_for == "build+flash"
-        assert req.source == "test-source"
-        assert req.evidence == "found in config"
-        assert req.confidence == "high"
+        assert req.type == RequirementType.PYTHON_PACKAGE
+        assert req.purpose == "build+flash"
+        assert req.metadata["source"] == "test-source"
+        assert req.confidence == 0.9
 
 
 class TestRequirementSet:
 
     def test_can_contain_multiple_requirements(self):
-        req1 = DiscoveredRequirement(
+        ev1 = RequirementEvidence(id="e1", source_type="file", description="desc1")
+        ev2 = RequirementEvidence(id="e2", source_type="file", description="desc2")
+        req1 = Requirement(
+            id="r1",
             name="esphome",
-            kind="python_package",
-            required_for="build",
-            source="s1",
-            evidence="e1",
-            confidence="high",
+            type=RequirementType.PYTHON_PACKAGE,
+            purpose="build",
+            required=True,
+            confidence=0.9,
+            evidence=[ev1],
         )
-        req2 = DiscoveredRequirement(
+        req2 = Requirement(
+            id="r2",
             name="pyserial",
-            kind="python_package",
-            required_for="serial_log",
-            source="s2",
-            evidence="e2",
-            confidence="medium",
+            type=RequirementType.PYTHON_PACKAGE,
+            purpose="serial",
+            required=False,
+            confidence=0.5,
+            evidence=[ev2],
         )
-        req_set = RequirementSet(requirements=[req1, req2])
-        assert len(req_set.requirements) == 2
-        assert req_set.requirements[0].name == "esphome"
-        assert req_set.requirements[1].name == "pyserial"
+        rs = RequirementSet(
+            id="test-set", project_id="test-proj", requirements=[req1, req2]
+        )
+        assert len(rs.requirements) == 2
+        assert rs.requirements[0].name == "esphome"
+        assert rs.requirements[1].name == "pyserial"
 
 
 class TestAIRequirementDiscovery:
@@ -57,7 +75,7 @@ class TestAIRequirementDiscovery:
     # Helper: a fake DiscoverySource that returns fixed requirements
     # ------------------------------------------------------------------
     class FakeSource:
-        def __init__(self, requirements: list[DiscoveredRequirement]):
+        def __init__(self, requirements: list[Requirement]):
             self._requirements = requirements
             self.called_with = None
 
@@ -94,41 +112,45 @@ class TestAIRequirementDiscovery:
         assert source.called_with[1] == "esphome"
 
     # ------------------------------------------------------------------
-    # 4. ESPHome-like requirements work as test data
+    # 4. ESPHome-like requirements work as test data (using central model)
     # ------------------------------------------------------------------
     def test_esphome_like_requirements(self):
         reqs = [
-            DiscoveredRequirement(
+            Requirement(
+                id="r1",
                 name="esphome",
-                kind="python_package",
-                required_for="build+flash",
-                source="fake",
-                evidence="config found",
-                confidence="high",
+                type=RequirementType.PYTHON_PACKAGE,
+                purpose="build+flash",
+                required=True,
+                confidence=0.9,
+                metadata={"source": "fake"},
             ),
-            DiscoveredRequirement(
+            Requirement(
+                id="r2",
                 name="pyserial",
-                kind="python_package",
-                required_for="serial_log",
-                source="fake",
-                evidence="serial needed",
-                confidence="high",
+                type=RequirementType.PYTHON_PACKAGE,
+                purpose="serial_log",
+                required=True,
+                confidence=0.9,
+                metadata={"source": "fake"},
             ),
-            DiscoveredRequirement(
+            Requirement(
+                id="r3",
                 name="ESP32",
-                kind="hardware",
-                required_for="target",
-                source="fake",
-                evidence="board detected",
-                confidence="high",
+                type=RequirementType.HARDWARE_COMPONENT,
+                purpose="target",
+                required=True,
+                confidence=0.9,
+                metadata={"source": "fake"},
             ),
-            DiscoveredRequirement(
+            Requirement(
+                id="r4",
                 name="serial",
-                kind="connection",
-                required_for="serial_log",
-                source="fake",
-                evidence="port needed",
-                confidence="high",
+                type=RequirementType.CONNECTION,
+                purpose="serial_log",
+                required=True,
+                confidence=0.9,
+                metadata={"source": "fake"},
             ),
         ]
         source = self.FakeSource(reqs)
@@ -136,6 +158,8 @@ class TestAIRequirementDiscovery:
         result = discovery.discover({"path": "/tmp/project"})
         assert len(result.requirements) == 4
         assert result.requirements[0].name == "esphome"
+        assert result.requirements[0].type == RequirementType.PYTHON_PACKAGE
+        assert result.requirements[0].purpose == "build+flash"
         assert result.requirements[1].name == "pyserial"
         assert result.requirements[2].name == "ESP32"
         assert result.requirements[3].name == "serial"
@@ -144,54 +168,65 @@ class TestAIRequirementDiscovery:
     # 5. Unknown requirements can be represented
     # ------------------------------------------------------------------
     def test_unknown_requirement(self):
-        req = DiscoveredRequirement(
+        req = Requirement(
+            id="r-unknown",
             name="some-unknown-tool",
-            kind="unknown",
-            required_for="unknown",
-            source="fake",
-            evidence="no info",
-            confidence="low",
+            type=RequirementType.UNKNOWN,
+            purpose="unknown",
+            required=False,
+            confidence=0.2,
+            metadata={"source": "fake"},
         )
         source = self.FakeSource([req])
         discovery = AIRequirementDiscovery(source)
         result = discovery.discover({})
-        assert result.requirements[0].kind == "unknown"
-        assert result.requirements[0].confidence == "low"
+        assert result.requirements[0].type == RequirementType.UNKNOWN
+        assert result.requirements[0].confidence == 0.2
 
     # ------------------------------------------------------------------
     # 6. Confidence is preserved
     # ------------------------------------------------------------------
     def test_confidence_preserved(self):
-        req = DiscoveredRequirement(
+        req = Requirement(
+            id="r-c",
             name="esphome",
-            kind="python_package",
-            required_for="build",
-            source="s",
-            evidence="e",
-            confidence="medium",
+            type=RequirementType.PYTHON_PACKAGE,
+            purpose="build",
+            required=True,
+            confidence=0.6,
+            metadata={},
         )
         source = self.FakeSource([req])
         discovery = AIRequirementDiscovery(source)
         result = discovery.discover({})
-        assert result.requirements[0].confidence == "medium"
+        assert result.requirements[0].confidence == 0.6
 
     # ------------------------------------------------------------------
     # 7. Evidence and source are preserved
     # ------------------------------------------------------------------
     def test_evidence_and_source_preserved(self):
-        req = DiscoveredRequirement(
+        ev = RequirementEvidence(
+            id="ev-1",
+            source_type="file",
+            description="found in requirements.txt",
+            source_file="requirements.txt",
+        )
+        req = Requirement(
+            id="r-ev",
             name="pyserial",
-            kind="python_package",
-            required_for="serial_log",
-            source="my-source",
-            evidence="found in requirements.txt",
-            confidence="high",
+            type=RequirementType.PYTHON_PACKAGE,
+            purpose="serial_log",
+            required=True,
+            confidence=1.0,
+            evidence=[ev],
+            metadata={"source": "my-source"},
         )
         source = self.FakeSource([req])
         discovery = AIRequirementDiscovery(source)
         result = discovery.discover({})
-        assert result.requirements[0].source == "my-source"
-        assert result.requirements[0].evidence == "found in requirements.txt"
+        assert len(result.requirements) == 1
+        assert result.requirements[0].evidence[0].description == "found in requirements.txt"
+        assert result.requirements[0].metadata["source"] == "my-source"
 
     # ------------------------------------------------------------------
     # 8. No installation or hardware action happens
@@ -202,7 +237,7 @@ class TestAIRequirementDiscovery:
         source = self.FakeSource([])
         discovery = AIRequirementDiscovery(source)
         result = discovery.discover({})
-        assert result.requirements == []
+        assert len(result.requirements) == 0
 
     # ------------------------------------------------------------------
     # 9. Empty RequirementSet is returned when source returns nothing
@@ -212,4 +247,4 @@ class TestAIRequirementDiscovery:
         discovery = AIRequirementDiscovery(source)
         result = discovery.discover({})
         assert isinstance(result, RequirementSet)
-        assert result.requirements == []
+        assert len(result.requirements) == 0
