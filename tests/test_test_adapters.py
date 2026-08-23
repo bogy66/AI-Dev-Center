@@ -164,6 +164,63 @@ class TestESPHomeAdapter:
         return ESPHomeAdapter()
 
     # ------------------------------------------------------------------
+    # detect
+    # ------------------------------------------------------------------
+    def test_valid_esphome_yaml_detected(self, tmp_path: Path, adapter: ESPHomeAdapter):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "esphome.yaml").write_text(
+            "esphome:\n  name: test\n"
+        )
+        assert adapter.detect(str(project)) is True
+
+    def test_yml_extension_detected(self, tmp_path: Path, adapter: ESPHomeAdapter):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "config.yml").write_text(
+            "esphome:\n  name: test\n"
+        )
+        assert adapter.detect(str(project)) is True
+
+    def test_normal_yaml_not_detected(self, tmp_path: Path, adapter: ESPHomeAdapter):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "docker-compose.yaml").write_text(
+            "version: '3'\nservices:\n  web:\n    image: nginx\n"
+        )
+        assert adapter.detect(str(project)) is False
+
+    def test_python_project_not_detected(self, tmp_path: Path, adapter: ESPHomeAdapter):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "main.py").write_text("x = 1\n")
+        assert adapter.detect(str(project)) is False
+
+    def test_invalid_yaml_does_not_crash(self, tmp_path: Path, adapter: ESPHomeAdapter):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "bad.yaml").write_text(
+            "esphome:\n  name: [invalid\n"
+        )
+        # Should not raise an exception
+        assert adapter.detect(str(project)) is False
+
+    def test_multiple_yaml_files(self, tmp_path: Path, adapter: ESPHomeAdapter):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "other.yaml").write_text("version: 1\n")
+        (project / "esphome.yaml").write_text(
+            "esphome:\n  name: test\n"
+        )
+        assert adapter.detect(str(project)) is True
+
+    def test_no_yaml_files(self, tmp_path: Path, adapter: ESPHomeAdapter):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "readme.txt").write_text("Hello")
+        assert adapter.detect(str(project)) is False
+
+    # ------------------------------------------------------------------
     # get_requirements
     # ------------------------------------------------------------------
     def test_get_requirements_returns_test_requirements(self, adapter: ESPHomeAdapter):

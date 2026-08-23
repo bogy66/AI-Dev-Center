@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import re
+from pathlib import Path
 from app.test_strategy import TestStrategy
 from app.test_requirements import TestRequirements
 
@@ -107,7 +108,35 @@ class ESPHomeAdapter(TestAdapter):
     """Adapter for ESPHome projects targeting ESP32."""
 
     def detect(self, project_root: str) -> bool:
-        # Detection will be implemented later.
+        root = Path(project_root)
+        if not root.is_dir():
+            return False
+
+        try:
+            import yaml
+        except ImportError:
+            # Cannot parse YAML – conservative: return False
+            return False
+
+        # Look for YAML files with top-level "esphome:" key
+        for yaml_path in root.glob("*.yaml"):
+            try:
+                with open(yaml_path, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f)
+                if isinstance(data, dict) and "esphome" in data:
+                    return True
+            except Exception:
+                continue
+
+        for yaml_path in root.glob("*.yml"):
+            try:
+                with open(yaml_path, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f)
+                if isinstance(data, dict) and "esphome" in data:
+                    return True
+            except Exception:
+                continue
+
         return False
 
     def is_test_file(self, file_path: str) -> bool:
