@@ -1,17 +1,27 @@
-"""Deterministic development workflow connecting discovery, validation, preflight, and planning."""
+"""Deterministic development workflow with explicit approved execution."""
 
 from dataclasses import dataclass
 
 from app.ai_requirement_discovery import AIRequirementDiscovery
-from app.requirement_model import DiscoveryResult, PreflightResult, SetupPlan, ValidationResult
+from app.requirement_model import (
+    DiscoveryResult,
+    PreflightResult,
+    SetupPlan,
+    ValidationResult,
+)
 from app.requirement_preflight import RequirementPreflight
 from app.requirement_validator import RequirementValidator
+from app.setup_executor import ExecutionResult, SetupExecutor
 from app.setup_planner import SetupPlanner
+
+
+class WorkflowExecutionError(Exception):
+    """Raised when an approved setup plan cannot be executed safely."""
 
 
 @dataclass(frozen=True)
 class WorkflowResult:
-    """Immutable container holding the results of each workflow stage."""
+    """Immutable result of discovery, validation, preflight and planning."""
 
     discovery_result: DiscoveryResult
     validation_result: ValidationResult
@@ -20,18 +30,7 @@ class WorkflowResult:
 
 
 class DevelopmentWorkflow:
-    """Orchestrates the deterministic development workflow.
-
-    The workflow runs four stages in order:
-
-    1. Requirement discovery (AIRequirementDiscovery)
-    2. Requirement validation (RequirementValidator)
-    3. Environment preflight (RequirementPreflight)
-    4. Setup planning (SetupPlanner)
-
-    The workflow does **not** approve, reject, execute, or install anything.
-    The resulting ``SetupPlan`` is left in ``pending_approval`` status.
-    """
+    """Run deterministic planning and, separately, approved execution."""
 
     def __init__(
         self,
@@ -39,40 +38,35 @@ class DevelopmentWorkflow:
         validator: RequirementValidator,
         preflight: RequirementPreflight,
         planner: SetupPlanner,
+        executor: SetupExecutor | None = None,
     ) -> None:
         self._discovery = discovery
         self._validator = validator
         self._preflight = preflight
         self._planner = planner
+        self._executor = executor
 
     def run(self, project_info: object, project_id: str) -> WorkflowResult:
-        """Execute the full workflow and return an immutable result.
+        """Run discovery through planning only.
 
-        Args:
-            project_info: Arbitrary project information consumed by the discovery stage.
-            project_id: Unique identifier for the project.
-
-        Returns:
-            WorkflowResult containing the outputs of all four stages.
-
-        Raises:
-            Any exception raised by the discovery, validation, preflight, or planning
-            stages is propagated unchanged.
+        This method never approves, rejects or executes setup steps.
         """
-        # 1. Discovery
+
         discovery_result = self._discovery.discover(project_info, project_id)
 
-        # 2. Validation
-        validation_result = self._validator.validate(discovery_result.requirements)
-
-        # 3. Preflight
-        preflight_result = self._preflight.check(
-            validation_result.normalized_requirements, project_id
+        validation_result = self._validator.validate(
+            discovery_result.requirements
         )
 
-        # 4. Planning
+        preflight_result = self._preflight.check(
+            validation_result.normalized_requirements,
+            project_id,
+        )
+
         setup_plan = self._planner.plan(
-            validation_result.required_requirements, preflight_result, project_id
+            validation_result.required_requirements,
+            preflight_result,
+            project_id,
         )
 
         return WorkflowResult(
@@ -81,3 +75,33 @@ class DevelopmentWorkflow:
             preflight_result=preflight_result,
             setup_plan=setup_plan,
         )
+
+    def execute_approved(
+        self,
+        plan: SetupPlan,
+    ) -> tuple[ExecutionResult, ...]:
+        """Execute an already approved setup plan."""
+
+        if plan.status != "approved":
+            raise WorkflowExecutionError(
+                f"Setup plan '{plan.id}' is not approved; "
+                f"current status is '{plan.status}'."
+            )
+
+        if self._executor is None:
+            raise WorkflowExecutionError(
+                "No setup executor has been configured."
+            )
+
+        for step in plan.steps:
+            if not step.is_approved:
+                raise WorkflowExecutionError(
+                    f"Setup step '{step.id}' is not approved."
+                )
+
+        results = tuple(
+            self._executor.execute_step(step)
+            for step in plan.steps
+        )
+
+        return results

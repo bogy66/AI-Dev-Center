@@ -4,7 +4,11 @@ import pytest
 from unittest.mock import MagicMock
 
 from app.ai_requirement_discovery import AIRequirementDiscovery
-from app.dev_workflow import DevelopmentWorkflow, WorkflowResult
+from app.dev_workflow import (
+    DevelopmentWorkflow,
+    WorkflowExecutionError,
+    WorkflowResult,
+)
 from app.requirement_model import (
     DiscoveryResult,
     PreflightResult,
@@ -12,11 +16,13 @@ from app.requirement_model import (
     RequirementEvidence,
     RequirementType,
     SetupPlan,
+    SetupStep,
     Status,
     ValidationResult,
 )
 from app.requirement_preflight import RequirementPreflight
 from app.requirement_validator import RequirementValidator
+from app.setup_executor import ExecutionResult, SetupExecutor
 from app.setup_planner import SetupPlanner
 
 
@@ -76,199 +82,230 @@ def _make_preflight_result(project_id: str = "proj-1") -> PreflightResult:
     )
 
 
-def _make_setup_plan(project_id: str = "proj-1") -> SetupPlan:
+def _make_setup_step(
+    step_id: str = "step-1",
+    approved: bool = False,
+) -> SetupStep:
+    return SetupStep(
+        id=step_id,
+        requirement_id="req-1",
+        action="install",
+        install_method="python_package",
+        package="example-package",
+        version=None,
+        command=None,
+        verification_after="import example_package",
+        is_approved=approved,
+    )
+
+
+def _make_setup_plan(
+    project_id: str = "proj-1",
+    *,
+    status: str = "pending_approval",
+    steps=(),
+) -> SetupPlan:
     return SetupPlan(
         id="plan-1",
         project_id=project_id,
-        steps=(),
+        steps=tuple(steps),
         requires_user_approval=True,
         rollback_steps=(),
         warnings=(),
-        status="pending_approval",
+        status=status,
+    )
+
+
+def _make_components(project_id: str = "proj-1"):
+    discovery = MagicMock(spec=AIRequirementDiscovery)
+    validator = MagicMock(spec=RequirementValidator)
+    preflight = MagicMock(spec=RequirementPreflight)
+    planner = MagicMock(spec=SetupPlanner)
+
+    discovery_result = _make_discovery_result(project_id)
+    validation_result = _make_validation_result(
+        discovery_result.requirements
+    )
+    preflight_result = _make_preflight_result(project_id)
+    plan_result = _make_setup_plan(project_id)
+
+    discovery.discover.return_value = discovery_result
+    validator.validate.return_value = validation_result
+    preflight.check.return_value = preflight_result
+    planner.plan.return_value = plan_result
+
+    return (
+        discovery,
+        validator,
+        preflight,
+        planner,
+        discovery_result,
+        validation_result,
+        preflight_result,
+        plan_result,
     )
 
 
 class TestDevelopmentWorkflow:
     def test_full_workflow_returns_all_stages(self):
-        discovery = MagicMock(spec=AIRequirementDiscovery)
-        validator = MagicMock(spec=RequirementValidator)
-        preflight = MagicMock(spec=RequirementPreflight)
-        planner = MagicMock(spec=SetupPlanner)
+        (
+            discovery,
+            validator,
+            preflight,
+            planner,
+            discovery_result,
+            validation_result,
+            preflight_result,
+            plan_result,
+        ) = _make_components()
 
-        project_info = {"name": "test-project"}
-        project_id = "proj-1"
+        workflow = DevelopmentWorkflow(
+            discovery,
+            validator,
+            preflight,
+            planner,
+        )
 
-        disc_result = _make_discovery_result(project_id)
-        val_result = _make_validation_result(disc_result.requirements)
-        pre_result = _make_preflight_result(project_id)
-        plan_result = _make_setup_plan(project_id)
-
-        discovery.discover.return_value = disc_result
-        validator.validate.return_value = val_result
-        preflight.check.return_value = pre_result
-        planner.plan.return_value = plan_result
-
-        workflow = DevelopmentWorkflow(discovery, validator, preflight, planner)
-        result = workflow.run(project_info, project_id)
+        result = workflow.run({"name": "test-project"}, "proj-1")
 
         assert isinstance(result, WorkflowResult)
-        assert result.discovery_result is disc_result
-        assert result.validation_result is val_result
-        assert result.preflight_result is pre_result
+        assert result.discovery_result is discovery_result
+        assert result.validation_result is validation_result
+        assert result.preflight_result is preflight_result
         assert result.setup_plan is plan_result
 
     def test_discovery_called_with_correct_args(self):
-        discovery = MagicMock(spec=AIRequirementDiscovery)
-        validator = MagicMock(spec=RequirementValidator)
-        preflight = MagicMock(spec=RequirementPreflight)
-        planner = MagicMock(spec=SetupPlanner)
+        discovery, validator, preflight, planner, *_ = _make_components()
+
+        workflow = DevelopmentWorkflow(
+            discovery,
+            validator,
+            preflight,
+            planner,
+        )
 
         project_info = {"name": "test"}
         project_id = "proj-1"
 
-        disc_result = _make_discovery_result(project_id)
-        val_result = _make_validation_result(disc_result.requirements)
-        pre_result = _make_preflight_result(project_id)
-        plan_result = _make_setup_plan(project_id)
-
-        discovery.discover.return_value = disc_result
-        validator.validate.return_value = val_result
-        preflight.check.return_value = pre_result
-        planner.plan.return_value = plan_result
-
-        workflow = DevelopmentWorkflow(discovery, validator, preflight, planner)
         workflow.run(project_info, project_id)
 
-        discovery.discover.assert_called_once_with(project_info, project_id)
+        discovery.discover.assert_called_once_with(
+            project_info,
+            project_id,
+        )
 
     def test_validator_receives_discovery_requirements(self):
-        discovery = MagicMock(spec=AIRequirementDiscovery)
-        validator = MagicMock(spec=RequirementValidator)
-        preflight = MagicMock(spec=RequirementPreflight)
-        planner = MagicMock(spec=SetupPlanner)
+        (
+            discovery,
+            validator,
+            preflight,
+            planner,
+            discovery_result,
+            *_,
+        ) = _make_components()
 
-        project_info = {"name": "test"}
-        project_id = "proj-1"
+        workflow = DevelopmentWorkflow(
+            discovery,
+            validator,
+            preflight,
+            planner,
+        )
 
-        disc_result = _make_discovery_result(project_id)
-        val_result = _make_validation_result(disc_result.requirements)
-        pre_result = _make_preflight_result(project_id)
-        plan_result = _make_setup_plan(project_id)
+        workflow.run({"name": "test"}, "proj-1")
 
-        discovery.discover.return_value = disc_result
-        validator.validate.return_value = val_result
-        preflight.check.return_value = pre_result
-        planner.plan.return_value = plan_result
-
-        workflow = DevelopmentWorkflow(discovery, validator, preflight, planner)
-        workflow.run(project_info, project_id)
-
-        validator.validate.assert_called_once_with(disc_result.requirements)
+        validator.validate.assert_called_once_with(
+            discovery_result.requirements
+        )
 
     def test_preflight_receives_normalized_requirements(self):
-        discovery = MagicMock(spec=AIRequirementDiscovery)
-        validator = MagicMock(spec=RequirementValidator)
-        preflight = MagicMock(spec=RequirementPreflight)
-        planner = MagicMock(spec=SetupPlanner)
+        (
+            discovery,
+            validator,
+            preflight,
+            planner,
+            _,
+            validation_result,
+            *_,
+        ) = _make_components()
 
-        project_info = {"name": "test"}
-        project_id = "proj-1"
+        workflow = DevelopmentWorkflow(
+            discovery,
+            validator,
+            preflight,
+            planner,
+        )
 
-        disc_result = _make_discovery_result(project_id)
-        val_result = _make_validation_result(disc_result.requirements)
-        pre_result = _make_preflight_result(project_id)
-        plan_result = _make_setup_plan(project_id)
-
-        discovery.discover.return_value = disc_result
-        validator.validate.return_value = val_result
-        preflight.check.return_value = pre_result
-        planner.plan.return_value = plan_result
-
-        workflow = DevelopmentWorkflow(discovery, validator, preflight, planner)
-        workflow.run(project_info, project_id)
+        workflow.run({"name": "test"}, "proj-1")
 
         preflight.check.assert_called_once_with(
-            val_result.normalized_requirements, project_id
+            validation_result.normalized_requirements,
+            "proj-1",
         )
 
     def test_planner_receives_required_requirements_and_preflight(self):
-        discovery = MagicMock(spec=AIRequirementDiscovery)
-        validator = MagicMock(spec=RequirementValidator)
-        preflight = MagicMock(spec=RequirementPreflight)
-        planner = MagicMock(spec=SetupPlanner)
+        (
+            discovery,
+            validator,
+            preflight,
+            planner,
+            _,
+            validation_result,
+            preflight_result,
+            _,
+        ) = _make_components()
 
-        project_info = {"name": "test"}
-        project_id = "proj-1"
+        workflow = DevelopmentWorkflow(
+            discovery,
+            validator,
+            preflight,
+            planner,
+        )
 
-        disc_result = _make_discovery_result(project_id)
-        val_result = _make_validation_result(disc_result.requirements)
-        pre_result = _make_preflight_result(project_id)
-        plan_result = _make_setup_plan(project_id)
-
-        discovery.discover.return_value = disc_result
-        validator.validate.return_value = val_result
-        preflight.check.return_value = pre_result
-        planner.plan.return_value = plan_result
-
-        workflow = DevelopmentWorkflow(discovery, validator, preflight, planner)
-        workflow.run(project_info, project_id)
+        workflow.run({"name": "test"}, "proj-1")
 
         planner.plan.assert_called_once_with(
-            val_result.required_requirements, pre_result, project_id
+            validation_result.required_requirements,
+            preflight_result,
+            "proj-1",
         )
 
     def test_setup_plan_remains_pending_approval(self):
-        discovery = MagicMock(spec=AIRequirementDiscovery)
-        validator = MagicMock(spec=RequirementValidator)
-        preflight = MagicMock(spec=RequirementPreflight)
-        planner = MagicMock(spec=SetupPlanner)
+        discovery, validator, preflight, planner, *_ = _make_components()
 
-        project_info = {"name": "test"}
-        project_id = "proj-1"
+        workflow = DevelopmentWorkflow(
+            discovery,
+            validator,
+            preflight,
+            planner,
+        )
 
-        disc_result = _make_discovery_result(project_id)
-        val_result = _make_validation_result(disc_result.requirements)
-        pre_result = _make_preflight_result(project_id)
-        plan_result = _make_setup_plan(project_id)
-
-        discovery.discover.return_value = disc_result
-        validator.validate.return_value = val_result
-        preflight.check.return_value = pre_result
-        planner.plan.return_value = plan_result
-
-        workflow = DevelopmentWorkflow(discovery, validator, preflight, planner)
-        result = workflow.run(project_info, project_id)
+        result = workflow.run({"name": "test"}, "proj-1")
 
         assert result.setup_plan.status == "pending_approval"
 
     def test_no_approval_or_execution_calls(self):
-        discovery = MagicMock(spec=AIRequirementDiscovery)
-        validator = MagicMock(spec=RequirementValidator)
-        preflight = MagicMock(spec=RequirementPreflight)
-        planner = MagicMock(spec=SetupPlanner)
+        discovery, validator, preflight, planner, *_ = _make_components()
 
-        project_info = {"name": "test"}
-        project_id = "proj-1"
+        workflow = DevelopmentWorkflow(
+            discovery,
+            validator,
+            preflight,
+            planner,
+        )
 
-        disc_result = _make_discovery_result(project_id)
-        val_result = _make_validation_result(disc_result.requirements)
-        pre_result = _make_preflight_result(project_id)
-        plan_result = _make_setup_plan(project_id)
+        workflow.run({"name": "test"}, "proj-1")
 
-        discovery.discover.return_value = disc_result
-        validator.validate.return_value = val_result
-        preflight.check.return_value = pre_result
-        planner.plan.return_value = plan_result
-
-        workflow = DevelopmentWorkflow(discovery, validator, preflight, planner)
-        workflow.run(project_info, project_id)
-
-        # Ensure no approve/reject/execute methods were called on any component
-        for mock_obj in (discovery, validator, preflight, planner):
+        for mock_obj in (
+            discovery,
+            validator,
+            preflight,
+            planner,
+        ):
             for forbidden in ("approve", "reject", "execute"):
                 assert not hasattr(mock_obj, forbidden) or not getattr(
-                    mock_obj, forbidden
-                ).called, f"{mock_obj}.{forbidden} was called"
+                    mock_obj,
+                    forbidden,
+                ).called
 
     def test_discovery_error_propagates(self):
         discovery = MagicMock(spec=AIRequirementDiscovery)
@@ -276,37 +313,233 @@ class TestDevelopmentWorkflow:
         preflight = MagicMock(spec=RequirementPreflight)
         planner = MagicMock(spec=SetupPlanner)
 
-        discovery.discover.side_effect = RuntimeError("discovery failed")
+        discovery.discover.side_effect = RuntimeError(
+            "discovery failed"
+        )
 
-        workflow = DevelopmentWorkflow(discovery, validator, preflight, planner)
+        workflow = DevelopmentWorkflow(
+            discovery,
+            validator,
+            preflight,
+            planner,
+        )
 
-        with pytest.raises(RuntimeError, match="discovery failed"):
+        with pytest.raises(
+            RuntimeError,
+            match="discovery failed",
+        ):
             workflow.run({"name": "test"}, "proj-1")
 
     def test_intermediate_objects_are_not_mutated(self):
+        (
+            discovery,
+            validator,
+            preflight,
+            planner,
+            discovery_result,
+            validation_result,
+            preflight_result,
+            plan_result,
+        ) = _make_components()
+
+        workflow = DevelopmentWorkflow(
+            discovery,
+            validator,
+            preflight,
+            planner,
+        )
+
+        result = workflow.run({"name": "test"}, "proj-1")
+
+        assert result.discovery_result is discovery_result
+        assert result.validation_result is validation_result
+        assert result.preflight_result is preflight_result
+        assert result.setup_plan is plan_result
+
+
+class TestApprovedExecution:
+    def _make_workflow(self, executor):
         discovery = MagicMock(spec=AIRequirementDiscovery)
         validator = MagicMock(spec=RequirementValidator)
         preflight = MagicMock(spec=RequirementPreflight)
         planner = MagicMock(spec=SetupPlanner)
 
-        project_info = {"name": "test"}
-        project_id = "proj-1"
+        return DevelopmentWorkflow(
+            discovery=discovery,
+            validator=validator,
+            preflight=preflight,
+            planner=planner,
+            executor=executor,
+        )
 
-        disc_result = _make_discovery_result(project_id)
-        val_result = _make_validation_result(disc_result.requirements)
-        pre_result = _make_preflight_result(project_id)
-        plan_result = _make_setup_plan(project_id)
+    def test_approved_plan_executes_all_approved_steps(self):
+        executor = MagicMock(spec=SetupExecutor)
 
-        discovery.discover.return_value = disc_result
-        validator.validate.return_value = val_result
-        preflight.check.return_value = pre_result
+        step1 = _make_setup_step("step-1", approved=True)
+        step2 = _make_setup_step("step-2", approved=True)
+
+        result1 = ExecutionResult(
+            step_id="step-1",
+            success=True,
+            message="ok",
+            verification_passed=True,
+        )
+        result2 = ExecutionResult(
+            step_id="step-2",
+            success=True,
+            message="ok",
+            verification_passed=True,
+        )
+
+        executor.execute_step.side_effect = [result1, result2]
+
+        workflow = self._make_workflow(executor)
+
+        plan = _make_setup_plan(
+            status="approved",
+            steps=(step1, step2),
+        )
+
+        results = workflow.execute_approved(plan)
+
+        assert results == (result1, result2)
+        assert executor.execute_step.call_count == 2
+        executor.execute_step.assert_any_call(step1)
+        executor.execute_step.assert_any_call(step2)
+
+    def test_pending_plan_is_rejected(self):
+        executor = MagicMock(spec=SetupExecutor)
+        workflow = self._make_workflow(executor)
+
+        plan = _make_setup_plan(
+            status="pending_approval",
+            steps=(_make_setup_step("step-1", approved=False),),
+        )
+
+        with pytest.raises(WorkflowExecutionError):
+            workflow.execute_approved(plan)
+
+        executor.execute_step.assert_not_called()
+
+    def test_rejected_plan_is_rejected(self):
+        executor = MagicMock(spec=SetupExecutor)
+        workflow = self._make_workflow(executor)
+
+        plan = _make_setup_plan(
+            status="rejected",
+            steps=(),
+        )
+
+        with pytest.raises(WorkflowExecutionError):
+            workflow.execute_approved(plan)
+
+        executor.execute_step.assert_not_called()
+
+    def test_plan_with_unapproved_step_is_rejected(self):
+        executor = MagicMock(spec=SetupExecutor)
+        workflow = self._make_workflow(executor)
+
+        plan = _make_setup_plan(
+            status="approved",
+            steps=(_make_setup_step("step-1", approved=False),),
+        )
+
+        with pytest.raises(WorkflowExecutionError):
+            workflow.execute_approved(plan)
+
+        executor.execute_step.assert_not_called()
+
+    def test_execution_results_are_returned_as_tuple(self):
+        executor = MagicMock(spec=SetupExecutor)
+
+        execution_result = ExecutionResult(
+            step_id="step-1",
+            success=False,
+            message="failed",
+            verification_passed=False,
+        )
+        executor.execute_step.return_value = execution_result
+
+        workflow = self._make_workflow(executor)
+
+        step = _make_setup_step("step-1", approved=True)
+        plan = _make_setup_plan(
+            status="approved",
+            steps=(step,),
+        )
+
+        results = workflow.execute_approved(plan)
+
+        assert isinstance(results, tuple)
+        assert results == (execution_result,)
+
+    def test_no_executor_configured_is_rejected(self):
+        workflow = self._make_workflow(None)
+
+        step = _make_setup_step("step-1", approved=True)
+        plan = _make_setup_plan(
+            status="approved",
+            steps=(step,),
+        )
+
+        with pytest.raises(
+            WorkflowExecutionError,
+            match="No setup executor has been configured",
+        ):
+            workflow.execute_approved(plan)
+
+    def test_execute_approved_does_not_mutate_plan(self):
+        executor = MagicMock(spec=SetupExecutor)
+        executor.execute_step.return_value = ExecutionResult(
+            step_id="step-1",
+            success=True,
+            message="ok",
+            verification_passed=True,
+        )
+
+        workflow = self._make_workflow(executor)
+
+        step = _make_setup_step("step-1", approved=True)
+        plan = _make_setup_plan(
+            status="approved",
+            steps=(step,),
+        )
+
+        results = workflow.execute_approved(plan)
+
+        assert plan.status == "approved"
+        assert plan.steps == (step,)
+        assert results[0].step_id == "step-1"
+
+    def test_run_never_executes_even_with_executor_configured(self):
+        executor = MagicMock(spec=SetupExecutor)
+
+        discovery = MagicMock(spec=AIRequirementDiscovery)
+        validator = MagicMock(spec=RequirementValidator)
+        preflight = MagicMock(spec=RequirementPreflight)
+        planner = MagicMock(spec=SetupPlanner)
+
+        discovery_result = _make_discovery_result("proj-1")
+        validation_result = _make_validation_result(
+            discovery_result.requirements
+        )
+        preflight_result = _make_preflight_result("proj-1")
+        plan_result = _make_setup_plan("proj-1")
+
+        discovery.discover.return_value = discovery_result
+        validator.validate.return_value = validation_result
+        preflight.check.return_value = preflight_result
         planner.plan.return_value = plan_result
 
-        workflow = DevelopmentWorkflow(discovery, validator, preflight, planner)
-        result = workflow.run(project_info, project_id)
+        workflow = DevelopmentWorkflow(
+            discovery,
+            validator,
+            preflight,
+            planner,
+            executor=executor,
+        )
 
-        # All objects are frozen dataclasses, but we can still verify identity
-        assert result.discovery_result is disc_result
-        assert result.validation_result is val_result
-        assert result.preflight_result is pre_result
+        result = workflow.run({"name": "test"}, "proj-1")
+
         assert result.setup_plan is plan_result
+        executor.execute_step.assert_not_called()
