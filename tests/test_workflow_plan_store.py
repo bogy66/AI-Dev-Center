@@ -9,7 +9,12 @@ from app.workflow_plan_store import (
 )
 
 
-def _make_plan(status="pending_approval"):
+def _make_plan(
+    *,
+    plan_id="plan-1",
+    project_id="workflow-demo",
+    status="pending_approval",
+):
     step = SetupStep(
         id="step-1",
         requirement_id="req-1",
@@ -23,8 +28,8 @@ def _make_plan(status="pending_approval"):
     )
 
     return SetupPlan(
-        id="plan-1",
-        project_id="workflow-demo",
+        id=plan_id,
+        project_id=project_id,
         steps=(step,),
         requires_user_approval=True,
         rollback_steps=("rollback-1",),
@@ -39,10 +44,12 @@ def test_save_and_load_roundtrip(tmp_path):
 
     saved_path = store.save(original)
 
-    assert saved_path == tmp_path / "plans" / "plan-1.json"
+    assert saved_path == (
+        tmp_path / "plans" / "workflow-demo" / "plan-1.json"
+    )
     assert saved_path.is_file()
 
-    loaded = store.load("plan-1")
+    loaded = store.load("workflow-demo", "plan-1")
 
     assert loaded == original
 
@@ -52,7 +59,8 @@ def test_approved_plan_roundtrip(tmp_path):
     original = _make_plan(status="approved")
 
     store.save(original)
-    loaded = store.load("plan-1")
+
+    loaded = store.load("workflow-demo", "plan-1")
 
     assert loaded.status == "approved"
     assert loaded.steps[0].is_approved is True
@@ -72,39 +80,53 @@ def test_load_missing_plan_fails(tmp_path):
         WorkflowPlanStoreError,
         match="does not exist",
     ):
-        store.load("missing-plan")
+        store.load("workflow-demo", "missing-plan")
 
 
 def test_load_invalid_json_fails(tmp_path):
-    root = Path(tmp_path) / "plans"
-    root.mkdir()
-    (root / "broken.json").write_text("{not-json", encoding="utf-8")
+    root = Path(tmp_path) / "plans" / "workflow-demo"
+    root.mkdir(parents=True)
 
-    store = WorkflowPlanStore(root)
+    (root / "broken.json").write_text(
+        "{not-json",
+        encoding="utf-8",
+    )
+
+    store = WorkflowPlanStore(tmp_path / "plans")
 
     with pytest.raises(
         WorkflowPlanStoreError,
         match="Could not load setup plan",
     ):
-        store.load("broken")
+        store.load("workflow-demo", "broken")
 
 
-def test_multiple_plans_are_isolated(tmp_path):
+def test_multiple_projects_are_isolated(tmp_path):
     store = WorkflowPlanStore(tmp_path / "plans")
 
-    first = _make_plan()
-    second = SetupPlan(
-        id="plan-2",
+    first = _make_plan(
+        plan_id="plan-1",
+        project_id="workflow-demo",
+    )
+    second = _make_plan(
+        plan_id="plan-1",
         project_id="another-project",
-        steps=(),
-        requires_user_approval=True,
-        rollback_steps=(),
-        warnings=(),
-        status="pending_approval",
     )
 
     store.save(first)
     store.save(second)
 
-    assert store.load("plan-1") == first
-    assert store.load("plan-2") == second
+    assert store.load("workflow-demo", "plan-1") == first
+    assert store.load("another-project", "plan-1") == second
+
+
+def test_empty_project_id_is_rejected(tmp_path):
+    store = WorkflowPlanStore(tmp_path / "plans")
+
+    plan = _make_plan(project_id="")
+
+    with pytest.raises(
+        WorkflowPlanStoreError,
+        match="project_id must be a non-empty string",
+    ):
+        store.save(plan)

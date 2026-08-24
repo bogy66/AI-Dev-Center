@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 
 from app.requirement_model import SetupPlan
@@ -20,13 +20,30 @@ class WorkflowPlanStore:
     def __init__(self, root: Path | str = ".workflow-plans") -> None:
         self.root = Path(root)
 
+    def _project_root(self, project_id: str) -> Path:
+        if not project_id or not project_id.strip():
+            raise WorkflowPlanStoreError(
+                "project_id must be a non-empty string."
+            )
+
+        return self.root / project_id
+
+    def _plan_path(self, project_id: str, plan_id: str) -> Path:
+        if not plan_id or not plan_id.strip():
+            raise WorkflowPlanStoreError(
+                "plan_id must be a non-empty string."
+            )
+
+        return self._project_root(project_id) / f"{plan_id}.json"
+
     def save(self, plan: SetupPlan) -> Path:
         if not isinstance(plan, SetupPlan):
             raise TypeError("plan must be an instance of SetupPlan")
 
-        self.root.mkdir(parents=True, exist_ok=True)
+        project_root = self._project_root(plan.project_id)
+        project_root.mkdir(parents=True, exist_ok=True)
 
-        path = self.root / f"{plan.id}.json"
+        path = self._plan_path(plan.project_id, plan.id)
 
         try:
             path.write_text(
@@ -46,12 +63,13 @@ class WorkflowPlanStore:
 
         return path
 
-    def load(self, plan_id: str) -> SetupPlan:
-        path = self.root / f"{plan_id}.json"
+    def load(self, project_id: str, plan_id: str) -> SetupPlan:
+        path = self._plan_path(project_id, plan_id)
 
         if not path.is_file():
             raise WorkflowPlanStoreError(
-                f"Setup plan '{plan_id}' does not exist."
+                f"Setup plan '{plan_id}' does not exist "
+                f"for project '{project_id}'."
             )
 
         try:
@@ -70,8 +88,6 @@ class WorkflowPlanStore:
 
     @staticmethod
     def _deserialize(data: dict) -> SetupPlan:
-        # Die Felder von SetupStep werden explizit rekonstruiert, damit
-        # keine implizite Abhängigkeit von JSON/Dataclass-Details entsteht.
         from app.requirement_model import SetupStep
 
         steps = tuple(
@@ -90,7 +106,6 @@ class WorkflowPlanStore:
         )
 
         created_at_raw = data.get("created_at")
-
         created_at = (
             datetime.fromisoformat(created_at_raw)
             if created_at_raw
