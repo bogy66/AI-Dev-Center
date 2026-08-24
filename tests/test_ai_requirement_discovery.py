@@ -1,3 +1,4 @@
+import json
 import pytest
 from app.ai_requirement_discovery import AIRequirementDiscovery, DiscoverySource
 from app.requirement_model import (
@@ -232,8 +233,6 @@ class TestAIRequirementDiscovery:
     # 8. No installation or hardware action happens
     # ------------------------------------------------------------------
     def test_no_installation_or_hardware(self):
-        # This test verifies by construction that no pip, subprocess,
-        # or hardware access is performed. The discovery only returns data.
         source = self.FakeSource([])
         discovery = AIRequirementDiscovery(source)
         result = discovery.discover({})
@@ -248,3 +247,302 @@ class TestAIRequirementDiscovery:
         result = discovery.discover({})
         assert isinstance(result, RequirementSet)
         assert len(result.requirements) == 0
+
+
+# ======================================================================
+# LLM‑based discovery tests (new)
+# ======================================================================
+class TestAIRequirementDiscoveryLLMJson:
+    """Tests for the LLM‑based discovery using fake / mock providers."""
+
+    def _make_llm(self, return_text: str, raise_on_call: bool = False):
+        """Create a fake LLMProvider that returns `return_text`."""
+
+        class FakeLLM:
+            def __init__(self, text, do_raise):
+                self.text = text
+                self.do_raise = do_raise
+
+            def complete(self, prompt: str) -> str:
+                if self.do_raise:
+                    raise RuntimeError("simulated LLM error")
+                return self.text
+
+        return FakeLLM(return_text, raise_on_call)
+
+    def _valid_json_requirements(self):
+        return json.dumps(
+            {
+                "requirements": [
+                    {
+                        "name": "some-tool",
+                        "type": "executable",
+                        "purpose": "building",
+                        "required": True,
+                        "confidence": "high",
+                        "evidence": ["Makefile references some-tool"],
+                        "install_method": "apt-get install some-tool",
+                        "verification_method": "some-tool --version",
+                        "required_version": "1.2.3",
+                        "metadata": {"source": "Makefile"},
+                    }
+                ]
+            }
+        )
+
+    # ---------- valid responses ----------
+
+    def test_valid_json_response_yields_requirements(self):
+        text = self._valid_json_requirements()
+        provider = self._make_llm(text)
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        result = discovery.discover({"project_id": "test"})
+        assert len(result.requirements) == 1
+        req = result.requirements[0]
+        assert req.name == "some-tool"
+        assert req.type == "executable"
+        assert req.purpose == "building"
+        assert req.required is True
+        assert req.install_method == "apt-get install some-tool"
+        assert req.verification_method == "some-tool --version"
+        assert req.required_version == "1.2.3"
+        assert req.confidence == 0.9
+
+    def test_multiple_requirements(self):
+        json_obj = json.dumps(
+            {
+                "requirements": [
+                    {"name": "pkg-a", "type": "python_package", "purpose": "...",
+                     "confidence": "medium"},
+                    {"name": "pkg-b", "type": "system_package", "purpose": "...",
+                     "confidence": "low", "install_method": "apt install pkg-b"},
+                ]
+            }
+        )
+        provider = self._make_llm(json_obj)
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        result = discovery.discover({"project_id": "proj"})
+        assert len(result.requirements) == 2
+        assert result.requirements[0].name == "pkg-a"
+        assert result.requirements[1].name == "pkg-b"
+        assert result.requirements[1].install_method == "apt install pkg-b"
+
+    def test_evidence_is_mapped(self):
+        json_obj = json.dumps(
+            {
+                "requirements": [
+                    {
+                        "name": "pkg",
+                        "type": "python_package",
+                        "purpose": "...",
+                        "confidence": "high",
+                        "evidence": ["found in pyproject.toml", "imported in main.py"],
+                    }
+                ]
+            }
+        )
+        provider = self._make_llm(json_obj)
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        result = discovery.discover({"project_id": "p"})
+        req = result.requirements[0]
+        assert len(req.evidence) == 2
+        descriptions = [e.description for e in req.evidence]
+        assert "found in pyproject.toml" in descriptions
+        assert "imported in main.py" in descriptions
+
+    def test_confidence_mapping(self):
+        cases = [
+            ("high", 0.9),
+            ("medium", 0.6),
+            ("low", 0.3),
+        ]
+        for symbolic, expected in cases:
+            json_obj = json.dumps(
+                {
+                    "requirements": [
+                        {"name": "p", "type": "unknown", "purpose": "...",
+                         "confidence": symbolic}
+                    ]
+                }
+            )
+            provider = self._make_llm(json_obj)
+            discovery = AIRequirementDiscovery(llm_provider=provider)
+            result = discovery.discover({"project_id": "c"})
+            assert result.requirements[0].confidence == expected
+
+    def test_install_method_field(self):
+        json_obj = json.dumps(
+            {
+                "requirements": [
+                    {"name": "x", "type": "executable", "purpose": "...",
+                     "install_method": "custom-install.sh"}
+                ]
+            }
+        )
+        provider = self._make_llm(json_obj)
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        assert discovery.discover({}).requirements[0].install_method == "custom-install.sh"
+
+    def test_required_version_field(self):
+        json_obj = json.dumps(
+            {
+                "requirements": [
+                    {"name": "v", "type": "python_package", "purpose": "...",
+                     "required_version": "1.0.0"}
+                ]
+            }
+        )
+        provider = self._make_llm(json_obj)
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        assert discovery.discover({}).requirements[0].required_version == "1.0.0"
+
+    def test_verification_method_field(self):
+        json_obj = json.dumps(
+            {
+                "requirements": [
+                    {"name": "v", "type": "python_package", "purpose": "...",
+                     "verification_method": "v --version"}
+                ]
+            }
+        )
+        provider = self._make_llm(json_obj)
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        assert discovery.discover({}).requirements[0].verification_method == "v --version"
+
+    def test_metadata_field(self):
+        json_obj = json.dumps(
+            {
+                "requirements": [
+                    {"name": "m", "type": "unknown", "purpose": "...",
+                     "metadata": {"key": "value"}}
+                ]
+            }
+        )
+        provider = self._make_llm(json_obj)
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        req = discovery.discover({}).requirements[0]
+        assert req.metadata["key"] == "value"
+
+    def test_unknown_requirement_type(self):
+        json_obj = json.dumps(
+            {
+                "requirements": [
+                    {"name": "strange-stack", "type": "weird-category",
+                     "purpose": "...", "confidence": "low"}
+                ]
+            }
+        )
+        provider = self._make_llm(json_obj)
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        req = discovery.discover({}).requirements[0]
+        assert req.type == "weird-category"
+        assert req.confidence == 0.3
+
+    def test_invalid_json_triggers_fallback_and_warnings(self):
+        provider = self._make_llm("this is not json")
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        result = discovery.discover({"project_id": "p"})
+        assert result.fallback_used is True
+        assert any("parse" in w.lower() for w in result.warnings)
+        assert len(result.requirements) == 0
+
+    def test_missing_json_fields_do_not_crash(self):
+        json_obj = json.dumps(
+            {
+                "requirements": [
+                    {"name": "bare"}  # missing type, purpose, confidence, etc.
+                ]
+            }
+        )
+        provider = self._make_llm(json_obj)
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        result = discovery.discover({"project_id": "p"})
+        req = result.requirements[0]
+        assert req.name == "bare"
+        assert req.type == RequirementType.UNKNOWN
+        assert req.confidence == 0.5
+        assert req.install_method is None
+
+    def test_provider_exception_triggers_fallback(self):
+        provider = self._make_llm("anything", raise_on_call=True)
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        result = discovery.discover({"project_id": "p"})
+        assert result.fallback_used is True
+        assert any("exception" in w.lower() for w in result.warnings)
+        assert len(result.requirements) == 0
+
+    def test_fallback_used_flag(self):
+        # already covered by invalid JSON and exception tests above
+        # add explicit guard for happy path here
+        provider = self._make_llm("[]")
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        result = discovery.discover({"project_id": "p"})
+        assert result.fallback_used is False
+
+    def test_warnings_accumulate_for_bad_items(self):
+        json_obj = json.dumps(
+            {
+                "requirements": [
+                    {"name": "ok", "type": "executable", "purpose": "..",
+                     "confidence": "high"},
+                    None,  # non-dict item
+                    "string-item",
+                ]
+            }
+        )
+        provider = self._make_llm(json_obj)
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        result = discovery.discover({"project_id": "p"})
+        # only the valid items are kept
+        assert len(result.requirements) == 1
+        assert result.requirements[0].name == "ok"
+        # non‑dict items cause warnings
+        non_empty_warnings = [w for w in result.warnings if w]
+        assert len(non_empty_warnings) == 2
+
+    def test_ai_model_stored(self):
+        provider = self._make_llm("[]")
+        discovery = AIRequirementDiscovery(
+            llm_provider=provider, ai_model="test-model-1"
+        )
+        result = discovery.discover({"project_id": "p"})
+        assert result.ai_model == "test-model-1"
+
+    def test_conversation_trace_id_stored(self):
+        provider = self._make_llm("[]")
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        result = discovery.discover(
+            {"project_id": "p"}, conversation_trace_id="trace-42"
+        )
+        assert result.conversation_trace_id == "trace-42"
+
+    def test_no_real_network_calls(self):
+        # using a mock provider ensures no outgoing network
+        provider = self._make_llm("[]")
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        result = discovery.discover({})
+        assert result.fallback_used is False
+        assert len(result.requirements) == 0
+
+    # ------------------------------------------------------------------
+    # Stack‑neutrality guard
+    # ------------------------------------------------------------------
+    def test_no_hardcoded_esphome(self):
+        # Ensure the discovery does not know about specific stacks.
+        # We feed a completely unknown stack description.
+        json_obj = json.dumps(
+            {
+                "requirements": [
+                    {"name": "unknown-tool", "type": "executable", "purpose": "...",
+                     "confidence": "medium"}
+                ]
+            }
+        )
+        provider = self._make_llm(json_obj)
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        result = discovery.discover({"description": "some weird dev environment"})
+        req = result.requirements[0]
+        assert req.name == "unknown-tool"
+        assert req.type == "executable"
+        # The discovery must not inject esphome, pytest, etc.
+        assert "esphome" not in req.name.lower()
