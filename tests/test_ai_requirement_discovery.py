@@ -540,3 +540,60 @@ class TestAIRequirementDiscoveryLLMJson:
         assert req.type == "executable"
         # The discovery must not inject esphome, pytest, etc.
         assert "esphome" not in req.name.lower()
+
+    def test_provider_exception_sets_fallback_and_warning(self):
+        provider = self._make_llm(
+            "",
+            raise_on_call=True,
+        )
+
+        discovery = AIRequirementDiscovery(
+            llm_provider=provider,
+            ai_model="deepseek/deepseek-v4-pro",
+        )
+
+        result = discovery.discover(
+            {"project_id": "workflow-demo"}
+        )
+
+        assert result.fallback_used is True
+        assert len(result.requirements) == 0
+        assert result.warnings
+        assert "LLM provider raised an exception" in result.warnings[0]
+
+    def test_invalid_json_sets_fallback_and_warning(self):
+        provider = self._make_llm(
+            "this is not valid json"
+        )
+
+        discovery = AIRequirementDiscovery(
+            llm_provider=provider,
+            ai_model="deepseek/deepseek-v4-pro",
+        )
+
+        result = discovery.discover(
+            {"project_id": "workflow-demo"}
+        )
+
+        assert result.fallback_used is True
+        assert len(result.requirements) == 0
+        assert result.warnings
+        assert "Failed to parse LLM response" in result.warnings[0]
+
+    def test_empty_requirements_is_not_treated_as_provider_fallback(self):
+        provider = self._make_llm(
+            '{"requirements": []}'
+        )
+
+        discovery = AIRequirementDiscovery(
+            llm_provider=provider,
+            ai_model="deepseek/deepseek-v4-pro",
+        )
+
+        result = discovery.discover(
+            {"project_id": "workflow-demo"}
+        )
+
+        assert result.fallback_used is False
+        assert result.requirements == ()
+        assert result.warnings == ()
