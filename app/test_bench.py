@@ -3,6 +3,7 @@ from pathlib import Path
 
 
 class TestBench:
+    __test__ = False
     """Manages the test bench where Developer and Tester changes are combined and tested."""
     
     def __init__(self, project_path):

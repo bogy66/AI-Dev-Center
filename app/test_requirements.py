@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class TestRequirements:
+    __test__ = False
     """Describes the requirements a test adapter needs to run.
 
     This is a pure data model, stack‑agnostic and free of any

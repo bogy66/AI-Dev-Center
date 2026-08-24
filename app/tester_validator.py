@@ -3,6 +3,7 @@ from app.test_stack_detector import TestStackDetector
 
 
 class TesterValidator:
+    __test__ = False
     """Validates tester output using the adapter obtained from TestStackDetector."""
 
     def __init__(self):
