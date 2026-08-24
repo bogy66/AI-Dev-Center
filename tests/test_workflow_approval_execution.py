@@ -2,6 +2,7 @@ from unittest.mock import MagicMock
 
 from app.ai_requirement_discovery import AIRequirementDiscovery
 from app.dev_workflow import DevelopmentWorkflow
+from app.python_package_executor import PythonPackageExecutor
 from app.requirement_model import (
     DiscoveryResult,
     PreflightResult,
@@ -16,7 +17,7 @@ from app.requirement_model import (
 from app.requirement_preflight import RequirementPreflight
 from app.requirement_validator import RequirementValidator
 from app.setup_approval import SetupApproval
-from app.setup_executor import ExecutionResult, SetupExecutor
+from app.setup_executor import ExecutionResult
 from app.setup_planner import SetupPlanner
 
 
@@ -116,14 +117,15 @@ def _make_workflow(executor):
 
 
 def test_run_to_approval_to_execution():
-    executor = MagicMock(spec=SetupExecutor)
+    executor = MagicMock(spec=PythonPackageExecutor)
+
     execution_result = ExecutionResult(
         step_id="step-1",
         success=True,
         message="executed",
         verification_passed=True,
     )
-    executor.execute_step.return_value = execution_result
+    executor.execute.return_value = execution_result
 
     workflow, original_plan = _make_workflow(executor)
 
@@ -135,7 +137,7 @@ def test_run_to_approval_to_execution():
     assert workflow_result.setup_plan is original_plan
     assert original_plan.status == "pending_approval"
     assert original_plan.steps[0].is_approved is False
-    executor.execute_step.assert_not_called()
+    executor.execute.assert_not_called()
 
     approved_plan = SetupApproval.approve(original_plan)
 
@@ -147,15 +149,16 @@ def test_run_to_approval_to_execution():
     results = workflow.execute_approved(approved_plan)
 
     assert results == (execution_result,)
-    executor.execute_step.assert_called_once_with(
+    executor.execute.assert_called_once_with(
         approved_plan.steps[0]
     )
 
 
 def test_rejected_plan_never_executes():
-    executor = MagicMock(spec=SetupExecutor)
+    executor = MagicMock(spec=PythonPackageExecutor)
 
     workflow, original_plan = _make_workflow(executor)
+
     workflow.run(
         {"name": "workflow-integration"},
         "workflow-integration",
@@ -170,13 +173,14 @@ def test_rejected_plan_never_executes():
     else:
         raise AssertionError("Rejected plan must not execute")
 
-    executor.execute_step.assert_not_called()
+    executor.execute.assert_not_called()
 
 
 def test_approval_creates_approved_copy():
-    executor = MagicMock(spec=SetupExecutor)
+    executor = MagicMock(spec=PythonPackageExecutor)
 
     workflow, original_plan = _make_workflow(executor)
+
     workflow.run(
         {"name": "workflow-integration"},
         "workflow-integration",

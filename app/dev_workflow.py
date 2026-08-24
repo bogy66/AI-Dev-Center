@@ -128,6 +128,6 @@ class DevelopmentWorkflow:
             self._validate_executable_step(step)
 
         return tuple(
-            self._executor.execute_step(step)
+            self._executor.execute(step)
             for step in plan.steps
         )

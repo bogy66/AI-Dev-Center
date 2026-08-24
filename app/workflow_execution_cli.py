@@ -6,11 +6,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from app.ai_config import load_ai_config
 from app.ai_requirement_discovery import AIRequirementDiscovery
 from app.dev_workflow import DevelopmentWorkflow
-from app.llm_provider_factory import create_llm_provider
-from app.local_secret_store import LocalSecretStore
 from app.python_package_executor import PythonPackageExecutor
 from app.requirement_preflight import RequirementPreflight
 from app.requirement_validator import RequirementValidator
@@ -19,15 +16,17 @@ from app.setup_planner import SetupPlanner
 from app.workflow_plan_store import WorkflowPlanStore
 
 
-def build_workflow(config) -> DevelopmentWorkflow:
-    """Build a workflow with the real package executor."""
-    secret_resolver = LocalSecretStore()
-    provider = create_llm_provider(config, secret_resolver)
+def build_workflow() -> DevelopmentWorkflow:
+    """Build an execution-only workflow.
+
+    No LLM provider or AI configuration is needed because the plan
+    has already been persisted and is loaded before execution.
+    """
     executor = PythonPackageExecutor()
 
     discovery = AIRequirementDiscovery(
-        llm_provider=provider,
-        ai_model=config.model,
+        llm_provider=None,
+        ai_model=None,
     )
 
     return DevelopmentWorkflow(
@@ -48,8 +47,7 @@ def run_approved_execution(
 ):
     """Load, approve and execute an existing persisted setup plan.
 
-    No discovery or planning is performed here. The exact persisted plan
-    identified by ``project_path.name`` and ``plan_id`` is used.
+    No discovery, planning or AI provider initialization occurs here.
     """
     if store is None:
         store = WorkflowPlanStore(".workflow-plans")
@@ -111,8 +109,7 @@ def main() -> None:
         raise SystemExit(2)
 
     try:
-        config = load_ai_config("config/ai-dev-center.yml")
-        workflow = build_workflow(config)
+        workflow = build_workflow()
         store = WorkflowPlanStore(".workflow-plans")
 
         results, approved_plan = run_approved_execution(

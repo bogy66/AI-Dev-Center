@@ -1,7 +1,8 @@
 """Tests for the deterministic development workflow."""
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from app.ai_requirement_discovery import AIRequirementDiscovery
 from app.dev_workflow import (
@@ -9,6 +10,7 @@ from app.dev_workflow import (
     WorkflowExecutionError,
     WorkflowResult,
 )
+from app.python_package_executor import PythonPackageExecutor
 from app.requirement_model import (
     DiscoveryResult,
     PreflightResult,
@@ -22,7 +24,7 @@ from app.requirement_model import (
 )
 from app.requirement_preflight import RequirementPreflight
 from app.requirement_validator import RequirementValidator
-from app.setup_executor import ExecutionResult, SetupExecutor
+from app.setup_executor import ExecutionResult
 from app.setup_planner import SetupPlanner
 
 
@@ -372,7 +374,7 @@ class TestApprovedExecution:
         )
 
     def test_approved_plan_executes_all_approved_install_steps(self):
-        executor = MagicMock(spec=SetupExecutor)
+        executor = MagicMock(spec=PythonPackageExecutor)
 
         step1 = _make_setup_step("step-1", approved=True)
         step2 = _make_setup_step("step-2", approved=True)
@@ -390,7 +392,7 @@ class TestApprovedExecution:
             verification_passed=True,
         )
 
-        executor.execute_step.side_effect = [result1, result2]
+        executor.execute.side_effect = [result1, result2]
 
         workflow = self._make_workflow(executor)
 
@@ -402,11 +404,11 @@ class TestApprovedExecution:
         results = workflow.execute_approved(plan)
 
         assert results == (result1, result2)
-        executor.execute_step.assert_any_call(step1)
-        executor.execute_step.assert_any_call(step2)
+        executor.execute.assert_any_call(step1)
+        executor.execute.assert_any_call(step2)
 
     def test_pending_plan_is_rejected(self):
-        executor = MagicMock(spec=SetupExecutor)
+        executor = MagicMock(spec=PythonPackageExecutor)
         workflow = self._make_workflow(executor)
 
         plan = _make_setup_plan(
@@ -417,10 +419,10 @@ class TestApprovedExecution:
         with pytest.raises(WorkflowExecutionError):
             workflow.execute_approved(plan)
 
-        executor.execute_step.assert_not_called()
+        executor.execute.assert_not_called()
 
     def test_rejected_plan_is_rejected(self):
-        executor = MagicMock(spec=SetupExecutor)
+        executor = MagicMock(spec=PythonPackageExecutor)
         workflow = self._make_workflow(executor)
 
         plan = _make_setup_plan(
@@ -431,10 +433,10 @@ class TestApprovedExecution:
         with pytest.raises(WorkflowExecutionError):
             workflow.execute_approved(plan)
 
-        executor.execute_step.assert_not_called()
+        executor.execute.assert_not_called()
 
     def test_plan_with_unapproved_step_is_rejected(self):
-        executor = MagicMock(spec=SetupExecutor)
+        executor = MagicMock(spec=PythonPackageExecutor)
         workflow = self._make_workflow(executor)
 
         plan = _make_setup_plan(
@@ -445,10 +447,10 @@ class TestApprovedExecution:
         with pytest.raises(WorkflowExecutionError):
             workflow.execute_approved(plan)
 
-        executor.execute_step.assert_not_called()
+        executor.execute.assert_not_called()
 
     def test_manual_review_action_is_rejected(self):
-        executor = MagicMock(spec=SetupExecutor)
+        executor = MagicMock(spec=PythonPackageExecutor)
         workflow = self._make_workflow(executor)
 
         step = _make_setup_step(
@@ -466,10 +468,10 @@ class TestApprovedExecution:
         ):
             workflow.execute_approved(plan)
 
-        executor.execute_step.assert_not_called()
+        executor.execute.assert_not_called()
 
     def test_missing_package_is_rejected(self):
-        executor = MagicMock(spec=SetupExecutor)
+        executor = MagicMock(spec=PythonPackageExecutor)
         workflow = self._make_workflow(executor)
 
         step = _make_setup_step(
@@ -487,10 +489,10 @@ class TestApprovedExecution:
         ):
             workflow.execute_approved(plan)
 
-        executor.execute_step.assert_not_called()
+        executor.execute.assert_not_called()
 
     def test_missing_install_method_is_rejected(self):
-        executor = MagicMock(spec=SetupExecutor)
+        executor = MagicMock(spec=PythonPackageExecutor)
         workflow = self._make_workflow(executor)
 
         step = _make_setup_step(
@@ -508,10 +510,10 @@ class TestApprovedExecution:
         ):
             workflow.execute_approved(plan)
 
-        executor.execute_step.assert_not_called()
+        executor.execute.assert_not_called()
 
     def test_execution_results_are_returned_as_tuple(self):
-        executor = MagicMock(spec=SetupExecutor)
+        executor = MagicMock(spec=PythonPackageExecutor)
 
         execution_result = ExecutionResult(
             step_id="step-1",
@@ -519,7 +521,7 @@ class TestApprovedExecution:
             message="ok",
             verification_passed=True,
         )
-        executor.execute_step.return_value = execution_result
+        executor.execute.return_value = execution_result
 
         workflow = self._make_workflow(executor)
 
@@ -556,8 +558,8 @@ class TestApprovedExecution:
             workflow.execute_approved(plan)
 
     def test_execute_approved_does_not_mutate_plan(self):
-        executor = MagicMock(spec=SetupExecutor)
-        executor.execute_step.return_value = ExecutionResult(
+        executor = MagicMock(spec=PythonPackageExecutor)
+        executor.execute.return_value = ExecutionResult(
             step_id="step-1",
             success=True,
             message="ok",
@@ -582,7 +584,7 @@ class TestApprovedExecution:
         assert results[0].step_id == "step-1"
 
     def test_run_never_executes_even_with_executor_configured(self):
-        executor = MagicMock(spec=SetupExecutor)
+        executor = MagicMock(spec=PythonPackageExecutor)
 
         discovery = MagicMock(spec=AIRequirementDiscovery)
         validator = MagicMock(spec=RequirementValidator)
@@ -612,4 +614,4 @@ class TestApprovedExecution:
         result = workflow.run({"name": "test"}, "proj-1")
 
         assert result.setup_plan is plan_result
-        executor.execute_step.assert_not_called()
+        executor.execute.assert_not_called()
