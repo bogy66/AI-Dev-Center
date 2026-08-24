@@ -111,7 +111,7 @@ Return ONLY valid JSON, no additional commentary.
             type=str(data.get("type", RequirementType.UNKNOWN)),
             purpose=str(data.get("purpose", "")),
             required=bool(data.get("required", True)),
-            confidence=self._parse_confidence(data.get("confidence", "medium")),
+            confidence=self._parse_confidence(data.get("confidence", 0.5)),
             evidence=evidence_tuple,
             source_file=None,
             detected_version=None,

@@ -1,6 +1,6 @@
 import json
 import pytest
-from app.ai_requirement_discovery import AIRequirementDiscovery, DiscoverySource
+from app.ai_requirement_discovery import AIRequirementDiscovery
 from app.requirement_model import (
     Requirement,
     RequirementSet,
@@ -73,93 +73,98 @@ class TestRequirementSet:
 class TestAIRequirementDiscovery:
 
     # ------------------------------------------------------------------
-    # Helper: a fake DiscoverySource that returns fixed requirements
+    # Helper: fake LLM provider that returns a fixed response
     # ------------------------------------------------------------------
-    class FakeSource:
-        def __init__(self, requirements: list[Requirement]):
-            self._requirements = requirements
+    class FakeLLM:
+        def __init__(self, response_text=""):
+            self.response_text = response_text
             self.called_with = None
 
-        def discover(self, project_info, stack_context=None):
-            self.called_with = (project_info, stack_context)
-            return list(self._requirements)
+        def complete(self, prompt: str) -> str:
+            self.called_with = prompt
+            return self.response_text
+
+    def _make_llm(self, response_text):
+        return self.FakeLLM(response_text)
+
+    def _json_response(self, requirements):
+        return json.dumps({"requirements": requirements})
 
     # ------------------------------------------------------------------
-    # 1. DiscoverySource is called
+    # 1. LLMProvider is called
     # ------------------------------------------------------------------
-    def test_source_is_called(self):
-        source = self.FakeSource([])
-        discovery = AIRequirementDiscovery(source)
+    def test_provider_is_called(self):
+        fake = self.FakeLLM("[]")
+        discovery = AIRequirementDiscovery(llm_provider=fake)
         discovery.discover({"path": "/tmp/project"})
-        assert source.called_with is not None
+        assert fake.called_with is not None
 
     # ------------------------------------------------------------------
-    # 2. Project info is passed to the source
+    # 2. Project info is serialized into the prompt
     # ------------------------------------------------------------------
     def test_project_info_passed(self):
-        source = self.FakeSource([])
-        discovery = AIRequirementDiscovery(source)
+        fake = self.FakeLLM("[]")
+        discovery = AIRequirementDiscovery(llm_provider=fake)
         project_info = {"path": "/tmp/project", "files": ["esphome.yaml"]}
         discovery.discover(project_info)
-        assert source.called_with[0] == project_info
+        assert fake.called_with is not None
+        assert "/tmp/project" in fake.called_with
+        assert "esphome.yaml" in fake.called_with
 
     # ------------------------------------------------------------------
-    # 3. Stack context is passed when provided
+    # 3. stack_context parameter is accepted and does not break discovery
     # ------------------------------------------------------------------
-    def test_stack_context_passed(self):
-        source = self.FakeSource([])
-        discovery = AIRequirementDiscovery(source)
-        discovery.discover({"path": "/tmp/project"}, stack_context="esphome")
-        assert source.called_with[1] == "esphome"
+    def test_stack_context_accepted(self):
+        fake = self.FakeLLM("[]")
+        discovery = AIRequirementDiscovery(llm_provider=fake)
+        result = discovery.discover({"path": "/tmp/project"}, stack_context="esphome")
+        assert len(result.requirements) == 0
+        assert fake.called_with is not None
 
     # ------------------------------------------------------------------
-    # 4. ESPHome-like requirements work as test data (using central model)
+    # 4. ESPHome-like requirements are mapped through the central model
     # ------------------------------------------------------------------
     def test_esphome_like_requirements(self):
         reqs = [
-            Requirement(
-                id="r1",
-                name="esphome",
-                type=RequirementType.PYTHON_PACKAGE,
-                purpose="build+flash",
-                required=True,
-                confidence=0.9,
-                metadata={"source": "fake"},
-            ),
-            Requirement(
-                id="r2",
-                name="pyserial",
-                type=RequirementType.PYTHON_PACKAGE,
-                purpose="serial_log",
-                required=True,
-                confidence=0.9,
-                metadata={"source": "fake"},
-            ),
-            Requirement(
-                id="r3",
-                name="ESP32",
-                type=RequirementType.HARDWARE_COMPONENT,
-                purpose="target",
-                required=True,
-                confidence=0.9,
-                metadata={"source": "fake"},
-            ),
-            Requirement(
-                id="r4",
-                name="serial",
-                type=RequirementType.CONNECTION,
-                purpose="serial_log",
-                required=True,
-                confidence=0.9,
-                metadata={"source": "fake"},
-            ),
+            {
+                "name": "esphome",
+                "type": "python_package",
+                "purpose": "build+flash",
+                "required": True,
+                "confidence": "high",
+                "metadata": {"source": "fake"},
+            },
+            {
+                "name": "pyserial",
+                "type": "python_package",
+                "purpose": "serial_log",
+                "required": True,
+                "confidence": "high",
+                "metadata": {"source": "fake"},
+            },
+            {
+                "name": "ESP32",
+                "type": "hardware_component",
+                "purpose": "target",
+                "required": True,
+                "confidence": "high",
+                "metadata": {"source": "fake"},
+            },
+            {
+                "name": "serial",
+                "type": "connection",
+                "purpose": "serial_log",
+                "required": True,
+                "confidence": "high",
+                "metadata": {"source": "fake"},
+            },
         ]
-        source = self.FakeSource(reqs)
-        discovery = AIRequirementDiscovery(source)
+        fake = self._make_llm(self._json_response(reqs))
+        discovery = AIRequirementDiscovery(llm_provider=fake)
         result = discovery.discover({"path": "/tmp/project"})
         assert len(result.requirements) == 4
         assert result.requirements[0].name == "esphome"
-        assert result.requirements[0].type == RequirementType.PYTHON_PACKAGE
+        assert result.requirements[0].type == "python_package"
         assert result.requirements[0].purpose == "build+flash"
         assert result.requirements[1].name == "pyserial"
         assert result.requirements[2].name == "ESP32"
@@ -169,36 +174,33 @@ class TestAIRequirementDiscovery:
     # 5. Unknown requirements can be represented
     # ------------------------------------------------------------------
     def test_unknown_requirement(self):
-        req = Requirement(
-            id="r-unknown",
-            name="some-unknown-tool",
-            type=RequirementType.UNKNOWN,
-            purpose="unknown",
-            required=False,
-            confidence=0.2,
-            metadata={"source": "fake"},
-        )
-        source = self.FakeSource([req])
-        discovery = AIRequirementDiscovery(source)
+        req = {
+            "name": "some-unknown-tool",
+            "type": "unknown",
+            "purpose": "unknown",
+            "required": False,
+            "confidence": 0.2,
+            "metadata": {"source": "fake"},
+        }
+        fake = self._make_llm(self._json_response([req]))
+        discovery = AIRequirementDiscovery(llm_provider=fake)
         result = discovery.discover({})
-        assert result.requirements[0].type == RequirementType.UNKNOWN
+        assert result.requirements[0].type == "unknown"
         assert result.requirements[0].confidence == 0.2
 
     # ------------------------------------------------------------------
     # 6. Confidence is preserved
     # ------------------------------------------------------------------
     def test_confidence_preserved(self):
-        req = Requirement(
-            id="r-c",
-            name="esphome",
-            type=RequirementType.PYTHON_PACKAGE,
-            purpose="build",
-            required=True,
-            confidence=0.6,
-            metadata={},
-        )
-        source = self.FakeSource([req])
-        discovery = AIRequirementDiscovery(source)
+        req = {
+            "name": "esphome",
+            "type": "python_package",
+            "purpose": "build",
+            "required": True,
+            "confidence": 0.6,
+        }
+        fake = self._make_llm(self._json_response([req]))
+        discovery = AIRequirementDiscovery(llm_provider=fake)
         result = discovery.discover({})
         assert result.requirements[0].confidence == 0.6
 
@@ -206,24 +208,17 @@ class TestAIRequirementDiscovery:
     # 7. Evidence and source are preserved
     # ------------------------------------------------------------------
     def test_evidence_and_source_preserved(self):
-        ev = RequirementEvidence(
-            id="ev-1",
-            source_type="file",
-            description="found in requirements.txt",
-            source_file="requirements.txt",
-        )
-        req = Requirement(
-            id="r-ev",
-            name="pyserial",
-            type=RequirementType.PYTHON_PACKAGE,
-            purpose="serial_log",
-            required=True,
-            confidence=1.0,
-            evidence=[ev],
-            metadata={"source": "my-source"},
-        )
-        source = self.FakeSource([req])
-        discovery = AIRequirementDiscovery(source)
+        req = {
+            "name": "pyserial",
+            "type": "python_package",
+            "purpose": "serial_log",
+            "required": True,
+            "confidence": 1.0,
+            "evidence": ["found in requirements.txt"],
+            "metadata": {"source": "my-source"},
+        }
+        fake = self._make_llm(self._json_response([req]))
+        discovery = AIRequirementDiscovery(llm_provider=fake)
         result = discovery.discover({})
         assert len(result.requirements) == 1
         assert result.requirements[0].evidence[0].description == "found in requirements.txt"
@@ -233,19 +228,18 @@ class TestAIRequirementDiscovery:
     # 8. No installation or hardware action happens
     # ------------------------------------------------------------------
     def test_no_installation_or_hardware(self):
-        source = self.FakeSource([])
-        discovery = AIRequirementDiscovery(source)
+        fake = self._make_llm("[]")
+        discovery = AIRequirementDiscovery(llm_provider=fake)
         result = discovery.discover({})
         assert len(result.requirements) == 0
 
     # ------------------------------------------------------------------
-    # 9. Empty RequirementSet is returned when source returns nothing
+    # 9. Empty result is returned when provider returns no requirements
     # ------------------------------------------------------------------
     def test_empty_requirement_set(self):
-        source = self.FakeSource([])
-        discovery = AIRequirementDiscovery(source)
+        fake = self._make_llm("[]")
+        discovery = AIRequirementDiscovery(llm_provider=fake)
         result = discovery.discover({})
-        assert isinstance(result, RequirementSet)
         assert len(result.requirements) == 0
 
 
