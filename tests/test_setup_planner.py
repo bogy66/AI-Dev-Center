@@ -1,27 +1,22 @@
 import pytest
-from app.requirement_model import Requirement, Status
+from app.requirement_model import Requirement, RequirementType, PreflightResult
 from app.setup_planner import SetupPlanner
 
 
-# ---------------------------------------------------------------------------
-# Helper to create a Requirement quickly
-# ---------------------------------------------------------------------------
 def _requirement(
-    id="R001",
-    name="esphome",
-    type="executable",
+    id="R1",
+    name="pkg",
+    type=RequirementType.PYTHON_PACKAGE,
     required=True,
-    install_method="pip install esphome",
+    install_method="pip install pkg",
     required_version=None,
     verification_method=None,
-    metadata=None,
-    status="discovered",
 ):
     return Requirement(
         id=id,
         name=name,
         type=type,
-        purpose="dummy",
+        purpose="test",
         required=required,
         confidence=0.9,
         evidence=(),
@@ -30,252 +25,210 @@ def _requirement(
         required_version=required_version,
         install_method=install_method,
         verification_method=verification_method,
-        status=status,
-        metadata=metadata or {},
+        status="missing",
+        metadata={},
     )
 
 
-class TestSetupPlanner:
+def _preflight(missing=(), already_installed=(), project_id="proj"):
+    return PreflightResult(
+        id="preflight-1",
+        project_id=project_id,
+        overall_ready=False,
+        results=(),
+        missing_requirements=tuple(missing),
+        already_installed=tuple(already_installed),
+        warnings=(),
+    )
 
-    @pytest.fixture
-    def planner(self):
-        return SetupPlanner()
 
-    # ------------------------------------------------------------------
-    # Existing test names reused, bodies adjusted to the new contract
-    # ------------------------------------------------------------------
+def test_single_missing_requirement_creates_one_step():
+    req = _requirement(
+        id="R1",
+        name="mypkg",
+        type=RequirementType.PYTHON_PACKAGE,
+        install_method="pip install mypkg",
+        required_version="1.0",
+        verification_method="mypkg --version",
+    )
+    preflight = _preflight([req])
+    plan = SetupPlanner().plan([], preflight, "proj")
 
-    def test_esphome_as_installable_executable_with_pip(self, planner: SetupPlanner):
-        req = _requirement(name="esphome", type="executable",
-                           install_method="pip install esphome")
-        plan = planner.plan([req], project_id="proj")
-        assert len(plan.steps) == 1
-        step = plan.steps[0]
-        assert step.requirement_id == "R001"
-        assert step.package == "esphome"
-        assert step.install_method == "pip install esphome"
-        assert step.action == "pip install esphome"
-        assert step.command == "pip install esphome"
+    assert len(plan.steps) == 1
+    step = plan.steps[0]
+    assert step.id == "step-R1"
+    assert step.requirement_id == "R1"
+    assert step.action == "manual_review"
+    assert step.install_method == "pip install mypkg"
+    assert step.package == "mypkg"
+    assert step.version == "1.0"
+    assert step.command is None
+    assert step.verification_after == "mypkg --version"
+    assert step.is_approved is False
+    assert plan.requires_user_approval is True
+    assert plan.status == "pending_approval"
+    assert plan.rollback_steps == ()
 
-    def test_pyserial_as_python_package_with_pip(self, planner: SetupPlanner):
-        req = _requirement(name="pyserial", type="python_package",
-                           install_method="pip install pyserial")
-        plan = planner.plan([req], project_id="proj")
-        assert len(plan.steps) == 1
-        step = plan.steps[0]
-        assert step.requirement_id == "R001"
-        assert step.package == "pyserial"
-        assert step.install_method == "pip install pyserial"
-        assert step.command == "pip install pyserial"
 
-    def test_missing_serial_port_no_install_method(self, planner: SetupPlanner):
-        req = _requirement(name="serial-port", type="hardware_component",
-                           required=True, install_method=None)
-        plan = planner.plan([req], project_id="proj")
-        assert len(plan.steps) == 1
-        step = plan.steps[0]
-        assert "No install method" in step.action
-        assert step.install_method is None
-        assert step.command is None
-        assert step.verification_after is None
-        assert any("serial-port" in w for w in plan.warnings)
+def test_multiple_missing_requirements():
+    req1 = _requirement(
+        id="R1",
+        name="pkg1",
+        type=RequirementType.PYTHON_PACKAGE,
+        install_method="pip install pkg1",
+    )
+    req2 = _requirement(
+        id="R2",
+        name="exe2",
+        type=RequirementType.EXECUTABLE,
+        install_method="brew install exe2",
+    )
+    preflight = _preflight([req1, req2])
+    plan = SetupPlanner().plan([], preflight, "proj")
 
-    def test_unknown_executable_not_installed(self, planner: SetupPlanner):
-        req = _requirement(name="some-unknown-tool", type="executable",
-                           install_method=None)
-        plan = planner.plan([req], project_id="proj")
-        assert len(plan.steps) == 1
-        step = plan.steps[0]
-        assert step.requirement_id == "R001"
-        assert step.install_method is None
-        assert step.command is None
-        assert "No install method" in step.action
+    assert len(plan.steps) == 2
+    ids = {s.id for s in plan.steps}
+    assert ids == {"step-R1", "step-R2"}
+    req_ids = {s.requirement_id for s in plan.steps}
+    assert req_ids == {"R1", "R2"}
 
-    def test_fulfilled_requirements_produce_no_steps(self, planner: SetupPlanner):
-        req = _requirement(name="python", type="executable",
-                           required=True, install_method="pip install python",
-                           status=Status.INSTALLED)
-        plan = planner.plan([req], project_id="proj")
-        assert len(plan.steps) == 0
 
-    def test_multiple_requirements_produce_correct_steps(self, planner: SetupPlanner):
-        req1 = _requirement(id="R1", name="esphome", type="executable",
-                            install_method="pip install esphome")
-        req2 = _requirement(id="R2", name="some-unknown-tool", type="executable",
-                            install_method=None)
-        req3 = _requirement(id="R3", name="pyserial", type="python_package",
-                            install_method="pip install pyserial")
-        plan = planner.plan([req1, req2, req3], project_id="proj")
-        assert len(plan.steps) == 3
-        step_ids = {s.requirement_id for s in plan.steps}
-        assert step_ids == {"R1", "R2", "R3"}
+def test_already_installed_requirement_not_in_plan():
+    missing = _requirement(
+        id="R1",
+        name="pkg1",
+        type=RequirementType.PYTHON_PACKAGE,
+    )
+    installed = _requirement(
+        id="R2",
+        name="pkg2",
+        type=RequirementType.PYTHON_PACKAGE,
+    )
+    preflight = _preflight([missing], [installed])
+    plan = SetupPlanner().plan([], preflight, "proj")
 
-    def test_no_installation_occurs(self, planner: SetupPlanner):
-        req = _requirement(name="esphome", type="executable",
-                           install_method="pip install esphome")
-        plan = planner.plan([req], project_id="proj")
-        step = plan.steps[0]
-        assert step.install_method == "pip install esphome"
-        assert step.command == "pip install esphome"
+    assert len(plan.steps) == 1
+    assert plan.steps[0].requirement_id == "R1"
 
-    def test_unknown_package_name_works(self, planner: SetupPlanner):
-        req = _requirement(name="my-weird-framework", type="python_package",
-                           install_method="pip install my-weird-framework")
-        plan = planner.plan([req], project_id="proj")
-        assert len(plan.steps) == 1
-        step = plan.steps[0]
-        assert step.package == "my-weird-framework"
-        assert step.install_method == "pip install my-weird-framework"
-        assert step.command == "pip install my-weird-framework"
 
-    def test_unknown_executable_works(self, planner: SetupPlanner):
-        req = _requirement(name="unknown-binary", type="executable",
-                           install_method="custom-install.sh")
-        plan = planner.plan([req], project_id="proj")
-        assert len(plan.steps) == 1
-        step = plan.steps[0]
-        assert step.package == "unknown-binary"
-        assert step.install_method == "custom-install.sh"
-        assert step.command == "custom-install.sh"
+def test_requirement_id_forwarded():
+    req = _requirement(
+        id="R42",
+        name="pkg",
+        type=RequirementType.PYTHON_PACKAGE,
+    )
+    preflight = _preflight([req])
+    plan = SetupPlanner().plan([], preflight, "proj")
 
-    def test_no_hardcoded_package_names(self, planner: SetupPlanner):
-        req_a = _requirement(id="A", name="my-pkg-a", type="python_package",
-                            install_method="pip install my-pkg-a",
-                            required_version="1.2.3",
-                            verification_method="my-pkg-a --version")
-        req_b = _requirement(id="B", name="my-pkg-b", type="system_package",
-                            install_method="apt-get install my-pkg-b",
-                            verification_method="dpkg -l my-pkg-b")
-        plan = planner.plan([req_a, req_b], project_id="proj")
-        assert len(plan.steps) == 2
-        step_a = next(s for s in plan.steps if s.requirement_id == "A")
-        step_b = next(s for s in plan.steps if s.requirement_id == "B")
+    assert plan.steps[0].requirement_id == "R42"
 
-        assert step_a.package == "my-pkg-a"
-        assert step_a.install_method == "pip install my-pkg-a"
-        assert step_a.version == "1.2.3"
-        assert step_a.verification_after == "my-pkg-a --version"
 
-        assert step_b.package == "my-pkg-b"
-        assert step_b.install_method == "apt-get install my-pkg-b"
-        assert step_b.verification_after == "dpkg -l my-pkg-b"
+def test_package_set_only_for_python_package():
+    python_req = _requirement(
+        id="R1",
+        name="pypkg",
+        type=RequirementType.PYTHON_PACKAGE,
+    )
+    exe_req = _requirement(
+        id="R2",
+        name="exe",
+        type=RequirementType.EXECUTABLE,
+    )
+    preflight = _preflight([python_req, exe_req])
+    plan = SetupPlanner().plan([], preflight, "proj")
 
-    def test_install_method_from_requirement_is_used(self, planner: SetupPlanner):
-        req = _requirement(name="custom-tool", type="executable",
-                           install_method="brew install custom-tool")
-        plan = planner.plan([req], project_id="proj")
-        step = plan.steps[0]
-        assert step.install_method == "brew install custom-tool"
-        assert step.action == "brew install custom-tool"
-        assert step.command == "brew install custom-tool"
+    step_py = next(s for s in plan.steps if s.requirement_id == "R1")
+    step_exe = next(s for s in plan.steps if s.requirement_id == "R2")
 
-    def test_required_version_is_forwarded(self, planner: SetupPlanner):
-        req = _requirement(name="some-lib", type="python_package",
-                           install_method="pip install some-lib==3.4.0",
-                           required_version="3.4.0")
-        plan = planner.plan([req], project_id="proj")
-        step = plan.steps[0]
-        assert step.version == "3.4.0"
+    assert step_py.package == "pypkg"
+    assert step_exe.package is None
 
-    def test_verification_method_is_forwarded(self, planner: SetupPlanner):
-        req = _requirement(name="another-lib", type="python_package",
-                           install_method="pip install another-lib",
-                           verification_method="another-lib --version")
-        plan = planner.plan([req], project_id="proj")
-        step = plan.steps[0]
-        assert step.verification_after == "another-lib --version"
 
-    def test_missing_install_information_does_not_invent_commands(self, planner: SetupPlanner):
-        req = _requirement(name="magic-sdk", type="sdk",
-                           required=True,
-                           install_method=None)
-        plan = planner.plan([req], project_id="proj")
-        step = plan.steps[0]
-        assert step.install_method is None
-        assert step.command is None
-        assert "No install method" in step.action
-        assert any("magic-sdk" in w for w in plan.warnings)
+def test_version_forwarded():
+    req = _requirement(
+        id="R1",
+        name="pkg",
+        type=RequirementType.PYTHON_PACKAGE,
+        required_version="2.5",
+    )
+    preflight = _preflight([req])
+    plan = SetupPlanner().plan([], preflight, "proj")
 
-    # ------------------------------------------------------------------
-    # New tests proving stack-neutral, data-driven behaviour
-    # ------------------------------------------------------------------
+    assert plan.steps[0].version == "2.5"
 
-    def test_unknown_python_package_works(self, planner: SetupPlanner):
-        req = _requirement(name="my-wild-package", type="python_package",
-                           install_method="pip install my-wild-package")
-        plan = planner.plan([req], project_id="proj")
-        assert len(plan.steps) == 1
-        step = plan.steps[0]
-        assert step.package == "my-wild-package"
-        assert step.install_method == "pip install my-wild-package"
-        assert step.command == "pip install my-wild-package"
 
-    def test_unknown_system_package_works(self, planner: SetupPlanner):
-        req = _requirement(name="my-strange-system-lib", type="system_package",
-                           install_method="apt-get install my-strange-system-lib")
-        plan = planner.plan([req], project_id="proj")
-        assert len(plan.steps) == 1
-        step = plan.steps[0]
-        assert step.package == "my-strange-system-lib"
-        assert step.install_method == "apt-get install my-strange-system-lib"
-        assert step.command == "apt-get install my-strange-system-lib"
+def test_install_method_forwarded():
+    req = _requirement(
+        id="R1",
+        name="pkg",
+        type=RequirementType.PYTHON_PACKAGE,
+        install_method="pip install pkg",
+    )
+    preflight = _preflight([req])
+    plan = SetupPlanner().plan([], preflight, "proj")
 
-    def test_unknown_toolchain_works(self, planner: SetupPlanner):
-        req = _requirement(name="foobar-super-tool", type="toolchain",
-                           install_method="custom")
-        plan = planner.plan([req], project_id="proj")
-        assert len(plan.steps) == 1
-        step = plan.steps[0]
-        assert step.package == "foobar-super-tool"
-        assert step.install_method == "custom"
-        assert step.command == "custom"
+    assert plan.steps[0].install_method == "pip install pkg"
 
-    def test_optional_requirements_are_not_auto_installed(self, planner: SetupPlanner):
-        req = _requirement(
-            name="optional-thing",
-            type="python_package",
-            required=False,
-            install_method="pip install optional-thing",
-        )
-        plan = planner.plan([req], project_id="proj")
-        assert len(plan.steps) == 0
 
-    def test_metadata_install_method_is_used(self, planner: SetupPlanner):
-        req = _requirement(
-            name="meta-pkg",
-            type="python_package",
-            required=True,
-            install_method=None,
-            metadata={"install_method": "custom-install-meta"},
-        )
-        plan = planner.plan([req], project_id="proj")
-        assert len(plan.steps) == 1
-        step = plan.steps[0]
-        assert step.install_method == "custom-install-meta"
-        assert step.command == "custom-install-meta"
-        assert step.action == "custom-install-meta"
-        assert not any("meta-pkg" in w for w in plan.warnings)
+def test_verification_after_forwarded():
+    req = _requirement(
+        id="R1",
+        name="pkg",
+        type=RequirementType.PYTHON_PACKAGE,
+        verification_method="pkg --version",
+    )
+    preflight = _preflight([req])
+    plan = SetupPlanner().plan([], preflight, "proj")
 
-    def test_installed_requirements_are_skipped(self, planner: SetupPlanner):
-        req = _requirement(
-            name="already-installed",
-            type="python_package",
-            required=True,
-            install_method="pip install already-installed",
-            status=Status.INSTALLED,
-        )
-        plan = planner.plan([req], project_id="proj")
-        assert len(plan.steps) == 0
+    assert plan.steps[0].verification_after == "pkg --version"
 
-    def test_requirement_id_and_name_are_forwarded(self, planner: SetupPlanner):
-        req = _requirement(
-            id="R42",
-            name="my-requirement",
-            type="executable",
-            install_method="run-some-setup",
-        )
-        plan = planner.plan([req], project_id="proj")
-        assert len(plan.steps) == 1
-        step = plan.steps[0]
-        assert step.requirement_id == "R42"
-        assert step.package == "my-requirement"
+
+def test_is_approved_false():
+    req = _requirement(id="R1")
+    preflight = _preflight([req])
+    plan = SetupPlanner().plan([], preflight, "proj")
+
+    assert plan.steps[0].is_approved is False
+
+
+def test_requires_user_approval_true():
+    req = _requirement(id="R1")
+    preflight = _preflight([req])
+    plan = SetupPlanner().plan([], preflight, "proj")
+
+    assert plan.requires_user_approval is True
+
+
+def test_status_pending_approval():
+    req = _requirement(id="R1")
+    preflight = _preflight([req])
+    plan = SetupPlanner().plan([], preflight, "proj")
+
+    assert plan.status == "pending_approval"
+
+
+def test_inputs_not_mutated():
+    req = _requirement(
+        id="R1",
+        name="pkg",
+        type=RequirementType.PYTHON_PACKAGE,
+        install_method="pip install pkg",
+        required_version="1.0",
+    )
+    preflight = PreflightResult(
+        id="pf1",
+        project_id="proj",
+        overall_ready=False,
+        results=(),
+        missing_requirements=(req,),
+        already_installed=(),
+        warnings=(),
+    )
+
+    original_missing = preflight.missing_requirements
+    original_install = req.install_method
+
+    SetupPlanner().plan([req], preflight, "proj")
+
+    assert preflight.missing_requirements == original_missing
+    assert req.install_method == original_install
