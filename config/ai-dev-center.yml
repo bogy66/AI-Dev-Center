@@ -1,0 +1,19 @@
+version: 1
+
+ai:
+  provider: openrouter
+
+  model: deepseek/deepseek-v4-pro
+
+  endpoint: https://openrouter.ai/api/v1
+
+  authentication:
+    type: secret_reference
+    secret: openrouter-api
+
+  timeout_seconds: 30
+
+  discovery:
+    enabled: true
+    require_json: true
+    max_requirements: 50
