@@ -1,6 +1,5 @@
 import pytest
-import datetime
-from app.requirement_model import Requirement, SetupStep, SetupPlan
+from app.requirement_model import Requirement, Status
 from app.setup_planner import SetupPlanner
 
 
@@ -15,6 +14,8 @@ def _requirement(
     install_method="pip install esphome",
     required_version=None,
     verification_method=None,
+    metadata=None,
+    status="discovered",
 ):
     return Requirement(
         id=id,
@@ -29,11 +30,11 @@ def _requirement(
         required_version=required_version,
         install_method=install_method,
         verification_method=verification_method,
-        status="discovered",
-        metadata={},
+        status=status,
+        metadata=metadata or {},
     )
 
-# ---------------------------------------------------------------------------
+
 class TestSetupPlanner:
 
     @pytest.fixture
@@ -41,24 +42,21 @@ class TestSetupPlanner:
         return SetupPlanner()
 
     # ------------------------------------------------------------------
-    # 1. esphome is recognised as an automatically installable Python package
+    # Existing test names reused, bodies adjusted to the new contract
     # ------------------------------------------------------------------
+
     def test_esphome_as_installable_executable_with_pip(self, planner: SetupPlanner):
         req = _requirement(name="esphome", type="executable",
                            install_method="pip install esphome")
         plan = planner.plan([req], project_id="proj")
         assert len(plan.steps) == 1
         step = plan.steps[0]
+        assert step.requirement_id == "R001"
+        assert step.package == "esphome"
         assert step.install_method == "pip install esphome"
         assert step.action == "pip install esphome"
-        # The planner does NOT decide if it’s automatic; that property
-        # is stored in the install_method itself.  But the test should
-        # not assume anything beyond what the Requirement provides.
-        assert step.requirement_id == "R001"
+        assert step.command == "pip install esphome"
 
-    # ------------------------------------------------------------------
-    # 2. pyserial is recognised as an automatically installable Python package
-    # ------------------------------------------------------------------
     def test_pyserial_as_python_package_with_pip(self, planner: SetupPlanner):
         req = _requirement(name="pyserial", type="python_package",
                            install_method="pip install pyserial")
@@ -66,32 +64,22 @@ class TestSetupPlanner:
         assert len(plan.steps) == 1
         step = plan.steps[0]
         assert step.requirement_id == "R001"
-        assert step.install_method == "pip install pyserial"
-        # package field should contain the name because type is python_package
         assert step.package == "pyserial"
+        assert step.install_method == "pip install pyserial"
+        assert step.command == "pip install pyserial"
 
-    # ------------------------------------------------------------------
-    # 3. Missing serial port is hardware_required (remapped to
-    #    No install_method → no automatic action)
-    # ------------------------------------------------------------------
     def test_missing_serial_port_no_install_method(self, planner: SetupPlanner):
         req = _requirement(name="serial-port", type="hardware_component",
                            required=True, install_method=None)
         plan = planner.plan([req], project_id="proj")
         assert len(plan.steps) == 1
         step = plan.steps[0]
-        # No install method, so action describes that fact.
         assert "No install method" in step.action
-        # No command should be invented.
         assert step.install_method is None
         assert step.command is None
         assert step.verification_after is None
-        # A warning is produced for a required requirement missing install info.
         assert any("serial-port" in w for w in plan.warnings)
 
-    # ------------------------------------------------------------------
-    # 4. Unknown executables are not blindly installed
-    # ------------------------------------------------------------------
     def test_unknown_executable_not_installed(self, planner: SetupPlanner):
         req = _requirement(name="some-unknown-tool", type="executable",
                            install_method=None)
@@ -103,28 +91,13 @@ class TestSetupPlanner:
         assert step.command is None
         assert "No install method" in step.action
 
-    # ------------------------------------------------------------------
-    # 5. Already fulfilled requirements produce no steps?  Actually
-    #    the planner receives a list of Requirement objects and always
-    #    produces one step per requirement.  The concept of "fulfilled"
-    #    belongs to a higher layer.  We keep the same test name and
-    #    just verify that a requirement without install_method is still
-    #    planned (no steps would be wrong in the earlier test meaning).
-    #    We transform the test to prove a requirement WITH an
-    #    install_method but optional still appears.
-    # ------------------------------------------------------------------
     def test_fulfilled_requirements_produce_no_steps(self, planner: SetupPlanner):
         req = _requirement(name="python", type="executable",
-                           required=False, install_method=None)
+                           required=True, install_method="pip install python",
+                           status=Status.INSTALLED)
         plan = planner.plan([req], project_id="proj")
-        # Still one step, but with no install method.
-        assert len(plan.steps) == 1
-        step = plan.steps[0]
-        assert step.install_method is None
+        assert len(plan.steps) == 0
 
-    # ------------------------------------------------------------------
-    # 6. Multiple missing requirements are planned correctly
-    # ------------------------------------------------------------------
     def test_multiple_requirements_produce_correct_steps(self, planner: SetupPlanner):
         req1 = _requirement(id="R1", name="esphome", type="executable",
                             install_method="pip install esphome")
@@ -137,19 +110,13 @@ class TestSetupPlanner:
         step_ids = {s.requirement_id for s in plan.steps}
         assert step_ids == {"R1", "R2", "R3"}
 
-    # ------------------------------------------------------------------
-    # 7. No installation happens during the test
-    # ------------------------------------------------------------------
     def test_no_installation_occurs(self, planner: SetupPlanner):
         req = _requirement(name="esphome", type="executable",
                            install_method="pip install esphome")
         plan = planner.plan([req], project_id="proj")
-        # The planner only returns data; no side-effects.
-        assert plan.steps[0].install_method == "pip install esphome"
-
-    # ==================================================================
-    # NEW tests to prove stack-neutrality
-    # ==================================================================
+        step = plan.steps[0]
+        assert step.install_method == "pip install esphome"
+        assert step.command == "pip install esphome"
 
     def test_unknown_package_name_works(self, planner: SetupPlanner):
         req = _requirement(name="my-weird-framework", type="python_package",
@@ -167,13 +134,11 @@ class TestSetupPlanner:
         plan = planner.plan([req], project_id="proj")
         assert len(plan.steps) == 1
         step = plan.steps[0]
+        assert step.package == "unknown-binary"
         assert step.install_method == "custom-install.sh"
         assert step.command == "custom-install.sh"
 
     def test_no_hardcoded_package_names(self, planner: SetupPlanner):
-        # Create three completely different Requirement objects and
-        # ensure the planner transmits the provided data without
-        # altering anything.
         req_a = _requirement(id="A", name="my-pkg-a", type="python_package",
                             install_method="pip install my-pkg-a",
                             required_version="1.2.3",
@@ -186,12 +151,11 @@ class TestSetupPlanner:
         step_a = next(s for s in plan.steps if s.requirement_id == "A")
         step_b = next(s for s in plan.steps if s.requirement_id == "B")
 
-        # step_a
         assert step_a.package == "my-pkg-a"
         assert step_a.install_method == "pip install my-pkg-a"
         assert step_a.version == "1.2.3"
         assert step_a.verification_after == "my-pkg-a --version"
-        # step_b
+
         assert step_b.package == "my-pkg-b"
         assert step_b.install_method == "apt-get install my-pkg-b"
         assert step_b.verification_after == "dpkg -l my-pkg-b"
@@ -203,6 +167,7 @@ class TestSetupPlanner:
         step = plan.steps[0]
         assert step.install_method == "brew install custom-tool"
         assert step.action == "brew install custom-tool"
+        assert step.command == "brew install custom-tool"
 
     def test_required_version_is_forwarded(self, planner: SetupPlanner):
         req = _requirement(name="some-lib", type="python_package",
@@ -230,3 +195,87 @@ class TestSetupPlanner:
         assert step.command is None
         assert "No install method" in step.action
         assert any("magic-sdk" in w for w in plan.warnings)
+
+    # ------------------------------------------------------------------
+    # New tests proving stack-neutral, data-driven behaviour
+    # ------------------------------------------------------------------
+
+    def test_unknown_python_package_works(self, planner: SetupPlanner):
+        req = _requirement(name="my-wild-package", type="python_package",
+                           install_method="pip install my-wild-package")
+        plan = planner.plan([req], project_id="proj")
+        assert len(plan.steps) == 1
+        step = plan.steps[0]
+        assert step.package == "my-wild-package"
+        assert step.install_method == "pip install my-wild-package"
+        assert step.command == "pip install my-wild-package"
+
+    def test_unknown_system_package_works(self, planner: SetupPlanner):
+        req = _requirement(name="my-strange-system-lib", type="system_package",
+                           install_method="apt-get install my-strange-system-lib")
+        plan = planner.plan([req], project_id="proj")
+        assert len(plan.steps) == 1
+        step = plan.steps[0]
+        assert step.package == "my-strange-system-lib"
+        assert step.install_method == "apt-get install my-strange-system-lib"
+        assert step.command == "apt-get install my-strange-system-lib"
+
+    def test_unknown_toolchain_works(self, planner: SetupPlanner):
+        req = _requirement(name="foobar-super-tool", type="toolchain",
+                           install_method="custom")
+        plan = planner.plan([req], project_id="proj")
+        assert len(plan.steps) == 1
+        step = plan.steps[0]
+        assert step.package == "foobar-super-tool"
+        assert step.install_method == "custom"
+        assert step.command == "custom"
+
+    def test_optional_requirements_are_not_auto_installed(self, planner: SetupPlanner):
+        req = _requirement(
+            name="optional-thing",
+            type="python_package",
+            required=False,
+            install_method="pip install optional-thing",
+        )
+        plan = planner.plan([req], project_id="proj")
+        assert len(plan.steps) == 0
+
+    def test_metadata_install_method_is_used(self, planner: SetupPlanner):
+        req = _requirement(
+            name="meta-pkg",
+            type="python_package",
+            required=True,
+            install_method=None,
+            metadata={"install_method": "custom-install-meta"},
+        )
+        plan = planner.plan([req], project_id="proj")
+        assert len(plan.steps) == 1
+        step = plan.steps[0]
+        assert step.install_method == "custom-install-meta"
+        assert step.command == "custom-install-meta"
+        assert step.action == "custom-install-meta"
+        assert not any("meta-pkg" in w for w in plan.warnings)
+
+    def test_installed_requirements_are_skipped(self, planner: SetupPlanner):
+        req = _requirement(
+            name="already-installed",
+            type="python_package",
+            required=True,
+            install_method="pip install already-installed",
+            status=Status.INSTALLED,
+        )
+        plan = planner.plan([req], project_id="proj")
+        assert len(plan.steps) == 0
+
+    def test_requirement_id_and_name_are_forwarded(self, planner: SetupPlanner):
+        req = _requirement(
+            id="R42",
+            name="my-requirement",
+            type="executable",
+            install_method="run-some-setup",
+        )
+        plan = planner.plan([req], project_id="proj")
+        assert len(plan.steps) == 1
+        step = plan.steps[0]
+        assert step.requirement_id == "R42"
+        assert step.package == "my-requirement"

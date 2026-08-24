@@ -1,18 +1,38 @@
-from dataclasses import dataclass, field
-from datetime import datetime
-from app.requirement_model import Requirement, SetupStep, SetupPlan
+from app.requirement_model import Requirement, RequirementType, SetupStep, SetupPlan, Status
 
 
 class SetupPlanner:
-    """Stack‑neutral planner that produces a SetupPlan from a list of
-    Requirement objects.
+    """Stack‑neutral planner that produces a SetupPlan from Requirement objects.
 
-    The planner does **not** contain any knowledge of specific packages,
-    frameworks, or installation commands.  It reads *only* the data
-    provided by each Requirement (name, type, required, required_version,
-    install_method, verification_method, metadata) and translates it into
-    SetupStep objects without inventing commands.
+    The planner contains no hard‑coded package names, framework names,
+    install commands, or stack‑specific rules.  It uses exactly the data
+    provided by each Requirement to decide whether a setup step should be
+    created and how it should look.
     """
+
+    _METADATA_INSTALL_KEYS = (
+        "install_method",
+        "command",
+        "setup_command",
+    )
+
+    def _effective_install_method(self, requirement: Requirement):
+        """Return the install method that should be used for this requirement.
+
+        The primary source is Requirement.install_method.  If that is missing,
+        the planner may consult Requirement.metadata for additional install
+        information that came with the Requirement itself.  No command is ever
+        invented by the planner.
+        """
+        if requirement.install_method:
+            return requirement.install_method
+
+        for key in self._METADATA_INSTALL_KEYS:
+            value = requirement.metadata.get(key)
+            if value:
+                return str(value)
+
+        return None
 
     def plan(
         self,
@@ -26,58 +46,52 @@ class SetupPlanner:
             project_id: Identifier used for the generated SetupPlan.id.
 
         Returns:
-            A SetupPlan containing one step per input Requirement.
+            A SetupPlan containing one step per required and not-yet-installed
+            Requirement.  Optional and already satisfied requirements are
+            intentionally skipped.
         """
         steps: list[SetupStep] = []
         warnings: list[str] = []
 
         for req in requirements:
-            # Determine the action text.
-            action_text = ""
-            if req.install_method:
-                # Transparently use whatever install_method the
-                # requirement specifies.  The planner does not validate
-                # it and does not add anything on its own.
-                action_text = req.install_method
+            # Already installed/verified requirements do not need a setup step.
+            if req.status in (Status.INSTALLED, Status.VERIFIED):
+                continue
+
+            # Only required requirements are installed automatically.
+            # Optional requirements are not turned into automatic setup steps.
+            if not req.required:
+                continue
+
+            method = self._effective_install_method(req)
+
+            if method:
+                action = method
             else:
-                # No install method → no automatic action.
-                action_text = (
-                    f"No install method defined for '{req.name}'."
-                )
-
-            # Determine verification after install.
-            verification_after = None
-            if req.verification_method:
-                verification_after = req.verification_method
-
-            # Build the step using the data from the Requirement.
-            step = SetupStep(
-                id=f"step-{req.id}",
-                requirement_id=req.id,
-                action=action_text,
-                install_method=req.install_method,
-                package=req.name if req.type in ("python_package", "system_package") else None,
-                version=req.required_version,
-                command=req.install_method,  # command equals install_method when available
-                verification_after=verification_after,
-                is_approved=False,
-            )
-            steps.append(step)
-
-            # If something that is required has no install method, add a
-            # warning so that callers are informed.
-            if req.required and not req.install_method:
+                action = f"No install method defined for '{req.name}'."
                 warnings.append(
                     f"Requirement '{req.name}' is required but has no install method."
                 )
 
-        plan = SetupPlan(
+            step = SetupStep(
+                id=f"step-{req.id}",
+                requirement_id=req.id,
+                action=action,
+                install_method=method,
+                package=req.name,
+                version=req.required_version,
+                command=method,
+                verification_after=req.verification_method,
+                is_approved=False,
+            )
+            steps.append(step)
+
+        return SetupPlan(
             id=f"plan-{project_id}",
             project_id=project_id,
             steps=tuple(steps),
             requires_user_approval=True,
-            rollback_steps=(),  # no rollback information available at this stage
+            rollback_steps=(),
             warnings=tuple(warnings),
             status="pending_approval",
         )
-        return plan
