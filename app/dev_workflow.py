@@ -1,5 +1,7 @@
 """Deterministic development workflow with explicit approved execution."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 from app.ai_requirement_discovery import AIRequirementDiscovery
@@ -52,10 +54,13 @@ class DevelopmentWorkflow:
         This method never approves, rejects or executes setup steps.
         """
 
-        discovery_result = self._discovery.discover(project_info, project_id)
+        discovery_result = self._discovery.discover(
+            project_info,
+            project_id,
+        )
 
         validation_result = self._validator.validate(
-            discovery_result.requirements
+            discovery_result.requirements,
         )
 
         preflight_result = self._preflight.check(
@@ -76,11 +81,32 @@ class DevelopmentWorkflow:
             setup_plan=setup_plan,
         )
 
+    def _validate_executable_step(self, step) -> None:
+        """Reject steps that are not safe for automatic execution."""
+
+        if step.action != "install":
+            raise WorkflowExecutionError(
+                f"Setup step '{step.id}' requires manual review: "
+                f"action={step.action!r}."
+            )
+
+        if not step.package or not step.package.strip():
+            raise WorkflowExecutionError(
+                f"Setup step '{step.id}' requires manual review: "
+                "no package is specified."
+            )
+
+        if not step.install_method:
+            raise WorkflowExecutionError(
+                f"Setup step '{step.id}' requires manual review: "
+                "no install method is specified."
+            )
+
     def execute_approved(
         self,
         plan: SetupPlan,
     ) -> tuple[ExecutionResult, ...]:
-        """Execute an already approved setup plan."""
+        """Execute an already approved setup plan safely."""
 
         if plan.status != "approved":
             raise WorkflowExecutionError(
@@ -99,9 +125,9 @@ class DevelopmentWorkflow:
                     f"Setup step '{step.id}' is not approved."
                 )
 
-        results = tuple(
+            self._validate_executable_step(step)
+
+        return tuple(
             self._executor.execute_step(step)
             for step in plan.steps
         )
-
-        return results

@@ -12,6 +12,7 @@ from app.local_secret_store import LocalSecretStore
 from app.requirement_preflight import RequirementPreflight
 from app.requirement_validator import RequirementValidator
 from app.setup_planner import SetupPlanner
+from app.workflow_plan_store import WorkflowPlanStore
 
 
 MAX_FILE_SIZE = 1_000_000
@@ -93,6 +94,7 @@ def print_result(config, result) -> None:
         print(f"version: {step.version}")
         print(f"is_approved: {step.is_approved}")
 
+    print(f"SetupPlan ID: {result.setup_plan.id}")
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -134,6 +136,9 @@ def main() -> None:
             project_info=project_info,
             project_id=project_path.name,
         )
+
+        store = WorkflowPlanStore(".workflow-plans")
+        store.save(result.setup_plan)
 
     except Exception as exc:
         print(f"Workflow failed: {exc}", file=sys.stderr)

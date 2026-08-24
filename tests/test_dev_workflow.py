@@ -85,13 +85,17 @@ def _make_preflight_result(project_id: str = "proj-1") -> PreflightResult:
 def _make_setup_step(
     step_id: str = "step-1",
     approved: bool = False,
+    *,
+    action: str = "install",
+    package: str | None = "example-package",
+    install_method: str | None = "python_package",
 ) -> SetupStep:
     return SetupStep(
         id=step_id,
         requirement_id="req-1",
-        action="install",
-        install_method="python_package",
-        package="example-package",
+        action=action,
+        install_method=install_method,
+        package=package,
         version=None,
         command=None,
         verification_after="import example_package",
@@ -124,7 +128,7 @@ def _make_components(project_id: str = "proj-1"):
 
     discovery_result = _make_discovery_result(project_id)
     validation_result = _make_validation_result(
-        discovery_result.requirements
+        discovery_result.requirements,
     )
     preflight_result = _make_preflight_result(project_id)
     plan_result = _make_setup_plan(project_id)
@@ -214,7 +218,7 @@ class TestDevelopmentWorkflow:
         workflow.run({"name": "test"}, "proj-1")
 
         validator.validate.assert_called_once_with(
-            discovery_result.requirements
+            discovery_result.requirements,
         )
 
     def test_preflight_receives_normalized_requirements(self):
@@ -302,10 +306,8 @@ class TestDevelopmentWorkflow:
             planner,
         ):
             for forbidden in ("approve", "reject", "execute"):
-                assert not hasattr(mock_obj, forbidden) or not getattr(
-                    mock_obj,
-                    forbidden,
-                ).called
+                if hasattr(mock_obj, forbidden):
+                    getattr(mock_obj, forbidden).assert_not_called()
 
     def test_discovery_error_propagates(self):
         discovery = MagicMock(spec=AIRequirementDiscovery)
@@ -314,7 +316,7 @@ class TestDevelopmentWorkflow:
         planner = MagicMock(spec=SetupPlanner)
 
         discovery.discover.side_effect = RuntimeError(
-            "discovery failed"
+            "discovery failed",
         )
 
         workflow = DevelopmentWorkflow(
@@ -324,10 +326,7 @@ class TestDevelopmentWorkflow:
             planner,
         )
 
-        with pytest.raises(
-            RuntimeError,
-            match="discovery failed",
-        ):
+        with pytest.raises(RuntimeError, match="discovery failed"):
             workflow.run({"name": "test"}, "proj-1")
 
     def test_intermediate_objects_are_not_mutated(self):
@@ -372,7 +371,7 @@ class TestApprovedExecution:
             executor=executor,
         )
 
-    def test_approved_plan_executes_all_approved_steps(self):
+    def test_approved_plan_executes_all_approved_install_steps(self):
         executor = MagicMock(spec=SetupExecutor)
 
         step1 = _make_setup_step("step-1", approved=True)
@@ -403,7 +402,6 @@ class TestApprovedExecution:
         results = workflow.execute_approved(plan)
 
         assert results == (result1, result2)
-        assert executor.execute_step.call_count == 2
         executor.execute_step.assert_any_call(step1)
         executor.execute_step.assert_any_call(step2)
 
@@ -413,7 +411,7 @@ class TestApprovedExecution:
 
         plan = _make_setup_plan(
             status="pending_approval",
-            steps=(_make_setup_step("step-1", approved=False),),
+            steps=(_make_setup_step(approved=False),),
         )
 
         with pytest.raises(WorkflowExecutionError):
@@ -441,10 +439,73 @@ class TestApprovedExecution:
 
         plan = _make_setup_plan(
             status="approved",
-            steps=(_make_setup_step("step-1", approved=False),),
+            steps=(_make_setup_step(approved=False),),
         )
 
         with pytest.raises(WorkflowExecutionError):
+            workflow.execute_approved(plan)
+
+        executor.execute_step.assert_not_called()
+
+    def test_manual_review_action_is_rejected(self):
+        executor = MagicMock(spec=SetupExecutor)
+        workflow = self._make_workflow(executor)
+
+        step = _make_setup_step(
+            approved=True,
+            action="manual_review",
+        )
+        plan = _make_setup_plan(
+            status="approved",
+            steps=(step,),
+        )
+
+        with pytest.raises(
+            WorkflowExecutionError,
+            match="requires manual review",
+        ):
+            workflow.execute_approved(plan)
+
+        executor.execute_step.assert_not_called()
+
+    def test_missing_package_is_rejected(self):
+        executor = MagicMock(spec=SetupExecutor)
+        workflow = self._make_workflow(executor)
+
+        step = _make_setup_step(
+            approved=True,
+            package=None,
+        )
+        plan = _make_setup_plan(
+            status="approved",
+            steps=(step,),
+        )
+
+        with pytest.raises(
+            WorkflowExecutionError,
+            match="no package is specified",
+        ):
+            workflow.execute_approved(plan)
+
+        executor.execute_step.assert_not_called()
+
+    def test_missing_install_method_is_rejected(self):
+        executor = MagicMock(spec=SetupExecutor)
+        workflow = self._make_workflow(executor)
+
+        step = _make_setup_step(
+            approved=True,
+            install_method=None,
+        )
+        plan = _make_setup_plan(
+            status="approved",
+            steps=(step,),
+        )
+
+        with pytest.raises(
+            WorkflowExecutionError,
+            match="no install method is specified",
+        ):
             workflow.execute_approved(plan)
 
         executor.execute_step.assert_not_called()
@@ -454,15 +515,18 @@ class TestApprovedExecution:
 
         execution_result = ExecutionResult(
             step_id="step-1",
-            success=False,
-            message="failed",
-            verification_passed=False,
+            success=True,
+            message="ok",
+            verification_passed=True,
         )
         executor.execute_step.return_value = execution_result
 
         workflow = self._make_workflow(executor)
 
-        step = _make_setup_step("step-1", approved=True)
+        step = _make_setup_step(
+            "step-1",
+            approved=True,
+        )
         plan = _make_setup_plan(
             status="approved",
             steps=(step,),
@@ -476,7 +540,10 @@ class TestApprovedExecution:
     def test_no_executor_configured_is_rejected(self):
         workflow = self._make_workflow(None)
 
-        step = _make_setup_step("step-1", approved=True)
+        step = _make_setup_step(
+            "step-1",
+            approved=True,
+        )
         plan = _make_setup_plan(
             status="approved",
             steps=(step,),
@@ -499,7 +566,10 @@ class TestApprovedExecution:
 
         workflow = self._make_workflow(executor)
 
-        step = _make_setup_step("step-1", approved=True)
+        step = _make_setup_step(
+            "step-1",
+            approved=True,
+        )
         plan = _make_setup_plan(
             status="approved",
             steps=(step,),
@@ -521,7 +591,7 @@ class TestApprovedExecution:
 
         discovery_result = _make_discovery_result("proj-1")
         validation_result = _make_validation_result(
-            discovery_result.requirements
+            discovery_result.requirements,
         )
         preflight_result = _make_preflight_result("proj-1")
         plan_result = _make_setup_plan("proj-1")

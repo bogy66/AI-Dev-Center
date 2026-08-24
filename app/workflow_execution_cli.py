@@ -1,4 +1,4 @@
-"""Explicit approval/execution entry point for a development workflow."""
+"""Explicit approval/execution entry point for a persisted workflow plan."""
 
 from __future__ import annotations
 
@@ -16,46 +16,11 @@ from app.requirement_preflight import RequirementPreflight
 from app.requirement_validator import RequirementValidator
 from app.setup_approval import SetupApproval
 from app.setup_planner import SetupPlanner
-
-
-MAX_FILE_SIZE = 1_000_000
-
-
-def read_project_files(project_path: Path) -> tuple[list[dict], list[str]]:
-    files: list[dict] = []
-    warnings: list[str] = []
-
-    for path in sorted(project_path.rglob("*")):
-        if not path.is_file():
-            continue
-
-        try:
-            size = path.stat().st_size
-        except OSError:
-            warnings.append(f"Skipping unreadable file: {path}")
-            continue
-
-        if size > MAX_FILE_SIZE:
-            warnings.append(f"Skipping large file: {path}")
-            continue
-
-        try:
-            content = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            warnings.append(f"Skipping binary/unreadable file: {path}")
-            continue
-
-        files.append(
-            {
-                "path": str(path.relative_to(project_path)),
-                "content": content,
-            }
-        )
-
-    return files, warnings
+from app.workflow_plan_store import WorkflowPlanStore
 
 
 def build_workflow(config) -> DevelopmentWorkflow:
+    """Build a workflow with the real package executor."""
     secret_resolver = LocalSecretStore()
     provider = create_llm_provider(config, secret_resolver)
     executor = PythonPackageExecutor()
@@ -78,43 +43,53 @@ def run_approved_execution(
     project_path: Path,
     *,
     workflow: DevelopmentWorkflow,
+    plan_id: str,
+    store: WorkflowPlanStore | None = None,
 ):
-    files, warnings = read_project_files(project_path)
+    """Load, approve and execute an existing persisted setup plan.
 
-    project_info = {
-        "project_id": project_path.name,
-        "project_path": str(project_path),
-        "files": files,
-    }
+    No discovery or planning is performed here. The exact persisted plan
+    identified by ``project_path.name`` and ``plan_id`` is used.
+    """
+    if store is None:
+        store = WorkflowPlanStore(".workflow-plans")
 
-    workflow_result = workflow.run(
-        project_info=project_info,
-        project_id=project_path.name,
-    )
+    plan = store.load(project_path.name, plan_id)
 
-    pending_plan = workflow_result.setup_plan
-
-    if pending_plan.status != "pending_approval":
+    if plan.status != "pending_approval":
         raise RuntimeError(
-            f"Expected pending_approval plan, got {pending_plan.status!r}"
+            f"Expected pending_approval plan, got {plan.status!r}"
         )
 
-    approved_plan = SetupApproval.approve(pending_plan)
+    approved_plan = SetupApproval.approve(plan)
     results = workflow.execute_approved(approved_plan)
 
-    return results, approved_plan, warnings
+    store.save(approved_plan)
+
+    return results, approved_plan
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Explicitly approve and execute a development setup plan."
+        description=(
+            "Explicitly approve and execute a persisted development "
+            "setup plan."
+        )
     )
     parser.add_argument(
         "--approve",
         action="store_true",
-        help="Explicitly approve and execute the generated setup plan.",
+        help="Explicitly approve and execute the stored setup plan.",
     )
-    parser.add_argument("project_path")
+    parser.add_argument(
+        "--plan-id",
+        required=True,
+        help="ID of the persisted setup plan to execute.",
+    )
+    parser.add_argument(
+        "project_path",
+        help="Path to the project owning the setup plan.",
+    )
     args = parser.parse_args()
 
     project_path = Path(args.project_path).expanduser().resolve()
@@ -138,18 +113,19 @@ def main() -> None:
     try:
         config = load_ai_config("config/ai-dev-center.yml")
         workflow = build_workflow(config)
+        store = WorkflowPlanStore(".workflow-plans")
 
-        results, approved_plan, warnings = run_approved_execution(
+        results, approved_plan = run_approved_execution(
             project_path,
             workflow=workflow,
+            plan_id=args.plan_id,
+            store=store,
         )
     except Exception:
         print("Workflow execution failed.", file=sys.stderr)
         raise SystemExit(1)
 
-    for warning in warnings:
-        print(warning, file=sys.stderr)
-
+    print(f"SetupPlan ID: {approved_plan.id}")
     print(f"SetupPlan status: {approved_plan.status}")
     print(f"Number of SetupSteps: {len(approved_plan.steps)}")
     print(f"Execution results: {len(results)}")

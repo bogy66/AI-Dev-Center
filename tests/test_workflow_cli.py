@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import app.workflow_cli as cli
+from app.requirement_model import SetupPlan, SetupStep
 
 
 # ---------------------------------------------------------------------------
@@ -25,15 +26,21 @@ def _make_fake_result(
 ):
     """Return a MagicMock that looks like a WorkflowResult."""
     if steps is None:
-        steps = [
-            MagicMock(
+        steps = (
+            SetupStep(
+                id="step-1",
                 requirement_id="req-1",
                 action="install",
+                install_method="python_package",
                 package="some-pkg",
                 version="1.2.3",
+                command=None,
+                verification_after=None,
                 is_approved=False,
-            )
-        ]
+            ),
+        )
+    else:
+        steps = tuple(steps)
 
     result = MagicMock()
     result.discovery_result = MagicMock(
@@ -50,7 +57,15 @@ def _make_fake_result(
         missing_requirements=[MagicMock()] * missing_count,
         warnings=[MagicMock()] * warning_count,
     )
-    result.setup_plan = MagicMock(status=plan_status, steps=steps)
+    result.setup_plan = SetupPlan(
+        id="plan-test-1",
+        project_id="myproj",
+        steps=tuple(steps),
+        requires_user_approval=True,
+        rollback_steps=(),
+        warnings=(),
+        status=plan_status,
+    )
     return result
 
 
@@ -76,6 +91,13 @@ class TestValidProject:
         # Mock config loading
         fake_config = MagicMock(provider="test-provider", model="test-model")
         monkeypatch.setattr(cli, "load_ai_config", lambda path: fake_config)
+
+        store = MagicMock()
+        monkeypatch.setattr(
+            cli,
+            "WorkflowPlanStore",
+            lambda root: store,
+        )
 
         monkeypatch.setattr(sys, "argv", ["workflow_cli.py", str(project)])
 
@@ -111,6 +133,7 @@ class TestValidProject:
 
         # Workflow was called with the expected project_info
         mock_instance.run.assert_called_once()
+        store.save.assert_called_once_with(fake_result.setup_plan)
         call_args = mock_instance.run.call_args
         project_info_arg = call_args.kwargs["project_info"]
         assert "files" in project_info_arg

@@ -12,12 +12,27 @@ class SetupPlanner:
         warnings: list[str] = []
 
         for req in preflight_result.missing_requirements:
-            package = req.name if req.type == RequirementType.PYTHON_PACKAGE else None
+            is_python_package = req.type == RequirementType.PYTHON_PACKAGE
+            has_package = bool(req.name and req.name.strip())
+            has_install_method = bool(
+                req.install_method and req.install_method.strip()
+            )
+
+            if is_python_package and has_package and has_install_method:
+                action = "install"
+                package = req.name
+            else:
+                action = "manual_review"
+                package = (
+                    req.name
+                    if is_python_package
+                    else None
+                )
 
             step = SetupStep(
                 id=f"step-{req.id}",
                 requirement_id=req.id,
-                action="manual_review",
+                action=action,
                 install_method=req.install_method,
                 package=package,
                 version=req.required_version,

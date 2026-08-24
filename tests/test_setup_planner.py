@@ -1,5 +1,8 @@
-import pytest
-from app.requirement_model import Requirement, RequirementType, PreflightResult
+from app.requirement_model import (
+    PreflightResult,
+    Requirement,
+    RequirementType,
+)
 from app.setup_planner import SetupPlanner
 
 
@@ -30,7 +33,11 @@ def _requirement(
     )
 
 
-def _preflight(missing=(), already_installed=(), project_id="proj"):
+def _preflight(
+    missing=(),
+    already_installed=(),
+    project_id="proj",
+):
     return PreflightResult(
         id="preflight-1",
         project_id=project_id,
@@ -42,7 +49,7 @@ def _preflight(missing=(), already_installed=(), project_id="proj"):
     )
 
 
-def test_single_missing_requirement_creates_one_step():
+def test_single_missing_python_package_creates_install_step():
     req = _requirement(
         id="R1",
         name="mypkg",
@@ -52,22 +59,79 @@ def test_single_missing_requirement_creates_one_step():
         verification_method="mypkg --version",
     )
     preflight = _preflight([req])
+
     plan = SetupPlanner().plan([], preflight, "proj")
 
     assert len(plan.steps) == 1
+
     step = plan.steps[0]
+
     assert step.id == "step-R1"
     assert step.requirement_id == "R1"
-    assert step.action == "manual_review"
+    assert step.action == "install"
     assert step.install_method == "pip install mypkg"
     assert step.package == "mypkg"
     assert step.version == "1.0"
     assert step.command is None
     assert step.verification_after == "mypkg --version"
     assert step.is_approved is False
+
     assert plan.requires_user_approval is True
     assert plan.status == "pending_approval"
     assert plan.rollback_steps == ()
+
+
+def test_python_package_without_install_method_requires_manual_review():
+    req = _requirement(
+        id="R1",
+        name="mypkg",
+        type=RequirementType.PYTHON_PACKAGE,
+        install_method=None,
+    )
+    preflight = _preflight([req])
+
+    plan = SetupPlanner().plan([], preflight, "proj")
+
+    step = plan.steps[0]
+
+    assert step.action == "manual_review"
+    assert step.package == "mypkg"
+    assert step.install_method is None
+
+
+def test_python_package_without_name_requires_manual_review():
+    req = _requirement(
+        id="R1",
+        name="",
+        type=RequirementType.PYTHON_PACKAGE,
+        install_method="pip install something",
+    )
+    preflight = _preflight([req])
+
+    plan = SetupPlanner().plan([], preflight, "proj")
+
+    step = plan.steps[0]
+
+    assert step.action == "manual_review"
+    assert step.package == ""
+
+
+def test_non_python_requirement_requires_manual_review():
+    req = _requirement(
+        id="R2",
+        name="exe2",
+        type=RequirementType.EXECUTABLE,
+        install_method="brew install exe2",
+    )
+    preflight = _preflight([req])
+
+    plan = SetupPlanner().plan([], preflight, "proj")
+
+    step = plan.steps[0]
+
+    assert step.action == "manual_review"
+    assert step.package is None
+    assert step.install_method == "brew install exe2"
 
 
 def test_multiple_missing_requirements():
@@ -83,14 +147,32 @@ def test_multiple_missing_requirements():
         type=RequirementType.EXECUTABLE,
         install_method="brew install exe2",
     )
+
     preflight = _preflight([req1, req2])
     plan = SetupPlanner().plan([], preflight, "proj")
 
     assert len(plan.steps) == 2
-    ids = {s.id for s in plan.steps}
+
+    ids = {step.id for step in plan.steps}
     assert ids == {"step-R1", "step-R2"}
-    req_ids = {s.requirement_id for s in plan.steps}
+
+    req_ids = {
+        step.requirement_id
+        for step in plan.steps
+    }
     assert req_ids == {"R1", "R2"}
+
+    step_python = next(
+        step for step in plan.steps
+        if step.requirement_id == "R1"
+    )
+    step_executable = next(
+        step for step in plan.steps
+        if step.requirement_id == "R2"
+    )
+
+    assert step_python.action == "install"
+    assert step_executable.action == "manual_review"
 
 
 def test_already_installed_requirement_not_in_plan():
@@ -104,7 +186,12 @@ def test_already_installed_requirement_not_in_plan():
         name="pkg2",
         type=RequirementType.PYTHON_PACKAGE,
     )
-    preflight = _preflight([missing], [installed])
+
+    preflight = _preflight(
+        missing=[missing],
+        already_installed=[installed],
+    )
+
     plan = SetupPlanner().plan([], preflight, "proj")
 
     assert len(plan.steps) == 1
@@ -118,6 +205,7 @@ def test_requirement_id_forwarded():
         type=RequirementType.PYTHON_PACKAGE,
     )
     preflight = _preflight([req])
+
     plan = SetupPlanner().plan([], preflight, "proj")
 
     assert plan.steps[0].requirement_id == "R42"
@@ -134,11 +222,18 @@ def test_package_set_only_for_python_package():
         name="exe",
         type=RequirementType.EXECUTABLE,
     )
+
     preflight = _preflight([python_req, exe_req])
     plan = SetupPlanner().plan([], preflight, "proj")
 
-    step_py = next(s for s in plan.steps if s.requirement_id == "R1")
-    step_exe = next(s for s in plan.steps if s.requirement_id == "R2")
+    step_py = next(
+        step for step in plan.steps
+        if step.requirement_id == "R1"
+    )
+    step_exe = next(
+        step for step in plan.steps
+        if step.requirement_id == "R2"
+    )
 
     assert step_py.package == "pypkg"
     assert step_exe.package is None
@@ -152,6 +247,7 @@ def test_version_forwarded():
         required_version="2.5",
     )
     preflight = _preflight([req])
+
     plan = SetupPlanner().plan([], preflight, "proj")
 
     assert plan.steps[0].version == "2.5"
@@ -165,6 +261,7 @@ def test_install_method_forwarded():
         install_method="pip install pkg",
     )
     preflight = _preflight([req])
+
     plan = SetupPlanner().plan([], preflight, "proj")
 
     assert plan.steps[0].install_method == "pip install pkg"
@@ -178,6 +275,7 @@ def test_verification_after_forwarded():
         verification_method="pkg --version",
     )
     preflight = _preflight([req])
+
     plan = SetupPlanner().plan([], preflight, "proj")
 
     assert plan.steps[0].verification_after == "pkg --version"
@@ -185,6 +283,7 @@ def test_verification_after_forwarded():
 
 def test_is_approved_false():
     req = _requirement(id="R1")
+
     preflight = _preflight([req])
     plan = SetupPlanner().plan([], preflight, "proj")
 
@@ -193,6 +292,7 @@ def test_is_approved_false():
 
 def test_requires_user_approval_true():
     req = _requirement(id="R1")
+
     preflight = _preflight([req])
     plan = SetupPlanner().plan([], preflight, "proj")
 
@@ -201,6 +301,7 @@ def test_requires_user_approval_true():
 
 def test_status_pending_approval():
     req = _requirement(id="R1")
+
     preflight = _preflight([req])
     plan = SetupPlanner().plan([], preflight, "proj")
 
@@ -215,6 +316,7 @@ def test_inputs_not_mutated():
         install_method="pip install pkg",
         required_version="1.0",
     )
+
     preflight = PreflightResult(
         id="pf1",
         project_id="proj",
