@@ -13,6 +13,7 @@ from app.requirement_preflight import RequirementPreflight
 from app.requirement_validator import RequirementValidator
 from app.setup_planner import SetupPlanner
 from app.workflow_plan_store import WorkflowPlanStore
+from app.dev_workflow import DevelopmentWorkflow, WorkflowExecutionError
 
 
 MAX_FILE_SIZE = 1_000_000
@@ -140,6 +141,9 @@ def main() -> None:
         store = WorkflowPlanStore(".workflow-plans")
         store.save(result.setup_plan)
 
+    except WorkflowExecutionError as exc:
+        print(f"Workflow blocked: {exc}", file=sys.stderr)
+        raise SystemExit(2)
     except Exception as exc:
         print(f"Workflow failed: {exc}", file=sys.stderr)
         raise SystemExit(1)

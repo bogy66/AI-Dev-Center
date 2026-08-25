@@ -192,6 +192,62 @@ class TestValidProject:
         assert "secret" not in captured.err.lower()
 
 
+def test_discovery_fallback_blocks_cli_and_does_not_save(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "README.md").write_text("# demo")
+
+    fake_config = MagicMock(
+        provider="test-provider",
+        model="test-model",
+    )
+    monkeypatch.setattr(
+        cli,
+        "load_ai_config",
+        lambda path: fake_config,
+    )
+
+    workflow = MagicMock()
+    workflow.run.side_effect = cli.WorkflowExecutionError(
+        "Requirement discovery fallback was used; "
+        "workflow planning is blocked."
+    )
+    monkeypatch.setattr(
+        cli,
+        "build_workflow",
+        lambda config: workflow,
+    )
+
+    store = MagicMock()
+    monkeypatch.setattr(
+        cli,
+        "WorkflowPlanStore",
+        lambda root: store,
+    )
+
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["workflow_cli.py", str(project)],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main()
+
+    assert exc_info.value.code == 2
+
+    captured = capsys.readouterr()
+    assert "Workflow blocked:" in captured.err
+    assert "Requirement discovery fallback was used" in captured.err
+
+    workflow.run.assert_called_once()
+    store.save.assert_not_called()
+
+
 class TestFileReading:
     def test_binary_file_skipped(self, tmp_path, monkeypatch, capsys):
         """Binary files are skipped and a warning is printed."""
