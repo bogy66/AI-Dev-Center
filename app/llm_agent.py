@@ -2,7 +2,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import PurePath
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Callable
 from typing import Any, Protocol
 
 
@@ -31,6 +31,7 @@ class AgentState:
     max_turns_reached: bool = False
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     last_error: str | None = None
+    stop_reason: str | None = None
 
 
 def _serialize_value(value: Any, _seen: set[int] | None = None) -> Any:
@@ -93,12 +94,18 @@ class AgentLLM:
         self.mcp_server = mcp_server
         self.max_turns = max_turns
 
-    def run(self, prompt: str, *, initial_messages: list[dict[str, Any]] | None = None) -> AgentState:
+    def run(
+        self,
+        prompt: str,
+        *,
+        initial_messages: list[dict[str, Any]] | None = None,
+        stop_condition: Callable[[dict[str, Any]], str | None] | None = None,
+    ) -> AgentState:
         state = AgentState()
         messages = list(initial_messages or [])
         messages.append({"role": "user", "content": prompt})
 
-        # Load the MCP tool registry once, before processing the first LLM turn.
+        # Load the MCP tool registry once before processing the first LLM turn.
         tool_names = self._get_tool_names()
 
         while state.turn_count < self.max_turns:
@@ -146,6 +153,19 @@ class AgentLLM:
                     "arguments": tool_args,
                     "result": result
                 })
+
+                # Stop early if a tool result satisfies the supplied condition.
+                if stop_condition is not None:
+                    try:
+                        stop_reason = stop_condition(result)
+                        if stop_reason is not None:
+                            state.stop_reason = stop_reason
+                            state.complete = False
+                            state.messages = messages
+                            return state
+                    except Exception:
+                        # Ignore stop condition errors; continue loop.
+                        pass
 
             state.turn_count += 1
 
