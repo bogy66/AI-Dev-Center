@@ -59,6 +59,12 @@ class DevelopmentWorkflow:
             project_id,
         )
 
+        if discovery_result.fallback_used:
+            raise WorkflowExecutionError(
+                "Requirement discovery fallback was used; "
+                "workflow planning is blocked."
+            )
+
         validation_result = self._validator.validate(
             discovery_result.requirements,
         )

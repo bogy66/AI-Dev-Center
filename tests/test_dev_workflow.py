@@ -331,6 +331,50 @@ class TestDevelopmentWorkflow:
         with pytest.raises(RuntimeError, match="discovery failed"):
             workflow.run({"name": "test"}, "proj-1")
 
+    def test_discovery_fallback_blocks_planning(self):
+        (
+            discovery,
+            validator,
+            preflight,
+            planner,
+            discovery_result,
+            *_,
+        ) = _make_components()
+
+        fallback_result = DiscoveryResult(
+            id=discovery_result.id,
+            source=discovery_result.source,
+            project_id=discovery_result.project_id,
+            requirements=(),
+            conversation_trace_id=None,
+            ai_model="test-model",
+            fallback_used=True,
+            warnings=("LLM provider failed",),
+        )
+
+        discovery.discover.return_value = fallback_result
+
+        workflow = DevelopmentWorkflow(
+            discovery,
+            validator,
+            preflight,
+            planner,
+        )
+
+        with pytest.raises(
+            WorkflowExecutionError,
+            match="Requirement discovery fallback was used",
+        ):
+            workflow.run(
+                {"name": "test"},
+                "proj-1",
+            )
+
+        validator.validate.assert_not_called()
+        preflight.check.assert_not_called()
+        planner.plan.assert_not_called()
+
+
     def test_intermediate_objects_are_not_mutated(self):
         (
             discovery,
