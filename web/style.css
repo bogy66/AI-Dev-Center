@@ -110,7 +110,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  max-width: 360px;
+  max-width: 480px;
 }
 
 .start-form label {
@@ -120,14 +120,21 @@ body {
   gap: 0.3rem;
 }
 
-.start-form input {
+.start-form input,
+.start-form textarea {
   padding: 0.45rem 0.6rem;
   border: 1px solid #cbd5e0;
   border-radius: 4px;
+  font-family: inherit;
+}
+
+.start-form textarea {
+  min-height: 120px;
+  resize: vertical;
 }
 
 #start-workflow-btn {
-  align-self: flex-start;
+  align-self: flex-end;
   background: #3182ce;
   color: white;
   border: none;
@@ -149,7 +156,14 @@ body {
 .trace-controls {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.75rem;
+}
+
+.trace-controls label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .trace-controls select,

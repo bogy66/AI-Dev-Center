@@ -1,100 +1,660 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Dev Center Web GUI</title>
-  <link rel="stylesheet" href="/web/style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>AI-Dev-Center</title>
+
+    <link rel="stylesheet" href="/static/style.css">
 </head>
+
 <body>
-  <header id="project-header">
-    <h1>AI Dev Center</h1>
-    <span id="project-name-display">No project loaded</span>
-  </header>
-  <div id="main-layout">
-    <nav id="sidebar">
-      <ul>
-        <li class="nav-item active">Project</li>
-        <li class="nav-item">Timeline</li>
-        <li class="nav-item">Trace</li>
-        <li class="nav-item">Approval</li>
-      </ul>
-    </nav>
-    <main id="workspace">
-      <section id="project-start">
-        <h2>Start Project</h2>
-        <div class="start-form">
-          <label>
-            Project name
-            <input type="text" id="project-name-input" placeholder="e.g. my-project">
-          </label>
-          <label>
-            Project directory
-            <input type="text" id="project-dir-input" placeholder="/home/user/projects/my-project">
-          </label>
-          <button id="start-workflow-btn">Workflow starten</button>
+<div id="app">
+
+    <!-- =========================================================
+         HEADER
+         ========================================================= -->
+    <header id="project-header" class="topbar">
+
+        <div class="brand">
+            <div class="brand-mark">AI</div>
+            <div>
+                <div class="brand-title">AI-Dev-Center</div>
+                <div class="brand-subtitle">Intelligente Entwicklungsumgebung</div>
+            </div>
         </div>
-      </section>
 
-      <section id="transparency" class="card">
-        <h2>Was passiert gerade?</h2>
-        <div id="transparency-content">
-          <p>Current action: <span id="curr-action">idle</span></p>
-          <p>Component: <span id="curr-component">none</span></p>
-          <p>MCP tool: <span id="curr-mcp">none</span></p>
-          <p>Elapsed: <span id="curr-elapsed">0s</span></p>
-          <p>Last completed: <span id="curr-last">none</span></p>
-          <p>Next expected: <span id="curr-next">none</span></p>
+        <div class="active-project">
+            <span class="label">Aktives Projekt</span>
+            <strong id="project-name-display">Kein Projekt geladen</strong>
         </div>
-      </section>
 
-      <section id="timeline-section" class="card">
-        <h2>Workflow Timeline</h2>
-        <div id="timeline-container"></div>
-      </section>
-
-      <section id="trace-section" class="card">
-        <header class="trace-header">
-          <h2>Trace</h2>
-          <div class="trace-controls">
-            <select id="trace-filter">
-              <option value="all">Alle</option>
-              <option value="Agent">Agent</option>
-              <option value="MCP">MCP</option>
-              <option value="Discovery">Discovery</option>
-              <option value="Preflight">Preflight</option>
-              <option value="Planner">Planner</option>
-              <option value="Approval">Approval</option>
-              <option value="Execution">Execution</option>
-            </select>
-            <button id="clear-trace-btn">Trace löschen</button>
-            <button id="copy-all-btn">Alles kopieren</button>
-          </div>
-        </header>
-        <div class="trace-list" id="trace-list-container">
-          (no events)
+        <div class="system-state">
+            <span class="status-dot"></span>
+            <span id="global-status">Bereit</span>
         </div>
-      </section>
 
-      <section id="mcp-activity" class="card">
-        <h2>MCP Activity</h2>
-        <div id="mcp-activity-container">No MCP activity yet.</div>
-      </section>
-    </main>
+    </header>
 
-    <aside id="approval-column">
-      <div id="setup-plan-area" class="card">
-        <h2>Setup Plan</h2>
-        <div id="setup-plan-content">No plan loaded.</div>
-      </div>
-      <div id="approval-area" class="card" style="display:none;">
-        <h2>Approval</h2>
-        <div id="approval-plan-text"></div>
-        <button id="approve-btn">Approve</button>
-        <button id="reject-btn">Reject</button>
-      </div>
-    </aside>
-  </div>
-  <script src="/web/app.js"></script>
+
+    <!-- =========================================================
+         MAIN 3-COLUMN LAYOUT
+         ========================================================= -->
+    <div id="main-layout">
+
+        <!-- =====================================================
+             LEFT SIDEBAR
+             ===================================================== -->
+        <aside id="sidebar">
+
+            <div class="sidebar-section">
+                <div class="sidebar-title">AI Dev Center</div>
+
+                <nav>
+                    <button class="nav-item active" type="button">
+                        <span class="nav-icon">⌂</span>
+                        <span>Entwicklung</span>
+                    </button>
+
+                    <button class="nav-item" type="button">
+                        <span class="nav-icon">↻</span>
+                        <span>Workflows</span>
+                    </button>
+
+                    <button class="nav-item" type="button">
+                        <span class="nav-icon">✓</span>
+                        <span>Freigaben</span>
+                    </button>
+
+                    <button class="nav-item" type="button">
+                        <span class="nav-icon">⑂</span>
+                        <span>Git</span>
+                    </button>
+                </nav>
+            </div>
+
+            <div class="sidebar-footer">
+                <div class="sidebar-small-label">System</div>
+                <div class="sidebar-small-value">AI-Dev-Center</div>
+                <div class="sidebar-small-value">Local Workflow Engine</div>
+            </div>
+
+        </aside>
+
+
+        <!-- =====================================================
+             CENTER WORKSPACE
+             ===================================================== -->
+        <main id="workspace">
+
+            <!-- Project header -->
+            <section class="workspace-header">
+
+                <div>
+                    <div class="eyebrow">PROJEKT</div>
+                    <h1 id="workspace-project-title">
+                        Neues Projekt
+                    </h1>
+
+                    <div id="workspace-project-path"
+                         class="muted">
+                        Noch kein Projektverzeichnis ausgewählt
+                    </div>
+                </div>
+
+                <div class="workspace-status">
+                    <span class="status-pill ready">
+                        Bereit
+                    </span>
+                </div>
+
+            </section>
+
+
+            <!-- =================================================
+                 WHAT IS HAPPENING NOW
+                 ================================================= -->
+            <section id="transparency" class="card hero-card">
+
+                <div class="card-header">
+                    <div>
+                        <div class="eyebrow">LIVE STATUS</div>
+                        <h2>Was passiert gerade?</h2>
+                    </div>
+
+                    <span id="workflow-live-badge"
+                          class="status-pill running">
+                        WARTET
+                    </span>
+                </div>
+
+                <div id="transparency-content"
+                     class="current-action-grid">
+
+                    <div class="current-action-main">
+                        <div class="current-action-label">
+                            Aktuelle Aktion
+                        </div>
+
+                        <div id="curr-action"
+                             class="current-action-value">
+                            idle
+                        </div>
+                    </div>
+
+                    <div class="current-action-meta">
+
+                        <div class="meta-item">
+                            <span>Komponente</span>
+                            <strong id="curr-component">
+                                none
+                            </strong>
+                        </div>
+
+                        <div class="meta-item">
+                            <span>MCP Tool</span>
+                            <strong id="curr-mcp">
+                                none
+                            </strong>
+                        </div>
+
+                        <div class="meta-item">
+                            <span>Vergangene Zeit</span>
+                            <strong id="curr-elapsed">
+                                0s
+                            </strong>
+                        </div>
+
+                        <div class="meta-item">
+                            <span>Letzte Aktion</span>
+                            <strong id="curr-last">
+                                none
+                            </strong>
+                        </div>
+
+                        <div class="meta-item">
+                            <span>Nächster Schritt</span>
+                            <strong id="curr-next">
+                                none
+                            </strong>
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- =================================================
+                 NEW PROJECT / TASK
+                 ================================================= -->
+            <section id="project-start"
+                     class="card project-start-card">
+
+                <div class="card-header">
+                    <div>
+                        <div class="eyebrow">NEUES PROJEKT</div>
+                        <h2>Workflow starten</h2>
+                    </div>
+                </div>
+
+                <div class="project-form-grid">
+
+                    <!-- Project name -->
+                    <div class="form-field">
+                        <label for="project-name-input">
+                            Projektname
+                        </label>
+
+                        <input
+                            id="project-name-input"
+                            type="text"
+                            autocomplete="off"
+                            placeholder="z. B. mein-projekt"
+                        >
+                    </div>
+
+
+                    <!-- Project directory -->
+                    <div class="form-field directory-field">
+
+                        <label for="project-dir-input">
+                            Projektverzeichnis
+                        </label>
+
+                        <div class="directory-control">
+
+                            <input
+                                id="project-dir-input"
+                                type="text"
+                                autocomplete="off"
+                                placeholder="/home/udo/projekte/mein-projekt"
+                            >
+
+                            <button
+                                id="project-directory-btn"
+                                class="secondary-button"
+                                type="button"
+                            >
+                                📁 Auswählen
+                            </button>
+
+                            <!-- Browser-native directory chooser -->
+                            <input
+                                id="project-directory-picker"
+                                type="file"
+                                webkitdirectory
+                                directory
+                                multiple
+                                hidden
+                            >
+
+                        </div>
+
+                        <div class="field-hint">
+                            Verzeichnis auswählen oder Pfad manuell eingeben.
+                        </div>
+
+                    </div>
+
+
+                    <!-- Task -->
+                    <div class="form-field task-field">
+
+                        <label for="task-description-input">
+                            Aufgabe
+                        </label>
+
+                        <textarea
+                            id="task-description-input"
+                            rows="5"
+                            placeholder="Was soll das AI-Dev-Center für dieses Projekt tun?"
+                        ></textarea>
+
+                    </div>
+
+                </div>
+
+
+                <div class="project-start-footer">
+
+                    <div class="start-hint">
+                        Der Workflow wird erst nach Betätigung von
+                        <strong>Workflow starten</strong> ausgeführt.
+                    </div>
+
+                    <button
+                        id="start-workflow-btn"
+                        class="primary-button"
+                        type="button"
+                    >
+                        Workflow starten
+                    </button>
+
+                </div>
+
+            </section>
+
+
+            <!-- =================================================
+                 WORKFLOW TIMELINE
+                 ================================================= -->
+            <section id="timeline-section"
+                     class="card">
+
+                <div class="card-header">
+                    <div>
+                        <div class="eyebrow">WORKFLOW</div>
+                        <h2>Workflow Timeline</h2>
+                    </div>
+                </div>
+
+                <div id="timeline-container"
+                     class="timeline">
+                </div>
+
+            </section>
+
+
+            <!-- =================================================
+                 TRACE
+                 ================================================= -->
+            <section id="trace-section"
+                     class="card trace-card">
+
+                <div class="card-header trace-header">
+
+                    <div>
+                        <div class="eyebrow">DIAGNOSTIK</div>
+                        <h2>Trace</h2>
+                    </div>
+
+                    <div class="trace-controls">
+
+                        <label for="trace-level-select"
+                               class="compact-field">
+                            <span>Trace Level</span>
+
+                            <select id="trace-level-select">
+                                <option value="DEBUG">
+                                    DEBUG
+                                </option>
+
+                                <option value="INFO"
+                                        selected>
+                                    INFO
+                                </option>
+
+                                <option value="WARNING">
+                                    WARNING
+                                </option>
+
+                                <option value="ERROR">
+                                    ERROR
+                                </option>
+                            </select>
+                        </label>
+
+
+                        <select id="trace-filter"
+                                class="compact-select">
+
+                            <option value="all">
+                                Alle
+                            </option>
+
+                            <option value="Agent">
+                                Agent
+                            </option>
+
+                            <option value="MCP">
+                                MCP
+                            </option>
+
+                            <option value="Discovery">
+                                Discovery
+                            </option>
+
+                            <option value="Preflight">
+                                Preflight
+                            </option>
+
+                            <option value="Planner">
+                                Planner
+                            </option>
+
+                            <option value="Approval">
+                                Approval
+                            </option>
+
+                            <option value="Execution">
+                                Execution
+                            </option>
+
+                            <option value="Workflow">
+                                Workflow
+                            </option>
+
+                        </select>
+
+                    </div>
+
+                </div>
+
+
+                <div id="trace-list-container"
+                     class="trace-list">
+
+                    <div class="trace-empty">
+                        Noch keine Ereignisse
+                    </div>
+
+                </div>
+
+
+                <div class="trace-footer">
+
+                    <button
+                        id="clear-trace-btn"
+                        class="secondary-button"
+                        type="button"
+                    >
+                        Trace löschen
+                    </button>
+
+                    <button
+                        id="copy-all-btn"
+                        class="secondary-button"
+                        type="button"
+                    >
+                        Alles kopieren
+                    </button>
+
+                    <button
+                        id="export-trace-btn"
+                        class="secondary-button"
+                        type="button"
+                    >
+                        Exportieren
+                    </button>
+
+                </div>
+
+            </section>
+
+
+            <!-- =================================================
+                 MCP ACTIVITY
+                 ================================================= -->
+            <section id="mcp-activity"
+                     class="card">
+
+                <div class="card-header">
+                    <div>
+                        <div class="eyebrow">MCP</div>
+                        <h2>MCP-Aktivität</h2>
+                    </div>
+                </div>
+
+                <div id="mcp-activity-container"
+                     class="mcp-activity">
+
+                    <div class="muted">
+                        Noch keine MCP-Aktivität.
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- =================================================
+                 TASK INPUT
+                 ================================================= -->
+            <section class="task-input-card">
+
+                <div class="task-input-label">
+                    Aufgabe / Anweisung
+                </div>
+
+                <div class="task-input-row">
+
+                    <textarea
+                        id="task-input"
+                        rows="2"
+                        placeholder="Weitere Anweisung für den Agenten ..."
+                    ></textarea>
+
+                    <button
+                        id="task-send-btn"
+                        class="primary-button"
+                        type="button"
+                    >
+                        Senden
+                    </button>
+
+                </div>
+
+            </section>
+
+        </main>
+
+
+        <!-- =====================================================
+             RIGHT SIDEBAR
+             ===================================================== -->
+        <aside id="approval-column">
+
+            <!-- Workflow roles -->
+            <section class="card role-card">
+
+                <div class="card-header">
+                    <div>
+                        <div class="eyebrow">WORKFLOW</div>
+                        <h2>Agenten</h2>
+                    </div>
+                </div>
+
+                <div class="role-list">
+
+                    <div class="role-item">
+                        <span class="role-indicator"></span>
+                        <div>
+                            <strong>Projektmanager</strong>
+                            <span>Wartet</span>
+                        </div>
+                    </div>
+
+                    <div class="role-item">
+                        <span class="role-indicator"></span>
+                        <div>
+                            <strong>Architekt</strong>
+                            <span>Wartet</span>
+                        </div>
+                    </div>
+
+                    <div class="role-item active">
+                        <span class="role-indicator"></span>
+                        <div>
+                            <strong>Entwickler</strong>
+                            <span>Bereit</span>
+                        </div>
+                    </div>
+
+                    <div class="role-item">
+                        <span class="role-indicator"></span>
+                        <div>
+                            <strong>Tester</strong>
+                            <span>Wartet</span>
+                        </div>
+                    </div>
+
+                    <div class="role-item">
+                        <span class="role-indicator"></span>
+                        <div>
+                            <strong>Reviewer</strong>
+                            <span>Wartet</span>
+                        </div>
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- Setup Plan -->
+            <section id="setup-plan-area"
+                     class="card">
+
+                <div class="card-header">
+                    <div>
+                        <div class="eyebrow">PLANUNG</div>
+                        <h2>Setup Plan</h2>
+                    </div>
+                </div>
+
+                <div id="setup-plan-content"
+                     class="setup-plan-content">
+
+                    <div class="muted">
+                        Noch kein Setup Plan vorhanden.
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- Approval -->
+            <section id="approval-area"
+                     class="card approval-card"
+                     style="display:none;">
+
+                <div class="card-header">
+                    <div>
+                        <div class="eyebrow">BENUTZERAKTION</div>
+                        <h2>Freigabe erforderlich</h2>
+                    </div>
+                </div>
+
+                <div id="approval-plan-text"
+                     class="approval-text">
+                </div>
+
+                <div class="approval-buttons">
+
+                    <button
+                        id="approve-btn"
+                        class="approve-button"
+                        type="button"
+                    >
+                        ✓ Freigeben
+                    </button>
+
+                    <button
+                        id="reject-btn"
+                        class="reject-button"
+                        type="button"
+                    >
+                        ✕ Ablehnen
+                    </button>
+
+                </div>
+
+            </section>
+
+
+            <!-- Result -->
+            <section id="final-result"
+                     class="card">
+
+                <div class="card-header">
+                    <div>
+                        <div class="eyebrow">ERGEBNIS</div>
+                        <h2>Status</h2>
+                    </div>
+                </div>
+
+                <div id="result-content"
+                     class="result-content">
+
+                    <div class="muted">
+                        Noch kein Ergebnis.
+                    </div>
+
+                </div>
+
+            </section>
+
+        </aside>
+
+    </div>
+
+</div>
+
+<script src="/static/app.js"></script>
+
 </body>
 </html>

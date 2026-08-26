@@ -20,7 +20,7 @@ function copyAllToClipboard() {
   const text = traceEvents
     .map(
       e =>
-        `[${e.timestamp}] ${e.component} ${e.action} ${e.status} ${e.duration ?? ""} ${e.result_summary ?? ""}`
+        `[${e.timestamp}] ${e.level} ${e.component} ${e.event} ${e.action} ${e.status} ${e.duration_ms ?? ""} ${e.result_summary ?? ""}`
     )
     .join("\n");
   if (navigator.clipboard) {
@@ -41,6 +41,34 @@ function fallbackCopy(text) {
     alert("Copy not supported");
   }
   document.body.removeChild(ta);
+}
+
+async function exportTrace() {
+  if (!currentSessionId) {
+    alert("No active workflow trace to export.");
+    return;
+  }
+
+  try {
+    const resp = await fetch(`/api/workflow/${currentSessionId}/export`);
+    if (!resp.ok) {
+      throw new Error(await resp.text());
+    }
+    const data = await resp.json();
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `trace-${currentSessionId}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert(`Export failed: ${err.message}`);
+  }
 }
 
 // ---------- UI rendering ----------
@@ -70,15 +98,18 @@ function renderTrace() {
     container.innerHTML = "(no events)";
     return;
   }
+
   const html = filtered
     .map(
       e =>
         `<div class="trace-row">
            <span class="ts">[${e.timestamp}]</span>
+           <span class="level">${e.level}</span>
            <span class="comp">${e.component}</span>
+           <span class="event">${e.event}</span>
            <span class="action">${e.action}</span>
            <span class="stat">${e.status}</span>
-           <span class="dur">${e.duration ? e.duration.toFixed(1) + "s" : ""}</span>
+           <span class="dur">${e.duration_ms ? (e.duration_ms / 1000).toFixed(1) + "s" : ""}</span>
            <span class="sum">${e.result_summary ? e.result_summary : ""}</span>
          </div>`
     )
@@ -117,15 +148,25 @@ function updateUI(state) {
 async function startWorkflow() {
   const projectName = document.getElementById("project-name-input").value.trim();
   const projectDir = document.getElementById("project-dir-input").value.trim();
-  if (!projectName || !projectDir) {
-    alert("Please enter project name and directory.");
+  const taskDescription = document.getElementById("task-description-input").value.trim();
+  const traceLevel = document.getElementById("trace-level-select").value;
+
+  if (!projectName || !projectDir || !taskDescription) {
+    alert("Please enter project name, directory, and task.");
     return;
   }
+
   const resp = await fetchJson("/api/workflow/start", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({project_name: projectName, project_directory: projectDir}),
+    body: JSON.stringify({
+      project_name: projectName,
+      project_directory: projectDir,
+      task_description: taskDescription,
+      trace_level: traceLevel,
+    }),
   });
+
   currentSessionId = resp.session_id;
   document.getElementById("project-name-display").textContent = projectName;
   await loadState();
@@ -156,3 +197,4 @@ document.getElementById("reject-btn").addEventListener("click", rejectWorkflow);
 document.getElementById("clear-trace-btn").addEventListener("click", clearTraceDisplay);
 document.getElementById("copy-all-btn").addEventListener("click", copyAllToClipboard);
 document.getElementById("trace-filter").addEventListener("change", renderTrace);
+document.getElementById("export-trace-btn").addEventListener("click", exportTrace);

@@ -13,6 +13,7 @@ from app.agent_setup_workflow import AgentSetupWorkflow, AgentSetupWorkflowResul
 from app.ai_config import load_ai_config
 from app.ai_requirement_discovery import AIRequirementDiscovery
 from app.dev_workflow import DevelopmentWorkflow
+from app.diagnostic_trace import DiagnosticTraceRecorder, TraceEvent, TraceLevel
 from app.llm_provider_factory import create_llm_provider
 from app.local_secret_store import LocalSecretStore
 from app.mcp_server import MCPServer
@@ -22,7 +23,6 @@ from app.requirement_validator import RequirementValidator
 from app.setup_approval import SetupApproval
 from app.setup_planner import SetupPlanner
 from app.workflow_plan_store import WorkflowPlanStore
-from app.gui import sanitize_args
 
 # Import the shared file reading helper.  This keeps the web component
 # aligned with the existing CLI/domain behaviour instead of duplicating
@@ -31,87 +31,72 @@ from app.workflow_cli import read_project_files
 
 
 app = FastAPI(title="AI Dev Center Web GUI")
-app.mount("/web", StaticFiles(directory="web"), name="web")
-
-
-# ---------------------------------------------------------------------------
-#  Trace event model
-# ---------------------------------------------------------------------------
-from dataclasses import dataclass
-
-
-@dataclass
-class TraceEvent:
-    timestamp: datetime
-    component: str
-    action: str
-    status: str          # "start", "success", "failure"
-    duration: Optional[float] = None
-    args: Optional[Dict[str, Any]] = None
-    result_summary: Optional[str] = None
+app.mount("/static", StaticFiles(directory="web"), name="static")
 
 
 # ---------------------------------------------------------------------------
 #  Tracing wrapper for MCPServer
 # ---------------------------------------------------------------------------
 class TracingMCPServerWrapper:
-    """Intercepts tool calls and records them as TraceEvent entries."""
+    """Intercepts MCPServer tool calls and records diagnostic trace events.
 
-    def __init__(self, real_mcp: MCPServer, event_list: List[TraceEvent]):
+    The wrapper intentionally ignores ``list_tools`` and internal/dunder
+    methods.  All other callable public methods on the real MCP server are
+    treated as observable MCP tool calls and are recorded as tool_started,
+    tool_completed, or tool_failed.
+    """
+
+    def __init__(self, real_mcp: MCPServer, recorder: DiagnosticTraceRecorder):
         self._real = real_mcp
-        self._events = event_list
-        try:
-            self._tool_names = {t.name for t in real_mcp.list_tools()}
-        except Exception:
-            # Some mocks or lightweight doubles may not implement list_tools.
-            # In production this will always succeed.
-            self._tool_names = set()
+        self._recorder = recorder
 
     def __getattr__(self, name: str):
+        if name.startswith("_"):
+            # Delegate internal/dunder attribute access to the real object.
+            return getattr(self._real, name)
+
         attr = getattr(self._real, name)
-        if name not in self._tool_names or not callable(attr):
-            # Passthrough for non‑tool attributes (including `list_tools` itself)
+
+        # list_tools is not a tool call itself; it only describes tools.
+        if name == "list_tools" or not callable(attr):
             return attr
 
         def traced_call(*args, **kwargs):
             start = datetime.now()
-            sanitized = sanitize_args(kwargs) if kwargs else {}
-            self._events.append(
-                TraceEvent(
-                    timestamp=start,
-                    component="MCP",
-                    action=name,
-                    status="start",
-                    args=sanitized,
-                )
+            self._recorder.record(
+                level=TraceLevel.INFO,
+                component="MCP",
+                event="tool_started",
+                action=name,
+                status="started",
+                arguments=kwargs if kwargs else {},
             )
             try:
                 result = attr(*args, **kwargs)
-                elapsed = (datetime.now() - start).total_seconds()
-                self._events.append(
-                    TraceEvent(
-                        timestamp=datetime.now(),
-                        component="MCP",
-                        action=name,
-                        status="success",
-                        duration=elapsed,
-                        result_summary=str(result)[:200],
-                    )
+                elapsed_ms = (datetime.now() - start).total_seconds() * 1000
+                self._recorder.record(
+                    level=TraceLevel.INFO,
+                    component="MCP",
+                    event="tool_completed",
+                    action=name,
+                    status="success",
+                    duration_ms=elapsed_ms,
+                    result_summary=str(result)[:200],
                 )
                 return result
             except Exception as exc:
-                elapsed = (datetime.now() - start).total_seconds()
-                self._events.append(
-                    TraceEvent(
-                        timestamp=datetime.now(),
-                        component="MCP",
-                        action=name,
-                        status="failure",
-                        duration=elapsed,
-                        result_summary=str(exc)[:200],
-                    )
+                elapsed_ms = (datetime.now() - start).total_seconds() * 1000
+                self._recorder.record(
+                    level=TraceLevel.ERROR,
+                    component="MCP",
+                    event="tool_failed",
+                    action=name,
+                    status="failed",
+                    duration_ms=elapsed_ms,
+                    result_summary=str(exc)[:200],
                 )
                 raise
+
         return traced_call
 
 
@@ -119,10 +104,21 @@ class TracingMCPServerWrapper:
 #  Session management
 # ---------------------------------------------------------------------------
 class Session:
-    def __init__(self, project_id: str, project_path: str):
+    def __init__(
+        self,
+        project_id: str,
+        project_path: str,
+        task_description: str,
+        run_id: str,
+        trace_level: TraceLevel,
+        recorder: DiagnosticTraceRecorder,
+    ):
         self.project_id = project_id
         self.project_path = project_path
-        self.trace_events: List[TraceEvent] = []
+        self.task_description = task_description
+        self.run_id = run_id
+        self.trace_level = trace_level
+        self.recorder = recorder
         self.mcp_wrapper: Optional[TracingMCPServerWrapper] = None
         self.workflow: Optional[AgentSetupWorkflow] = None
         self.plan_id: Optional[str] = None
@@ -131,6 +127,10 @@ class Session:
         self.workflow_status: str = "unknown"
         self.error_message: Optional[str] = None
         self.blocked: bool = False
+
+    @property
+    def trace_events(self) -> List[TraceEvent]:
+        return self.recorder.events
 
 
 sessions: Dict[str, Session] = {}
@@ -183,21 +183,24 @@ def get_workflow_components():
 # ---------------------------------------------------------------------------
 #  Helpers
 # ---------------------------------------------------------------------------
+def _serialize_event(trace_event: TraceEvent) -> Dict[str, Any]:
+    return {
+        "timestamp": trace_event.timestamp.isoformat(),
+        "run_id": trace_event.run_id,
+        "level": trace_event.level.value,
+        "component": trace_event.component,
+        "event": trace_event.event,
+        "action": trace_event.action,
+        "status": trace_event.status,
+        "duration_ms": trace_event.duration_ms,
+        "arguments": trace_event.arguments,
+        "result_summary": trace_event.result_summary,
+        "metadata": trace_event.metadata,
+    }
+
+
 def _serialize_trace(events: List[TraceEvent]) -> List[Dict[str, Any]]:
-    rows: List[Dict[str, Any]] = []
-    for ev in events:
-        rows.append(
-            {
-                "timestamp": ev.timestamp.isoformat(),
-                "component": ev.component,
-                "action": ev.action,
-                "status": ev.status,
-                "duration": ev.duration,
-                "args": ev.args,
-                "result_summary": ev.result_summary,
-            }
-        )
-    return rows
+    return [_serialize_event(event) for event in events]
 
 
 def _compute_timeline(events: List[TraceEvent], session: Session) -> List[Dict[str, str]]:
@@ -213,7 +216,11 @@ def _compute_timeline(events: List[TraceEvent], session: Session) -> List[Dict[s
         "Failed",
     ]
 
-    completed_tools = {ev.action for ev in events if ev.status == "success"}
+    completed_tool_actions = {
+        ev.action
+        for ev in events
+        if ev.event == "tool_completed" and ev.status == "success"
+    }
     stage_map = {
         "inspect_project": "Inspect",
         "discover_requirements": "Discovery",
@@ -257,19 +264,17 @@ def _compute_timeline(events: List[TraceEvent], session: Session) -> List[Dict[s
                 stages.append({"stage": name, "status": "inactive"})
             continue
 
-        # Map tool->stage
         tool_names_for_stage = [t for t, s in stage_map.items() if s == name]
-        if any(t in completed_tools for t in tool_names_for_stage):
+        if any(t in completed_tool_actions for t in tool_names_for_stage):
             status = "completed"
         else:
             status = "pending"
         stages.append({"stage": name, "status": status})
 
     if session.blocked:
-        # insert "Blocked" stage overriding
-        for s in stages:
-            if s["stage"] == "Inspect":
-                s["status"] = "completed"
+        for stage in stages:
+            if stage["stage"] == "Inspect":
+                stage["status"] = "completed"
         stages.append({"stage": "Blocked", "status": "active"})
 
     return stages
@@ -279,6 +284,7 @@ def _current_state_info(session: Session) -> Dict[str, Any]:
     last_event = session.trace_events[-1] if session.trace_events else None
     last_completed = None
     next_expected = None
+
     if session.blocked:
         next_expected = "Workflow blocked"
     elif session.workflow_status == "completed":
@@ -287,17 +293,24 @@ def _current_state_info(session: Session) -> Dict[str, Any]:
         next_expected = "User approval"
     else:
         next_expected = "Execution"
+
     if last_event and last_event.status in ("success", "failure"):
         last_completed = f"{last_event.action} ({last_event.status})"
+
     elapsed_str = ""
-    if events_with_dur := [e for e in session.trace_events if e.duration is not None]:
-        total = sum(e.duration for e in events_with_dur)
-        elapsed_str = f"{total:.1f}s"
+    durations = [e.duration_ms for e in session.trace_events if e.duration_ms is not None]
+    if durations:
+        elapsed_str = f"{sum(durations) / 1000:.1f}s"
+
     return {
         "current_action": last_event.action if last_event else "idle",
         "current_component": last_event.component if last_event else "none",
         "current_mcp_tool": (
-            last_event.action if last_event and last_event.component == "MCP" else "none"
+            last_event.action
+            if last_event
+            and last_event.component == "MCP"
+            and last_event.event.startswith("tool_")
+            else "none"
         ),
         "elapsed": elapsed_str,
         "last_completed": last_completed or "none",
@@ -311,6 +324,8 @@ def _current_state_info(session: Session) -> Dict[str, Any]:
 class StartRequest(BaseModel):
     project_name: str
     project_directory: str
+    task_description: str
+    trace_level: TraceLevel = TraceLevel.INFO
 
 
 @app.get("/")
@@ -326,10 +341,34 @@ async def start_workflow(
     llm_provider, mcp_server = components
     project_id = req.project_name
     project_path = req.project_directory
-    session_id = str(uuid.uuid4())
-    session = Session(project_id, project_path)
+    task_description = req.task_description
+    trace_level = req.trace_level
 
-    wrapper = TracingMCPServerWrapper(mcp_server, session.trace_events)
+    run_id = uuid.uuid4().hex
+    recorder = DiagnosticTraceRecorder(run_id=run_id, trace_level=trace_level)
+    session = Session(
+        project_id,
+        project_path,
+        task_description,
+        run_id,
+        trace_level,
+        recorder,
+    )
+
+    recorder.record(
+        level=TraceLevel.INFO,
+        component="Workflow",
+        event="workflow_started",
+        action="start",
+        status="started",
+        arguments={
+            "project_id": project_id,
+            "project_path": project_path,
+            "task_description": task_description,
+        },
+    )
+
+    wrapper = TracingMCPServerWrapper(mcp_server, recorder)
     session.mcp_wrapper = wrapper
     workflow = AgentSetupWorkflow(llm_provider, wrapper)
     session.workflow = workflow
@@ -341,7 +380,15 @@ async def start_workflow(
     except Exception as exc:
         session.error_message = str(exc)
         session.blocked = True
-        sessions[session_id] = session
+        recorder.record(
+            level=TraceLevel.ERROR,
+            component="Workflow",
+            event="exception",
+            action="start_setup_workflow",
+            status="failed",
+            result_summary=str(exc),
+        )
+        sessions[session_id := str(uuid.uuid4())] = session
         return JSONResponse(
             content={"session_id": session_id, "blocked": True, "error": str(exc)},
             status_code=200,
@@ -351,22 +398,46 @@ async def start_workflow(
     session.approval_required = bool(result.approval_required)
     session.approval_status = getattr(result, "approval_status", "pending")
     session.error_message = result.error_message
+
+    recorder.record(
+        level=TraceLevel.INFO,
+        component="Agent",
+        event="plan_created",
+        action="create_plan",
+        status="success",
+        result_summary=f"Plan {result.plan_id}",
+    )
+
     if result.error_message:
         session.blocked = True
-    if not result.approval_required and not result.error_message:
-        session.workflow_status = "completed"
-    else:
-        # Add synthetic approval‑pending event
-        session.trace_events.append(
-            TraceEvent(
-                timestamp=datetime.now(),
-                component="Agent",
-                action="plan_ready",
-                status="start",
-                result_summary="Plan created, awaiting approval",
-            )
+        recorder.record(
+            level=TraceLevel.ERROR,
+            component="Workflow",
+            event="workflow_state_changed",
+            action="blocked",
+            status="failed",
+            result_summary=result.error_message,
         )
-    sessions[session_id] = session
+    elif result.approval_required:
+        recorder.record(
+            level=TraceLevel.INFO,
+            component="Agent",
+            event="approval_required",
+            action="request_approval",
+            status="pending",
+            result_summary=f"Project {project_id}, Plan {result.plan_id}",
+        )
+    else:
+        session.workflow_status = "completed"
+        recorder.record(
+            level=TraceLevel.INFO,
+            component="Workflow",
+            event="workflow_state_changed",
+            action="complete",
+            status="completed",
+        )
+
+    sessions[session_id := run_id] = session
     return {"session_id": session_id, "plan_id": result.plan_id}
 
 
@@ -375,13 +446,18 @@ async def get_state(session_id: str):
     session = sessions.get(session_id)
     if not session:
         return JSONResponse(content={"error": "unknown session"}, status_code=404)
+
     trace = _serialize_trace(session.trace_events)
     timeline = _compute_timeline(session.trace_events, session)
     info = _current_state_info(session)
+
     return {
         "session_id": session_id,
+        "run_id": session.run_id,
+        "trace_level": session.trace_level.value,
         "project_id": session.project_id,
         "project_path": session.project_path,
+        "task_description": session.task_description,
         "plan_id": session.plan_id,
         "approval_required": session.approval_required,
         "approval_status": session.approval_status,
@@ -403,12 +479,37 @@ async def approve_workflow(session_id: str):
         return JSONResponse(content={"error": "no plan to approve"}, status_code=400)
     if session.workflow_status == "completed":
         return JSONResponse(content={"message": "already completed"}, status_code=200)
+
+    recorder = session.recorder
+    recorder.record(
+        level=TraceLevel.INFO,
+        component="Agent",
+        event="approval_granted",
+        action="approve",
+        status="success",
+    )
+    recorder.record(
+        level=TraceLevel.INFO,
+        component="Workflow",
+        event="execution_started",
+        action="execute_approved_plan",
+        status="started",
+    )
+
     try:
         result = session.workflow.approve_and_execute(session.project_id, session.plan_id)
     except Exception as exc:
         session.error_message = str(exc)
         session.blocked = True
         session.workflow_status = "failed"
+        recorder.record(
+            level=TraceLevel.ERROR,
+            component="Workflow",
+            event="execution_failed",
+            action="approve_and_execute",
+            status="failed",
+            result_summary=str(exc),
+        )
         return JSONResponse(content={"error": str(exc)}, status_code=500)
 
     session.approval_status = "approved"
@@ -416,16 +517,22 @@ async def approve_workflow(session_id: str):
         session.workflow_status = "completed"
     else:
         session.workflow_status = "executing"
-    # add post‑approval execution trace
-    session.trace_events.append(
-        TraceEvent(
-            timestamp=datetime.now(),
-            component="Agent",
-            action="execution_complete",
-            status="success",
-            result_summary="Execution finished",
-        )
+
+    recorder.record(
+        level=TraceLevel.INFO,
+        component="Workflow",
+        event="execution_completed",
+        action="execute_approved_plan",
+        status="success",
     )
+    recorder.record(
+        level=TraceLevel.INFO,
+        component="Workflow",
+        event="verification_completed",
+        action="verify_execution",
+        status="success",
+    )
+
     return {"workflow_status": session.workflow_status}
 
 
@@ -434,16 +541,33 @@ async def reject_workflow(session_id: str):
     session = sessions.get(session_id)
     if not session:
         return JSONResponse(content={"error": "unknown session"}, status_code=404)
+
     session.approval_status = "rejected"
     session.blocked = True
     session.workflow_status = "blocked"
-    session.trace_events.append(
-        TraceEvent(
-            timestamp=datetime.now(),
-            component="Agent",
-            action="rejected",
-            status="failure",
-            result_summary="Workflow rejected by user",
-        )
+
+    session.recorder.record(
+        level=TraceLevel.INFO,
+        component="Agent",
+        event="approval_rejected",
+        action="reject",
+        status="rejected",
     )
+    session.recorder.record(
+        level=TraceLevel.INFO,
+        component="Workflow",
+        event="workflow_state_changed",
+        action="blocked",
+        status="blocked",
+    )
+
     return {"status": "rejected"}
+
+
+@app.get("/api/workflow/{session_id}/export")
+async def export_trace(session_id: str):
+    session = sessions.get(session_id)
+    if not session:
+        return JSONResponse(content={"error": "unknown session"}, status_code=404)
+
+    return JSONResponse(content=session.recorder.export())
