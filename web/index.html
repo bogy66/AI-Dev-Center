@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Dev Center Web GUI</title>
+  <link rel="stylesheet" href="/web/style.css">
+</head>
+<body>
+  <header id="project-header">
+    <h1>AI Dev Center</h1>
+    <span id="project-name-display">No project loaded</span>
+  </header>
+  <div id="main-layout">
+    <nav id="sidebar">
+      <ul>
+        <li class="nav-item active">Project</li>
+        <li class="nav-item">Timeline</li>
+        <li class="nav-item">Trace</li>
+        <li class="nav-item">Approval</li>
+      </ul>
+    </nav>
+    <main id="workspace">
+      <section id="project-start">
+        <h2>Start Project</h2>
+        <div class="start-form">
+          <label>
+            Project name
+            <input type="text" id="project-name-input" placeholder="e.g. my-project">
+          </label>
+          <label>
+            Project directory
+            <input type="text" id="project-dir-input" placeholder="/home/user/projects/my-project">
+          </label>
+          <button id="start-workflow-btn">Workflow starten</button>
+        </div>
+      </section>
+
+      <section id="transparency" class="card">
+        <h2>Was passiert gerade?</h2>
+        <div id="transparency-content">
+          <p>Current action: <span id="curr-action">idle</span></p>
+          <p>Component: <span id="curr-component">none</span></p>
+          <p>MCP tool: <span id="curr-mcp">none</span></p>
+          <p>Elapsed: <span id="curr-elapsed">0s</span></p>
+          <p>Last completed: <span id="curr-last">none</span></p>
+          <p>Next expected: <span id="curr-next">none</span></p>
+        </div>
+      </section>
+
+      <section id="timeline-section" class="card">
+        <h2>Workflow Timeline</h2>
+        <div id="timeline-container"></div>
+      </section>
+
+      <section id="trace-section" class="card">
+        <header class="trace-header">
+          <h2>Trace</h2>
+          <div class="trace-controls">
+            <select id="trace-filter">
+              <option value="all">Alle</option>
+              <option value="Agent">Agent</option>
+              <option value="MCP">MCP</option>
+              <option value="Discovery">Discovery</option>
+              <option value="Preflight">Preflight</option>
+              <option value="Planner">Planner</option>
+              <option value="Approval">Approval</option>
+              <option value="Execution">Execution</option>
+            </select>
+            <button id="clear-trace-btn">Trace löschen</button>
+            <button id="copy-all-btn">Alles kopieren</button>
+          </div>
+        </header>
+        <div class="trace-list" id="trace-list-container">
+          (no events)
+        </div>
+      </section>
+
+      <section id="mcp-activity" class="card">
+        <h2>MCP Activity</h2>
+        <div id="mcp-activity-container">No MCP activity yet.</div>
+      </section>
+    </main>
+
+    <aside id="approval-column">
+      <div id="setup-plan-area" class="card">
+        <h2>Setup Plan</h2>
+        <div id="setup-plan-content">No plan loaded.</div>
+      </div>
+      <div id="approval-area" class="card" style="display:none;">
+        <h2>Approval</h2>
+        <div id="approval-plan-text"></div>
+        <button id="approve-btn">Approve</button>
+        <button id="reject-btn">Reject</button>
+      </div>
+    </aside>
+  </div>
+  <script src="/web/app.js"></script>
+</body>
+</html>
