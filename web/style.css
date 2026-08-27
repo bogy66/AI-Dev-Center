@@ -1,223 +1,378 @@
-/* ------------------------------
-   Global styles
------------------------------- */
 * {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
 }
 
 body {
-  font-family: system-ui, -apple-system, sans-serif;
-  background: #f5f7fa;
-  color: #333;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #f5f7fa;
+    color: #333;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
-/* ------------------------------
-   Header
------------------------------- */
+#app-container {
+    display: flex;
+    width: 100%;
+    height: 100vh;
+    background: #fff;
+    overflow: hidden;
+}
+
+/* Left column */
+#recents-panel {
+    width: 240px;
+    background: #f0f2f5;
+    border-right: 1px solid #e0e0e0;
+    display: flex;
+    flex-direction: column;
+    padding: 1rem 0.5rem;
+    overflow-y: auto;
+}
+
+.panel-header {
+    padding: 0.5rem 0.75rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #1a202c;
+}
+
+#recents-list {
+    list-style: none;
+    margin-top: 0.5rem;
+}
+
+#recents-list li {
+    padding: 0.6rem 0.75rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    color: #2d3748;
+    transition: background 0.15s;
+}
+
+#recents-list li:hover {
+    background: #e2e8f0;
+}
+
+#recents-list li.active {
+    background: #d1d5db;
+    font-weight: 600;
+}
+
+/* Right column */
+#main-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* Header */
 #project-header {
-  background: #2d3748;
-  color: #e2e8f0;
-  padding: 0.75rem 1.25rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1.25rem;
+    background: #fff;
+    border-bottom: 1px solid #e0e0e0;
+    gap: 1rem;
+    flex-shrink: 0;
 }
 
-#project-header h1 {
-  font-size: 1.25rem;
-  font-weight: 600;
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
 }
 
-#project-name-display {
-  font-size: 0.9rem;
-  opacity: 0.9;
+.brand-mark {
+    background: #3182ce;
+    color: white;
+    border-radius: 4px;
+    padding: 0.2rem 0.4rem;
+    font-size: 0.9rem;
 }
 
-/* ------------------------------
-   Main layout: side nav, center, right column
------------------------------- */
-#main-layout {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 220px 1fr 320px;
-  overflow: hidden;
+.active-project {
+    flex: 1;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
 }
 
-/* Left dark navigation */
-#sidebar {
-  background: #1a202c;
-  color: #cbd5e0;
-  padding: 1rem 0;
+.active-project .label {
+    color: #718096;
+    font-size: 0.85rem;
 }
 
-#sidebar ul {
-  list-style: none;
-  padding: 0;
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
 }
 
-.nav-item {
-  padding: 0.6rem 1.25rem;
-  cursor: pointer;
-  font-size: 0.95rem;
-  border-left: 3px solid transparent;
-  transition: background 0.15s;
+.status-indicator {
+    padding: 0.25rem 0.5rem;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    background: #edf2f7;
+    color: #2d3748;
 }
 
-.nav-item:hover,
-.nav-item.active {
-  background: #2d3748;
-  border-left-color: #63b3ed;
+.session-info {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.8rem;
+    color: #4a5568;
+    background: #f7fafc;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    border: 1px solid #e2e8f0;
 }
 
-/* Center workspace */
-#workspace {
-  padding: 1.5rem;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
+.session-info code {
+    font-size: 0.75rem;
+    color: #2d3748;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-/* Right approval column */
-#approval-column {
-  background: #edf2f7;
-  padding: 1.25rem;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
+.copy-button {
+    padding: 0.1rem 0.3rem;
+    font-size: 0.7rem;
+    background: #edf2f7;
+    border: 1px solid #cbd5e0;
+    border-radius: 3px;
+    cursor: pointer;
 }
 
-/* ------------------------------
-   Cards
------------------------------- */
-.card {
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-  padding: 1rem;
+/* Chat */
+#chat-panel {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
 }
 
-/* ------------------------------
-   Start form
------------------------------- */
-.start-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  max-width: 480px;
+.chat-message {
+    max-width: 70%;
+    padding: 0.6rem 1rem;
+    border-radius: 12px;
+    line-height: 1.4;
+    word-wrap: break-word;
 }
 
-.start-form label {
-  display: flex;
-  flex-direction: column;
-  font-size: 0.9rem;
-  gap: 0.3rem;
+.user-message {
+    align-self: flex-end;
+    background: #3182ce;
+    color: white;
+    border-bottom-right-radius: 4px;
 }
 
-.start-form input,
-.start-form textarea {
-  padding: 0.45rem 0.6rem;
-  border: 1px solid #cbd5e0;
-  border-radius: 4px;
-  font-family: inherit;
+.assistant-message {
+    align-self: flex-start;
+    background: #edf2f7;
+    color: #1a202c;
+    border-bottom-left-radius: 4px;
 }
 
-.start-form textarea {
-  min-height: 120px;
-  resize: vertical;
+.live-status {
+    color: #718096;
+    font-size: 0.85rem;
+    padding: 0.3rem 0;
+    min-height: 1.2rem;
 }
 
-#start-workflow-btn {
-  align-self: flex-end;
-  background: #3182ce;
-  color: white;
-  border: none;
-  padding: 0.5rem 1.25rem;
-  border-radius: 5px;
-  cursor: pointer;
-  font-weight: 600;
+.empty-chat {
+    color: #a0aec0;
+    font-size: 0.95rem;
+    text-align: center;
+    padding: 2rem 0;
 }
 
-/* ------------------------------
-   Trace section
------------------------------- */
+/* Trace drag handle */
+#trace-drag-handle {
+    height: 6px;
+    background: #e2e8f0;
+    border-top: 1px solid #cbd5e0;
+    border-bottom: 1px solid #cbd5e0;
+    cursor: row-resize;
+    flex-shrink: 0;
+}
+
+/* Trace panel */
+#trace-panel {
+    flex-shrink: 0;
+    height: 180px; /* default, overridden by JS */
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid #e0e0e0;
+    background: #fafafa;
+}
+
 .trace-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 1.25rem;
+    border-bottom: 1px solid #e0e0e0;
+    flex-shrink: 0;
+}
+
+.trace-title {
+    font-weight: 600;
+    color: #2d3748;
 }
 
 .trace-controls {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
-
-.trace-controls label {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
 }
 
 .trace-controls select,
 .trace-controls button {
-  padding: 0.3rem 0.5rem;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid #cbd5e0;
+    border-radius: 4px;
+    background: white;
+    font-size: 0.85rem;
+    cursor: pointer;
 }
 
-.trace-list {
-  max-height: 200px;
-  overflow-y: auto;
-  margin-top: 0.5rem;
+#trace-list-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 1.25rem;
+    font-family: monospace;
+    font-size: 0.85rem;
+    color: #4a5568;
+    white-space: pre-wrap;
 }
 
-/* ------------------------------
-   Timeline
------------------------------- */
-#timeline-container {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+/* Input at bottom */
+#input-panel {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    border-top: 1px solid #e0e0e0;
+    background: #fff;
+    flex-shrink: 0;
 }
 
-.timeline-stage {
-  padding: 0.3rem 0.6rem;
-  border-radius: 12px;
-  font-size: 0.8rem;
-  background: #e2e8f0;
-}
-.timeline-stage.completed { background: #48bb78; color: white; }
-.timeline-stage.pending { background: #ecc94b; color: #1a202c; }
-.timeline-stage.in_progress { background: #5a67d8; color: white; }
-.timeline-stage.active { background: #48bb78; color: white; }
-.timeline-stage.inactive { background: #e2e8f0; color: #4a5568; }
-
-/* ------------------------------
-   Buttons
------------------------------- */
-#approve-btn {
-  background: #38a169;
-  color: white;
-  border: none;
-  padding: 0.4rem 1rem;
-  border-radius: 4px;
+#chat-input {
+    flex: 1;
+    resize: vertical;
+    min-height: 44px;
+    max-height: 160px;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #cbd5e0;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    font-family: inherit;
 }
 
-#reject-btn {
-  background: #e53e3e;
-  color: white;
-  border: none;
-  padding: 0.4rem 1rem;
-  border-radius: 4px;
+.primary-button {
+    background: #3182ce;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    height: fit-content;
 }
 
-/* Utility */
-.hidden {
-  display: none;
+.secondary-button {
+    background: #edf2f7;
+    color: #2d3748;
+    border: 1px solid #cbd5e0;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+/* Modal */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal.hidden {
+    display: none;
+}
+
+.modal-overlay {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.4);
+}
+
+.modal-content {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    width: 400px;
+    z-index: 1001;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+.modal-content h2 {
+    margin-bottom: 1rem;
+    color: #1a202c;
+}
+
+.form-field {
+    margin-bottom: 1rem;
+}
+
+.form-field label {
+    display: block;
+    margin-bottom: 0.3rem;
+    font-size: 0.9rem;
+    color: #4a5568;
+}
+
+.form-field input,
+.form-field select {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #cbd5e0;
+    border-radius: 4px;
+}
+
+.dir-row {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.dir-row input {
+    flex: 1;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1rem;
 }

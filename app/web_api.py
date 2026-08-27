@@ -23,6 +23,7 @@ from app.requirement_validator import RequirementValidator
 from app.setup_approval import SetupApproval
 from app.setup_planner import SetupPlanner
 from app.workflow_plan_store import WorkflowPlanStore
+from app.project_scanner import ProjectScanner
 
 # Import the shared file reading helper.  This keeps the web component
 # aligned with the existing CLI/domain behaviour instead of duplicating
@@ -155,11 +156,12 @@ def build_mcp_server(config, llm_provider) -> MCPServer:
         executor=PythonPackageExecutor(),
     )
 
+    project_scanner = ProjectScanner()
     plan_store = WorkflowPlanStore(".workflow-plans")
     approval = SetupApproval
 
     return MCPServer(
-        project_scanner=read_project_files,
+        project_scanner=project_scanner,
         discovery=discovery,
         preflight=RequirementPreflight,
         planner=SetupPlanner(),
