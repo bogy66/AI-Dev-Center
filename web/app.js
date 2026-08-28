@@ -2,6 +2,10 @@ let currentSessionId = null;
 let currentProject = null;
 let recents = JSON.parse(localStorage.getItem('recents') || '[]');
 let pollingTimer = null;
+let approvalActionRendered = false;
+let currentHelpSlide = 0;
+let helpPitchDeckInitialized = false;
+const totalHelpSlides = 10;
 
 // ---------- API helpers ----------
 async function fetchJson(url, options = {}) {
@@ -15,6 +19,57 @@ async function fetchJson(url, options = {}) {
 
 function saveRecents() {
     localStorage.setItem('recents', JSON.stringify(recents));
+}
+
+function isLikelyProjectDirectory(path, projectName) {
+    if (!path || !projectName) return false;
+    const normalized = path.replace(/\/+$/, '');
+    const parts = normalized.split('/');
+    return parts[parts.length - 1] === projectName;
+}
+
+function resolveProjectDirectory(baseDir, projectName) {
+    const cleanBase = baseDir.replace(/\/+$/, '');
+    if (cleanBase.endsWith('/' + projectName)) {
+        return cleanBase;
+    }
+    return `${cleanBase}/${projectName}`;
+}
+
+function getProjectDirectory(project) {
+    if (!project) return 'No project selected';
+
+    const name = project.project_name;
+
+    // Prefer an existing explicit project_path/project_directory
+    // only when it already appears to be the full project directory.
+    if (project.project_path && isLikelyProjectDirectory(project.project_path, name)) {
+        return project.project_path;
+    }
+
+    if (project.project_directory && isLikelyProjectDirectory(project.project_directory, name)) {
+        return project.project_directory;
+    }
+
+    // If only a workspace/base directory is stored, combine it with the project name.
+    // This handles the /home/udo/Testprojekt + _p1 -> /home/udo/Testprojekt/_p1 case.
+    if (project.project_path) {
+        return resolveProjectDirectory(project.project_path, name);
+    }
+
+    if (project.project_directory) {
+        return resolveProjectDirectory(project.project_directory, name);
+    }
+
+    if (project.workspace) {
+        return resolveProjectDirectory(project.workspace, name);
+    }
+
+    return 'No project selected';
+}
+
+function getProjectPath() {
+    return getProjectDirectory(currentProject);
 }
 
 function renderRecents() {
@@ -61,7 +116,8 @@ function selectProject(index) {
     currentProject = recents[index];
     currentSessionId = currentProject.session_id || null;
     document.getElementById('project-name-display').textContent = currentProject.project_name;
-    document.getElementById('global-status').textContent = currentSessionId ? 'Connected' : 'Ready';
+    document.getElementById('project-path-display').textContent = getProjectPath();
+    document.getElementById('global-status').textContent = currentSessionId ? 'Running' : 'Ready';
     updateSessionDisplay(currentSessionId);
     clearChat();
     if (currentSessionId) {
@@ -73,6 +129,8 @@ function selectProject(index) {
 function clearChat() {
     document.getElementById('chat-messages').innerHTML = '<div id="empty-chat-state" class="empty-chat">Start a conversation...</div>';
     document.getElementById('live-status').textContent = '';
+    document.getElementById('approval-action-container').innerHTML = '';
+    approvalActionRendered = false;
 }
 
 function addMessage(role, content) {
@@ -92,31 +150,56 @@ function setLiveStatus(text) {
 }
 
 function updateSessionDisplay(sessionId) {
-    const info = document.getElementById('session-info');
     const code = document.getElementById('session-id-display');
+    const copyBtn = document.getElementById('copy-session-btn');
+
     if (sessionId) {
         code.textContent = sessionId;
-        info.style.display = 'inline-flex';
+        copyBtn.disabled = false;
     } else {
-        info.style.display = 'none';
-        code.textContent = '';
+        code.textContent = '—';
+        copyBtn.disabled = true;
     }
+}
+
+function updatePathDisplay() {
+    document.getElementById('project-path-display').textContent = getProjectPath();
 }
 
 function appendTrace(traceEvents) {
     const container = document.getElementById('trace-list-container');
     const filter = document.getElementById('trace-filter').value;
-    const level = document.getElementById('trace-level-select').value;
+    const selectedLevel = document.getElementById('trace-level-select').value;
+
+    const levelRank = {
+        'DEBUG': 0,
+        'INFO': 1,
+        'WARNING': 2,
+        'ERROR': 3,
+    };
+
+    const detailThreshold = {
+        'INFO': 1,
+        'DEBUG': 0,
+        'VERBOSE': -1,
+        'VERY_VERBOSE': -2,
+    };
+
+    const threshold = detailThreshold[selectedLevel] !== undefined ? detailThreshold[selectedLevel] : 1;
 
     const filtered = traceEvents.filter(e => {
-        const levelOk = level === 'DEBUG' || e.level === level;
         const componentOk = filter === 'all' || e.component === filter;
-        return levelOk && componentOk;
+        if (!componentOk) return false;
+        const eventRank = levelRank[e.level] !== undefined ? levelRank[e.level] : 99;
+        return eventRank >= threshold;
     });
 
-    container.innerHTML = filtered.map(e =>
-        `[${e.timestamp}] ${e.level} ${e.component} ${e.event} ${e.action} ${e.status}`
-    ).join('\n');
+    container.innerHTML = filtered.map(e => {
+        const meta = e.metadata || {};
+        const rolePart = meta.role ? ` role=${meta.role}` : '';
+        const toolPart = meta.tool_name ? ` tool=${meta.tool_name}` : '';
+        return `[${e.timestamp}] ${e.level} ${e.component}${rolePart}${toolPart} ${e.event} ${e.action} ${e.status}`;
+    }).join('\n');
 }
 
 function startPolling(sessionId) {
@@ -139,24 +222,210 @@ function stopPolling() {
 }
 
 function updateFromState(state) {
-    document.getElementById('project-name-display').textContent = state.project_id;
+    const info = state.transparency || {};
+    const action = info.current_mcp_tool || info.current_action || '';
+    const backendRole = info.current_role;
+
+    let statusText;
     if (state.approval_required) {
-        setLiveStatus('Waiting for approval...');
+        statusText = 'Waiting for approval...';
+        if (!approvalActionRendered) {
+            renderApprovalAction();
+            approvalActionRendered = true;
+        }
     } else if (state.workflow_status === 'completed') {
-        setLiveStatus('Completed');
+        statusText = 'Completed';
         stopPolling();
+        removeApprovalAction();
     } else if (state.blocked) {
-        setLiveStatus('Blocked');
+        statusText = 'Blocked';
         stopPolling();
+        removeApprovalAction();
     } else {
-        const info = state.transparency || {};
-        const action = info.current_action || info.current_mcp_tool || '';
-        setLiveStatus(action ? `Thinking… ${action}` : 'Thinking…');
+        if (backendRole && action) {
+            statusText = `${backendRole} · ${action}`;
+        } else if (action) {
+            statusText = action;
+        } else if (backendRole) {
+            statusText = `${backendRole} · Thinking…`;
+        } else {
+            statusText = currentSessionId ? 'Working…' : 'Thinking…';
+        }
+        removeApprovalAction();
     }
+
+    setLiveStatus(statusText);
     appendTrace(state.trace || []);
     if (state.error_message) {
         setLiveStatus(`Error: ${state.error_message}`);
     }
+}
+
+function renderApprovalAction() {
+    const container = document.getElementById('approval-action-container');
+    container.innerHTML = '';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'approval-message';
+    wrapper.textContent = 'Setup plan is ready and requires your approval.';
+
+    const btnContainer = document.createElement('div');
+    btnContainer.className = 'approval-buttons';
+
+    const approveBtn = document.createElement('button');
+    approveBtn.className = 'approve-btn';
+    approveBtn.textContent = 'Approve';
+    approveBtn.addEventListener('click', () => handleApproval('approve'));
+
+    const rejectBtn = document.createElement('button');
+    rejectBtn.className = 'reject-btn';
+    rejectBtn.textContent = 'Reject';
+    rejectBtn.addEventListener('click', () => handleApproval('reject'));
+
+    btnContainer.appendChild(approveBtn);
+    btnContainer.appendChild(rejectBtn);
+    wrapper.appendChild(btnContainer);
+    container.appendChild(wrapper);
+
+    container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function removeApprovalAction() {
+    const container = document.getElementById('approval-action-container');
+    if (container.innerHTML) {
+        container.innerHTML = '';
+    }
+    approvalActionRendered = false;
+}
+
+async function handleApproval(action) {
+    if (!currentSessionId) return;
+
+    const endpoint = action === 'approve' ? 'approve' : 'reject';
+    setLiveStatus(`Processing ${action}...`);
+    try {
+        await fetchJson(`/api/workflow/${currentSessionId}/${endpoint}`, {
+            method: 'POST',
+        });
+        setLiveStatus(action === 'approve' ? 'Approval granted. Executing...' : 'Approval rejected.');
+        addMessage('assistant', action === 'approve' ? 'Approval granted. Executing...' : 'Approval rejected.');
+        removeApprovalAction();
+        startPolling(currentSessionId);
+    } catch (err) {
+        console.error(err);
+        setLiveStatus(`Approval error: ${err.message}`);
+    }
+}
+
+// ---------- Help view ----------
+function hideAllMainViews() {
+    document.getElementById('project-header').classList.add('hidden');
+    document.getElementById('chat-panel').classList.add('hidden');
+    document.getElementById('trace-drag-handle').classList.add('hidden');
+    document.getElementById('trace-panel').classList.add('hidden');
+    document.getElementById('help-view').classList.add('hidden');
+    document.getElementById('setup-view').classList.add('hidden');
+}
+
+function showNormalMainView() {
+    document.getElementById('project-header').classList.remove('hidden');
+    document.getElementById('chat-panel').classList.remove('hidden');
+    document.getElementById('trace-drag-handle').classList.remove('hidden');
+    document.getElementById('trace-panel').classList.remove('hidden');
+    document.getElementById('help-view').classList.add('hidden');
+    document.getElementById('setup-view').classList.add('hidden');
+}
+
+function showHelp() {
+    hideAllMainViews();
+    currentHelpSlide = 0;
+    helpPitchDeckInitialized = false;
+    showHelpOverview();
+    document.getElementById('help-view').classList.remove('hidden');
+}
+
+function hideHelp() {
+    document.getElementById('help-view').classList.add('hidden');
+    showNormalMainView();
+    helpPitchDeckInitialized = false;
+}
+
+function showHelpOverview() {
+    document.getElementById('help-overview-content').classList.remove('hidden');
+    document.getElementById('help-pitch-content').classList.add('hidden');
+    document.getElementById('help-overview-btn').classList.add('active');
+    document.getElementById('help-pitch-btn').classList.remove('active');
+}
+
+function showHelpPitch() {
+    document.getElementById('help-overview-content').classList.add('hidden');
+    document.getElementById('help-pitch-content').classList.remove('hidden');
+    document.getElementById('help-overview-btn').classList.remove('active');
+    document.getElementById('help-pitch-btn').classList.add('active');
+
+    if (!helpPitchDeckInitialized) {
+        currentHelpSlide = 0;
+        helpPitchDeckInitialized = true;
+    }
+
+    renderHelpDeck();
+}
+
+function updateHelpPagination() {
+    const indicator = document.getElementById('help-page-indicator');
+    if (indicator) {
+        indicator.textContent = `${currentHelpSlide + 1} / ${totalHelpSlides}`;
+    }
+    const prevBtn = document.getElementById('help-prev-btn');
+    const nextBtn = document.getElementById('help-next-btn');
+    if (prevBtn) prevBtn.disabled = currentHelpSlide === 0;
+    if (nextBtn) nextBtn.disabled = currentHelpSlide === totalHelpSlides - 1;
+}
+
+function nextHelpSlide() {
+    if (currentHelpSlide < totalHelpSlides - 1) {
+        currentHelpSlide++;
+        renderHelpDeck();
+    }
+}
+
+function prevHelpSlide() {
+    if (currentHelpSlide > 0) {
+        currentHelpSlide--;
+        renderHelpDeck();
+    }
+}
+
+function getProjectDisplayName() {
+    return currentProject ? currentProject.project_name : 'No project selected';
+}
+
+function renderHelpDeck() {
+    const deck = document.getElementById('help-deck');
+    if (!deck) return;
+
+    const slide = helpSlides[currentHelpSlide];
+    const slideHtml = slide.html();
+
+    deck.innerHTML = `
+      <div class="pitch-slide">
+        <div class="pitch-slide-title">${slide.title}</div>
+        <div class="pitch-slide-body">${slideHtml}</div>
+      </div>
+    `;
+    updateHelpPagination();
+}
+
+// ---------- Setup view ----------
+function showSetup() {
+    hideAllMainViews();
+    populateSetupForm();
+    document.getElementById('setup-view').classList.remove('hidden');
+}
+
+function hideSetup() {
+    document.getElementById('setup-view').classList.add('hidden');
+    showNormalMainView();
 }
 
 // ---------- Trace drag handle ----------
@@ -184,7 +453,7 @@ function initTraceDrag() {
 
     document.addEventListener('mousemove', (e) => {
         if (!isDragging) return;
-        const delta = startY - e.clientY; // up increases height
+        const delta = startY - e.clientY;
         const newHeight = Math.min(Math.max(startHeight + delta, 100), 600);
         panel.style.height = newHeight + 'px';
     });
@@ -219,10 +488,14 @@ function handleCreateProject() {
         return;
     }
 
+    // Resolve to the actual project directory.  If the user entered
+    // the workspace/base directory, combine it with the project name.
+    const projectDirectory = resolveProjectDirectory(dir, name);
+
     const project = {
         project_name: name,
-        project_directory: dir,
-        project_path: dir,
+        project_directory: projectDirectory,
+        project_path: projectDirectory,
         trace_level: traceLevel,
         session_id: null,
     };
@@ -233,6 +506,7 @@ function handleCreateProject() {
     closeModal();
     renderRecents();
     document.getElementById('project-name-display').textContent = name;
+    document.getElementById('project-path-display').textContent = projectDirectory;
     document.getElementById('global-status').textContent = 'Ready';
     updateSessionDisplay(null);
     clearChat();
@@ -253,7 +527,6 @@ async function handleSend() {
     }
 
     if (!currentSessionId) {
-        // First message starts the workflow
         setLiveStatus('Starting workflow...');
         try {
             const resp = await fetchJson('/api/workflow/start', {
@@ -261,7 +534,7 @@ async function handleSend() {
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
                     project_name: currentProject.project_name,
-                    project_directory: currentProject.project_path,
+                    project_directory: getProjectDirectory(currentProject),
                     task_description: text,
                     trace_level: currentProject.trace_level || 'INFO',
                 }),
@@ -277,10 +550,246 @@ async function handleSend() {
             setLiveStatus(`Error: ${err.message}`);
         }
     } else {
-        // For now, additional messages are just displayed.
         setLiveStatus('Message noted (backend does not support follow-ups yet)');
     }
 }
+
+// ---------- Open project directory ----------
+async function handleOpenProjectPath() {
+    const path = getProjectPath();
+
+    if (!path || path === 'No project selected') {
+        setLiveStatus('No project path available');
+        return;
+    }
+
+    try {
+        await fetchJson('/api/project/open', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ project_path: path }),
+        });
+        setLiveStatus('Project directory opened');
+    } catch (err) {
+        console.error(err);
+        setLiveStatus(`Error opening project directory: ${err.message}`);
+    }
+}
+
+// ---------- Setup form handling ----------
+function populateSetupForm() {
+    // Values reflect the current local configuration (config/ai-dev-center.yml)
+    document.getElementById('setup-provider').value = 'openrouter';
+    document.getElementById('setup-model').value = 'deepseek/deepseek-v4-pro';
+    document.getElementById('setup-endpoint').value = 'https://openrouter.ai/api/v1';
+    document.getElementById('setup-auth-type').value = 'secret_reference';
+    document.getElementById('setup-secret-ref').value = 'openrouter-api';
+    document.getElementById('setup-timeout').value = '30';
+    document.getElementById('setup-discovery-enabled').checked = true;
+    document.getElementById('setup-require-json').checked = true;
+    document.getElementById('setup-max-requirements').value = '50';
+}
+
+function handleSetupSave(event) {
+    event.preventDefault();
+    const msg = document.getElementById('setup-message');
+    msg.textContent = 'Saving configuration is not yet supported through the web interface.';
+}
+
+// ---------- Slide content ----------
+const helpSlides = [
+    {
+        title: 'The Goal',
+        html: () => `
+            <p>AI Dev Center is an AI-powered development workspace designed to work like a team of specialized development agents.</p>
+            <p>It takes a development task, understands the existing project, plans changes, implements them, tests the result and reviews the outcome while keeping the human in control.</p>
+            <div class="flow-row">
+                <span class="flow-step">Task</span>
+                <span class="flow-arrow">→</span>
+                <span class="flow-step">Understanding</span>
+                <span class="flow-arrow">→</span>
+                <span class="flow-step">Planning</span>
+                <span class="flow-arrow">→</span>
+                <span class="flow-step">Implementation</span>
+                <span class="flow-arrow">→</span>
+                <span class="flow-step">Verification</span>
+                <span class="flow-arrow">→</span>
+                <span class="flow-step">Review</span>
+                <span class="flow-arrow">→</span>
+                <span class="flow-step">Result</span>
+            </div>
+        `
+    },
+    {
+        title: 'The Problem',
+        html: () => `
+            <p>A development task is rarely just a code-generation problem.</p>
+            <p>It requires:</p>
+            <ul>
+                <li>understanding the existing project</li>
+                <li>clarifying requirements</li>
+                <li>deciding what should change</li>
+                <li>implementing changes</li>
+                <li>testing</li>
+                <li>reviewing</li>
+                <li>knowing what the AI actually did</li>
+            </ul>
+            <p>The goal of AI Dev Center is to make this complete development process explicit and observable.</p>
+        `
+    },
+    {
+        title: 'What is AI Dev Center?',
+        html: () => `
+            <p>AI Dev Center is not intended to be just one chatbot producing code.</p>
+            <p>It is an orchestrated development workspace in which specialized AI roles contribute to a common project workflow.</p>
+            <p>The user interacts primarily through Chat.</p>
+            <p>The system handles:</p>
+            <ul>
+                <li>project understanding</li>
+                <li>workflow orchestration</li>
+                <li>tool use</li>
+                <li>implementation</li>
+                <li>testing</li>
+                <li>review</li>
+                <li>traceability</li>
+            </ul>
+            <p>Human control remains central.</p>
+        `
+    },
+    {
+        title: 'From Task to Result',
+        html: () => `
+            <div class="vertical-flow">
+                <span class="flow-step">User</span>
+                <span class="flow-arrow">↓</span>
+                <span class="flow-step">Project Manager</span>
+                <span class="flow-arrow">↓</span>
+                <span class="flow-step">Architect</span>
+                <span class="flow-arrow">↓</span>
+                <span class="flow-step">Developer</span>
+                <span class="flow-arrow">↓</span>
+                <span class="flow-step">Tester</span>
+                <span class="flow-arrow">↓</span>
+                <span class="flow-step">Reviewer</span>
+                <span class="flow-arrow">↓</span>
+                <span class="flow-step">Result</span>
+            </div>
+            <p>Approval can be required before execution where the workflow demands it.</p>
+            <p><strong>Chat</strong> = user interaction<br><strong>Trace</strong> = technical observability</p>
+        `
+    },
+    {
+        title: 'The AI Team',
+        html: () => `
+            <div class="role-grid">
+                <div class="role-entry"><strong>Project Manager</strong> Coordinates the overall task and workflow.</div>
+                <div class="role-entry"><strong>Architect</strong> Analyzes project structure and requirements and determines the architectural approach.</div>
+                <div class="role-entry"><strong>Developer</strong> Implements the planned changes.</div>
+                <div class="role-entry"><strong>Tester</strong> Tests and verifies the implementation.</div>
+                <div class="role-entry"><strong>Reviewer</strong> Reviews the result for defects, regressions and quality.</div>
+            </div>
+            <p><strong>Important:</strong> The user does not manually switch between these roles. The system orchestrates them.</p>
+        `
+    },
+    {
+        title: 'Technical Architecture',
+        html: () => `
+            <div class="arch-layer">Web GUI</div>
+            <div class="flow-arrow">↓</div>
+            <div class="arch-layer">Workflow / Agent orchestration</div>
+            <div class="flow-arrow">↓</div>
+            <div class="arch-layer">LLM Provider</div>
+            <div class="flow-arrow">↓</div>
+            <div class="arch-layer">MCP tools</div>
+            <div class="flow-arrow">↓</div>
+            <div class="arch-layer">Project / execution</div>
+            <div class="flow-arrow">↓</div>
+            <div class="arch-layer">State + Trace</div>
+            <p>Known project concepts include Web GUI, workflow orchestration, AgentLLM, MCP server/tools, LLM provider, project state, diagnostic trace, approval and configuration.</p>
+        `
+    },
+    {
+        title: 'From Conversation to Real Project Work',
+        html: () => `
+            <p>The AI does not have to solve everything from text alone.</p>
+            <p>The workflow can call MCP tools.</p>
+            <div class="flow-row">
+                <span class="flow-step">Agent</span>
+                <span class="flow-arrow">→</span>
+                <span class="flow-step">Tool request</span>
+                <span class="flow-arrow">→</span>
+                <span class="flow-step">MCP</span>
+                <span class="flow-arrow">→</span>
+                <span class="flow-step">Project operation</span>
+                <span class="flow-arrow">→</span>
+                <span class="flow-step">Tool result</span>
+                <span class="flow-arrow">→</span>
+                <span class="flow-step">Agent continues</span>
+            </div>
+            <p>This matters because the agent can inspect and operate on the actual project instead of only discussing what might be done.</p>
+        `
+    },
+    {
+        title: 'Transparency by Design',
+        html: () => `
+            <div class="two-column">
+                <div>
+                    <h3>Chat</h3>
+                    <p>Thinking…<br>Project Manager · Coordinating…<br>Architect · Analyzing requirements…<br>Developer · Inspecting project…<br>Tester · Running verification…<br>Reviewer · Reviewing result…</p>
+                </div>
+                <div>
+                    <h3>Trace</h3>
+                    <p>INFO – important workflow events.<br>DEBUG – technical workflow, agent and MCP activity.<br>VERBOSE – more detailed diagnostic information.<br>VERY_VERBOSE – maximum diagnostic detail.</p>
+                    <div class="trace-sample">timestamp | level | component | role | action/event | tool | status</div>
+                </div>
+            </div>
+            <p>Never exposed: secrets, API keys, passwords, full prompts, chain-of-thought or sensitive raw arguments.</p>
+        `
+    },
+    {
+        title: 'Human in Control',
+        html: () => `
+            <div class="vertical-flow">
+                <span class="flow-step">Create Project</span>
+                <span class="flow-arrow">↓</span>
+                <span class="flow-step">Describe task in Chat</span>
+                <span class="flow-arrow">↓</span>
+                <span class="flow-step">Analyze</span>
+                <span class="flow-arrow">↓</span>
+                <span class="flow-step">Plan</span>
+                <span class="flow-arrow">↓</span>
+                <span class="flow-step">Approval when required</span>
+                <span class="flow-arrow">↓</span>
+                <span class="flow-step">Implement</span>
+                <span class="flow-arrow">↓</span>
+                <span class="flow-step">Test</span>
+                <span class="flow-arrow">↓</span>
+                <span class="flow-step">Review</span>
+                <span class="flow-arrow">↓</span>
+                <span class="flow-step">Complete</span>
+            </div>
+            <p>Corrections, questions and additional instructions happen through Chat.</p>
+            <p>Use cases: understand an existing project, add a feature, fix a problem, refactor, create a project, add tests, review, debug the workflow.</p>
+        `
+    },
+    {
+        title: 'Project Complete / Press Release',
+        html: () => `
+            <h2>AI Dev Center Completes Development Project</h2>
+            <p>AI Dev Center has completed a full project development lifecycle, transforming a user-defined task into a planned, implemented, tested and reviewed result.</p>
+            <p>The process combined specialized AI roles, project-aware tool execution, workflow orchestration and transparent diagnostics while keeping the human in control.</p>
+            <div class="completion-summary">
+                <div class="summary-row"><span class="summary-label">Project</span><span class="summary-value">${getProjectDisplayName()}</span></div>
+                <div class="summary-row"><span class="summary-label">Objective</span><span class="summary-value">Available when a project is complete.</span></div>
+                <div class="summary-row"><span class="summary-label">Implementation</span><span class="summary-value">Available when a project is complete.</span></div>
+                <div class="summary-row"><span class="summary-label">Testing</span><span class="summary-value">Available when a project is complete.</span></div>
+                <div class="summary-row"><span class="summary-label">Review</span><span class="summary-value">Available when a project is complete.</span></div>
+                <div class="summary-row"><span class="summary-label">Final Status</span><span class="summary-value">Available when a project is complete.</span></div>
+            </div>
+            <p>The closing message communicates the intention of AI Dev Center, not that an unfinished project succeeded.</p>
+        `
+    }
+];
 
 // ---------- Event binding ----------
 document.getElementById('new-project-btn').addEventListener('click', openModal);
@@ -289,27 +798,21 @@ document.getElementById('create-project-btn').addEventListener('click', handleCr
 document.getElementById('choose-directory-btn').addEventListener('click', () => {
     document.getElementById('project-directory-picker').click();
 });
-document.getElementById('project-directory-picker').addEventListener('change', (event) => {
-    const files = event.target.files;
-    if (files.length > 0) {
-        const first = files[0];
-        const path = first.webkitRelativePath || first.name;
-        document.getElementById('project-dir-input').value = path;
-    }
+document.getElementById('project-directory-picker').addEventListener('change', () => {
+    // no-op: do not populate from file selection
 });
+
 document.getElementById('send-btn').addEventListener('click', handleSend);
 document.getElementById('chat-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         handleSend();
     }
-    // Shift+Enter creates a newline naturally.
 });
 document.getElementById('copy-session-btn').addEventListener('click', () => {
     const sid = document.getElementById('session-id-display').textContent;
-    if (sid) {
+    if (sid && sid !== '—') {
         navigator.clipboard.writeText(sid).catch(() => {
-            // fallback
             const ta = document.createElement('textarea');
             ta.value = sid;
             document.body.appendChild(ta);
@@ -319,19 +822,15 @@ document.getElementById('copy-session-btn').addEventListener('click', () => {
         });
     }
 });
-document.getElementById('trace-filter').addEventListener('change', () => {
-    // refresh trace; will be handled in polling or state load
-});
-document.getElementById('trace-level-select').addEventListener('change', () => {
-    // same
-});
+document.getElementById('open-path-btn').addEventListener('click', handleOpenProjectPath);
+document.getElementById('trace-filter').addEventListener('change', () => {});
+document.getElementById('trace-level-select').addEventListener('change', () => {});
 document.getElementById('clear-trace-btn').addEventListener('click', () => {
     document.getElementById('trace-list-container').innerHTML = '';
 });
 document.getElementById('copy-all-btn').addEventListener('click', () => {
     const text = document.getElementById('trace-list-container').innerText;
     navigator.clipboard.writeText(text || '(empty)').catch(() => {
-        // fallback
         const ta = document.createElement('textarea');
         ta.value = text;
         document.body.appendChild(ta);
@@ -357,6 +856,36 @@ document.getElementById('export-trace-btn').addEventListener('click', async () =
         URL.revokeObjectURL(url);
     } else {
         alert('Export failed');
+    }
+});
+
+document.getElementById('help-btn').addEventListener('click', showHelp);
+document.getElementById('help-back-btn').addEventListener('click', hideHelp);
+document.getElementById('help-overview-btn').addEventListener('click', showHelpOverview);
+document.getElementById('help-pitch-btn').addEventListener('click', showHelpPitch);
+document.getElementById('help-prev-btn').addEventListener('click', prevHelpSlide);
+document.getElementById('help-next-btn').addEventListener('click', nextHelpSlide);
+document.getElementById('setup-btn').addEventListener('click', showSetup);
+document.getElementById('setup-back-btn').addEventListener('click', hideSetup);
+document.getElementById('help-to-setup-btn')?.addEventListener('click', () => {
+    showSetup();
+});
+document.getElementById('setup-config-form').addEventListener('submit', handleSetupSave);
+
+// Keyboard navigation for pitch deck (only when Pitch Deck is visible)
+document.addEventListener('keydown', (e) => {
+    const helpView = document.getElementById('help-view');
+    if (helpView.classList.contains('hidden')) return;
+
+    const pitchContent = document.getElementById('help-pitch-content');
+    if (pitchContent.classList.contains('hidden')) return;
+
+    if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        prevHelpSlide();
+    } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        nextHelpSlide();
     }
 });
 

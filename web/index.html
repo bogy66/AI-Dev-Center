@@ -8,41 +8,60 @@
 </head>
 <body>
 <div id="app-container">
-    <!-- LEFT COLUMN: Recents -->
+    <!-- LEFT COLUMN: Branding, New Project, Recents, Setup, Help -->
     <aside id="recents-panel">
+        <div class="brand">
+            <span class="brand-mark">AI</span>
+            <span class="brand-title">AI Dev Center</span>
+        </div>
+        <button id="new-project-btn" class="sidebar-button">+ New Project</button>
         <div class="panel-header">
             <h2>Recents</h2>
         </div>
         <ul id="recents-list"></ul>
+        <div class="sidebar-spacer"></div>
+        <button id="setup-btn" class="sidebar-button">Setup</button>
+        <button id="help-btn" class="sidebar-button">Help</button>
     </aside>
 
     <!-- RIGHT COLUMN: Main -->
     <main id="main-panel">
         <header id="project-header">
-            <div class="brand">
-                <span class="brand-mark">AI</span>
-                <span class="brand-title">AI Dev Center</span>
-            </div>
             <div class="active-project">
-                <span class="label">Project</span>
-                <strong id="project-name-display">No project selected</strong>
+                <div class="project-line">
+                    <span class="label">Project:</span>
+                    <strong id="project-name-display">No project selected</strong>
+                </div>
+                <div class="session-line">
+                    <span class="session-info" id="session-info">
+                        Session: <code id="session-id-display">—</code>
+                        <button id="copy-session-btn" class="copy-button" title="Copy session ID" disabled>Copy</button>
+                    </span>
+                </div>
+                <div class="path-line">
+                    <span class="label">Path:</span>
+                    <code id="project-path-display">No project selected</code>
+                    <button id="open-path-btn" class="copy-button" title="Open project directory">Open</button>
+                </div>
             </div>
             <div class="header-actions">
                 <span id="global-status" class="status-indicator">Ready</span>
-                <span id="session-info" class="session-info" style="display:none;">
-                    Session: <code id="session-id-display"></code>
-                    <button id="copy-session-btn" class="copy-button" title="Copy session ID">Copy</button>
-                </span>
-                <button id="new-project-btn" class="primary-button">+ New Project</button>
             </div>
         </header>
 
-        <!-- Chat area with live status -->
+        <!-- Chat area (contains composer) -->
         <section id="chat-panel">
             <div id="chat-messages">
                 <div id="empty-chat-state" class="empty-chat">Start a conversation...</div>
             </div>
+            <div id="approval-action-container"></div>
             <div id="live-status" class="live-status"></div>
+
+            <!-- Chat composer inside chat -->
+            <div id="input-panel" class="chat-composer">
+                <textarea id="chat-input" placeholder="Type a message..."></textarea>
+                <button id="send-btn" class="primary-button">Send</button>
+            </div>
         </section>
 
         <!-- Trace drag handle -->
@@ -60,10 +79,10 @@
                         <option value="Workflow">Workflow</option>
                     </select>
                     <select id="trace-level-select">
-                        <option value="DEBUG">DEBUG</option>
                         <option value="INFO" selected>INFO</option>
-                        <option value="WARNING">WARNING</option>
-                        <option value="ERROR">ERROR</option>
+                        <option value="DEBUG">DEBUG</option>
+                        <option value="VERBOSE">VERBOSE</option>
+                        <option value="VERY_VERBOSE">VERY_VERBOSE</option>
                     </select>
                     <button id="clear-trace-btn">Clear</button>
                     <button id="copy-all-btn">Copy</button>
@@ -73,11 +92,154 @@
             <div id="trace-list-container"></div>
         </section>
 
-        <!-- Chat input at the very bottom -->
-        <section id="input-panel">
-            <textarea id="chat-input" placeholder="Type a message..."></textarea>
-            <button id="send-btn" class="primary-button">Send</button>
-        </section>
+        <!-- Help view: internal sections for Overview and Pitch Deck -->
+        <div id="help-view" class="hidden">
+            <div class="help-header">
+                <div>
+                    <h2>AI Dev Center Help</h2>
+                    <div class="help-subtitle">Learn about the workspace and view the pitch deck.</div>
+                </div>
+                <div class="help-nav">
+                    <button id="help-back-btn" class="back-button">← Back to project</button>
+                </div>
+            </div>
+
+            <div class="help-section-tabs">
+                <button id="help-overview-btn" class="help-section-tab active">Overview / How it works</button>
+                <button id="help-pitch-btn" class="help-section-tab">Pitch Deck</button>
+            </div>
+
+            <div id="help-overview-content" class="help-section-content">
+                <div class="help-content">
+                    <h3>What is AI Dev Center?</h3>
+                    <p>AI Dev Center is an AI-powered development workspace designed to act like a team of specialized development agents.</p>
+                    <p>Its purpose is to take a development task, understand the existing project, plan changes, implement them, test the result and review the outcome while keeping the human in control.</p>
+
+                    <h3>Typical workflow</h3>
+                    <p>The system orchestrates a complete development process:</p>
+                    <ul>
+                        <li>Project Manager coordinates the overall task and workflow.</li>
+                        <li>Architect analyzes project structure and requirements.</li>
+                        <li>Developer implements the planned changes.</li>
+                        <li>Tester runs verification and tests.</li>
+                        <li>Reviewer reviews the result for defects and quality.</li>
+                    </ul>
+
+                    <h3>The AI team</h3>
+                    <ul>
+                        <li><strong>Project Manager</strong> – Coordinates the overall task and workflow.</li>
+                        <li><strong>Architect</strong> – Analyzes project structure and requirements and determines the architectural approach.</li>
+                        <li><strong>Developer</strong> – Implements the planned changes.</li>
+                        <li><strong>Tester</strong> – Tests and verifies the implementation.</li>
+                        <li><strong>Reviewer</strong> – Reviews the result for defects, regressions and quality.</li>
+                    </ul>
+                    <p><strong>Important:</strong> The user does not manually switch between these roles. The system orchestrates them automatically.</p>
+
+                    <h3>Use cases</h3>
+                    <ul>
+                        <li>Understand an existing project</li>
+                        <li>Add a feature</li>
+                        <li>Fix a problem</li>
+                        <li>Refactor code</li>
+                        <li>Create a new project</li>
+                        <li>Add tests</li>
+                        <li>Review changes</li>
+                        <li>Debug the workflow</li>
+                    </ul>
+
+                    <h3>Chat and Trace</h3>
+                    <p>The user interacts primarily through Chat. The system shows technical observability in the Trace panel.</p>
+                    <p>Trace levels: <strong>INFO</strong>, <strong>DEBUG</strong>, <strong>VERBOSE</strong>, <strong>VERY_VERBOSE</strong>. These control the detail threshold.</p>
+                    <p>Sensitive values such as secrets, API keys, passwords, prompts, chain-of-thought and sensitive raw arguments are never exposed.</p>
+                </div>
+            </div>
+
+            <div id="help-pitch-content" class="help-section-content hidden">
+                <div id="help-deck" class="pitch-deck"></div>
+                <div class="pitch-nav">
+                    <button id="help-prev-btn" class="back-button">Previous</button>
+                    <span id="help-page-indicator">1 / 10</span>
+                    <button id="help-next-btn" class="back-button">Next</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Setup view (hidden by default) -->
+        <div id="setup-view" class="hidden">
+            <div class="help-header">
+                <h2>AI Dev Center Setup</h2>
+                <button id="setup-back-btn" class="back-button">← Back to project</button>
+            </div>
+            <div class="setup-content">
+                <p class="setup-subtitle">Configure AI Dev Center.</p>
+
+                <form id="setup-config-form" class="config-form">
+                    <fieldset>
+                        <legend>AI Configuration</legend>
+
+                        <div class="form-field">
+                            <label for="setup-provider">AI Provider</label>
+                            <select id="setup-provider">
+                                <option value="openrouter">OpenRouter</option>
+                            </select>
+                            <span class="field-note">Currently only OpenRouter is supported.</span>
+                        </div>
+
+                        <div class="form-field">
+                            <label for="setup-model">Model</label>
+                            <input type="text" id="setup-model" value="deepseek/deepseek-v4-pro">
+                        </div>
+
+                        <div class="form-field">
+                            <label for="setup-endpoint">API Endpoint</label>
+                            <input type="text" id="setup-endpoint" value="https://openrouter.ai/api/v1">
+                        </div>
+
+                        <div class="form-field">
+                            <label for="setup-auth-type">Authentication Type</label>
+                            <select id="setup-auth-type">
+                                <option value="secret_reference">Secret Reference</option>
+                            </select>
+                        </div>
+
+                        <div class="form-field">
+                            <label for="setup-secret-ref">Secret Reference</label>
+                            <input type="text" id="setup-secret-ref" value="openrouter-api">
+                            <span class="field-note">Never exposed. The secret value is read from a local file.</span>
+                        </div>
+
+                        <div class="form-field">
+                            <label for="setup-timeout">Timeout (seconds)</label>
+                            <input type="number" id="setup-timeout" value="30" step="1" min="5" max="300">
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
+                        <legend>Discovery</legend>
+
+                        <div class="form-field inline-toggle">
+                            <label for="setup-discovery-enabled">Discovery Enabled</label>
+                            <input type="checkbox" id="setup-discovery-enabled" checked>
+                        </div>
+
+                        <div class="form-field inline-toggle">
+                            <label for="setup-require-json">Require JSON</label>
+                            <input type="checkbox" id="setup-require-json" checked>
+                        </div>
+
+                        <div class="form-field">
+                            <label for="setup-max-requirements">Max Requirements</label>
+                            <input type="number" id="setup-max-requirements" value="50" step="1" min="1" max="200">
+                        </div>
+                    </fieldset>
+
+                    <div class="form-actions">
+                        <button type="submit" class="primary-button" id="setup-save-btn">Save</button>
+                        <span id="setup-message" class="setup-message">Saving configuration is not yet supported through the web interface.</span>
+                    </div>
+                </form>
+            </div>
+        </div>
     </main>
 </div>
 
@@ -101,10 +263,10 @@
         <div class="form-field">
             <label for="new-project-trace-level">Trace Level</label>
             <select id="new-project-trace-level">
-                <option value="DEBUG">DEBUG</option>
                 <option value="INFO" selected>INFO</option>
-                <option value="WARNING">WARNING</option>
-                <option value="ERROR">ERROR</option>
+                <option value="DEBUG">DEBUG</option>
+                <option value="VERBOSE">VERBOSE</option>
+                <option value="VERY_VERBOSE">VERY_VERBOSE</option>
             </select>
         </div>
         <div class="modal-actions">

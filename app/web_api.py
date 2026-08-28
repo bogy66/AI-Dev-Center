@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import subprocess
 import uuid
+from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -330,6 +332,10 @@ class StartRequest(BaseModel):
     trace_level: TraceLevel = TraceLevel.INFO
 
 
+class OpenProjectRequest(BaseModel):
+    project_path: str
+
+
 @app.get("/")
 async def root():
     return FileResponse("web/index.html")
@@ -573,3 +579,38 @@ async def export_trace(session_id: str):
         return JSONResponse(content={"error": "unknown session"}, status_code=404)
 
     return JSONResponse(content=session.recorder.export())
+
+
+@app.post("/api/project/open")
+async def open_project_directory(req: OpenProjectRequest):
+    """Open the provided project directory using the Linux file manager."""
+    raw_path = req.project_path
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        return JSONResponse(
+            content={"error": "project_path must be a non-empty string"},
+            status_code=400,
+        )
+
+    path = Path(raw_path).expanduser()
+    if not path.exists():
+        return JSONResponse(
+            content={"error": "project path does not exist"},
+            status_code=400,
+        )
+    if not path.is_dir():
+        return JSONResponse(
+            content={"error": "project path is not a directory"},
+            status_code=400,
+        )
+
+    try:
+        # Use xdg-open to open the directory in the Linux file manager.
+        # Never use shell=True.
+        subprocess.run(["xdg-open", str(path)], check=False)
+    except Exception as exc:
+        return JSONResponse(
+            content={"error": f"failed to open project directory: {exc}"},
+            status_code=500,
+        )
+
+    return {"status": "opened", "project_path": str(path)}

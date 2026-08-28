@@ -130,23 +130,31 @@ def test_empty_chat_state_present(client):
     assert 'Start a conversation...' in html
 
 
-def test_session_info_elements_exist_and_hidden_initially(client):
+def test_session_info_elements_exist_and_visible_initially(client):
     resp = client.get("/")
     html = resp.text
     assert 'id="session-info"' in html
     assert 'id="session-id-display"' in html
     assert 'id="copy-session-btn"' in html
-    # session-info is hidden by default
-    assert 'style="display:none;"' in html
+    # Session: — is part of the visible page (not hidden)
+    assert 'Session:' in html
+    assert '>—<' in html.replace(' ', '')
+    # Copy button must be disabled initially
+    assert 'disabled' in html.split('id="copy-session-btn"')[1].split('>')[0]
 
 
-def test_trace_is_below_chat_and_composer_is_below_trace(client):
+def test_trace_is_below_chat_and_composer_is_above_trace(client):
     resp = client.get("/")
     html = resp.text
-    idx_chat = html.index('id="chat-panel"')
-    idx_trace = html.index('id="trace-panel"')
+    assert 'id="chat-panel"' in html
+    assert 'id="input-panel"' in html
+    assert 'id="trace-panel"' in html
+    # The composer (input-panel) is inside chat-panel and comes before trace-panel
     idx_input = html.index('id="input-panel"')
-    assert idx_chat < idx_trace < idx_input
+    idx_trace = html.index('id="trace-panel"')
+    assert idx_input < idx_trace
+    idx_chat = html.index('id="chat-panel"')
+    assert idx_chat < idx_trace
 
 
 def test_full_layout_does_not_introduce_third_column(client):
