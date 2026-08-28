@@ -1,6 +1,8 @@
 let currentSessionId = null;
 let currentProject = null;
 let recents = JSON.parse(localStorage.getItem('recents') || '[]');
+// Ensure existing projects without the field behave as false.
+recents.forEach(p => { if (p.create_github_repository === undefined) p.create_github_repository = false; });
 let pollingTimer = null;
 let approvalActionRendered = false;
 let currentHelpSlide = 0;
@@ -114,6 +116,10 @@ async function loadState() {
 
 function selectProject(index) {
     currentProject = recents[index];
+    // Ensure backward compatibility for projects without the field.
+    if (currentProject.create_github_repository === undefined) {
+        currentProject.create_github_repository = false;
+    }
     currentSessionId = currentProject.session_id || null;
     document.getElementById('project-name-display').textContent = currentProject.project_name;
     document.getElementById('project-path-display').textContent = getProjectPath();
@@ -473,6 +479,7 @@ function openModal() {
     document.getElementById('project-dir-input').value = '';
     document.getElementById('project-name-input').value = '';
     document.getElementById('new-project-trace-level').value = 'INFO';
+    document.getElementById('create-github-repo-checkbox').checked = false;
 }
 
 function closeModal() {
@@ -483,6 +490,7 @@ function handleCreateProject() {
     const name = document.getElementById('project-name-input').value.trim();
     const dir = document.getElementById('project-dir-input').value.trim();
     const traceLevel = document.getElementById('new-project-trace-level').value;
+    const createGithubRepo = document.getElementById('create-github-repo-checkbox').checked;
     if (!name || !dir) {
         alert('Project name and directory are required');
         return;
@@ -497,6 +505,7 @@ function handleCreateProject() {
         project_directory: projectDirectory,
         project_path: projectDirectory,
         trace_level: traceLevel,
+        create_github_repository: createGithubRepo,
         session_id: null,
     };
     recents.push(project);

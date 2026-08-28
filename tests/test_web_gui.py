@@ -254,3 +254,23 @@ def test_no_old_task_description_textarea(client):
     assert 'id="project-start"' not in resp.text
     assert 'id="timeline-section"' not in resp.text
     assert 'id="mcp-activity"' not in resp.text
+
+
+# ---------------------------------------------------------------------------
+# New Project GitHub checkbox tests
+# ---------------------------------------------------------------------------
+def test_new_project_dialog_contains_github_checkbox(client):
+    resp = client.get("/")
+    html = resp.text
+    assert 'id="create-github-repo-checkbox"' in html
+
+
+def test_github_checkbox_defaults_to_unchecked(client):
+    resp = client.get("/")
+    html = resp.text
+    # The checkbox should not have the checked attribute in the initial HTML.
+    # We look for the checkbox element and ensure it does not contain 'checked'.
+    checkbox_start = html.index('id="create-github-repo-checkbox"')
+    # Grab a reasonable slice around the element.
+    snippet = html[checkbox_start:checkbox_start + 200]
+    assert 'checked' not in snippet
