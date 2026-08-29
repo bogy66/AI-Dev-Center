@@ -15,7 +15,7 @@ class MCPSetupTools(Protocol):
 
 
 @dataclass
-class AgentSetupWorkflowResult:
+class AgentSetUpWorkflowResult:
     project_id: str
     project_path: str
     agent_status: str
@@ -45,13 +45,13 @@ class AgentSetUpWorkflow:
     """Integrates the minimal LLM agent with the existing AgentWorkflow/MCPServer boundary.
 
     The LLM agent is only allowed to interact with MCP tools.  This class
-    therefore never imports domain services directly; it talks exclusive
+    therefore never imports domain services directly; it talks exclusively
     through the supplied MCP server.
     """
 
     def __init__(
         self,
-        llm_provider: LLMPovider,
+        llm_provider: LLMProvider,
         mcp_server: MCPSetupTools,
         max_turns: int = 5,
     ):
@@ -107,7 +107,7 @@ class AgentSetUpWorkflow:
                     "arguments": {"project_id": project_id},
                     "result": plan_result,
                 })
-                # Re‑evaluate the stop condition on the explicit result.
+                # Re‐evaluate the stop condition on the explicit result.
                 stop_reason = stop_condition(plan_result)
                 if stop_reason == _PENDING_APPROVAL:
                     state.stop_reason = _PENDING_APPROVAL
@@ -273,7 +273,7 @@ class AgentSetUpWorkflow:
     def _call_tool(self, tool_name: str, **kwargs: Any) -> Any:
         try:
             method = getattr(self.mcp_server, tool_name)
-        except AttributError:
+        except AttributeError:
             return {"error": f"Unknown tool: {tool_name}"}
         try:
             return method(**kwargs)

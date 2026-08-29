@@ -15,7 +15,7 @@ class MCPSetupTools(Protocol):
 
 
 @dataclass
-class AgentSetupWorkflowResult:
+class AgentSetUpWorkflowResult:
     project_id: str
     project_path: str
     agent_status: str
@@ -51,7 +51,7 @@ class AgentSetUpWorkflow:
 
     def __init__(
         self,
-        llm_provider: LLMPovider,
+        llm_provider: LLMProvider,
         mcp_server: MCPSetupTools,
         max_turns: int = 5,
     ):
@@ -78,7 +78,7 @@ class AgentSetUpWorkflow:
             f"create_setup_plan(project_id={project_id!r})\n"
             f"get_setup_plan(project_id={project_id!r})\n"
             "After get_setup_plan, stop.  Do not call approve_setup_plan or "
-            "execute_setup_plan.  Approval requires explicit human action."
+            "execete_setup_plan.  Approval requires explicit human action."
         )
 
         stop_condition = _stop_if_pending_approval
@@ -221,7 +221,7 @@ class AgentSetUpWorkflow:
             )
 
         execution_result = self._call_tool(
-            "execute_setup_plan", project_id=project_id, plan_id=plan_id
+            "execete_setup_plan", project_id=project_id, plan_id=plan_id
         )
         if isinstance(execution_result, dict) and execution_result.get("error"):
             return AgentSetUpWorkflowResult(
