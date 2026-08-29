@@ -274,3 +274,113 @@ def test_start_handles_real_setup_plan_shape_with_id():
     assert result.plan_id == "plan-real"
     assert result.setup_plan is not None
     assert result.setup_plan["id"] == "plan-real"
+
+
+# ---------------------------------------------------------------------------
+# New tests: explicit get_setup_plan bridging when LLM stops too early
+# ---------------------------------------------------------------------------
+
+def test_explicit_get_call_when_llm_stops_after_create():
+    """LLM stops after create_setup_plan; AgentSetupWorkflow must call
+    get_setup_plan itself and reach pending_approval."""
+    # LLM only calls up to create_setup_plan, then returns no more calls.
+    responses = [
+        '{"tool_calls":[{"name":"inspect_project","arguments":{}}]}',
+        '{"tool_calls":[{"name":"discover_requirements","arguments":{}}]}',
+        '{"tool_calls":[{"name":"get_preflight","arguments":{}}]}',
+        '{"tool_calls":[{"name":"create_setup_plan","arguments":{}}]}',
+        # LLM stops here; workflow must bridge the gap.
+    ]
+    llm = FakeLLM(responses)
+    server = FakeMCPServer()  # default handlers include get_setup_plan returning pending_approval
+    workflow = AgentSetupWorkflow(llm, server)
+
+    result = workflow.start_setup_workflow("proj1", "/tmp/proj")
+
+    assert result.workflow_status == "pending_approval"
+    assert result.approval_required is True
+    assert result.approval_status == "pending_approval"
+    assert result.plan_id == "plan-1"  # from default handler
+    assert result.error_message is None
+
+    # The synthetic get_setup_plan must have been called on the MCP server.
+    get_calls = [c for c in server.calls if c[0] == "get_setup_plan"]
+    assert len(get_calls) >= 1
+
+    # No approve or execute calls must have been made.
+    called_tools = {c[0] for c in server.calls}
+    assert "approve_setup_plan" not in called_tools
+    assert "execute_setup_plan" not in called_tools
+
+
+def test_explicit_get_call_error_handling():
+    """When LLM stops early and explicit get_setup_plan returns an error,
+    the workflow must report a genuine failure."""
+    responses = [
+        '{"tool_calls":[{"name":"inspect_project","arguments":{}}]}',
+        '{"tool_calls":[{"name":"create_setup_plan","arguments":{}}]}',
+    ]
+    llm = FakeLLM(responses)
+    # get_setup_plan will raise an error (simulated by handler returning {"error":...})
+    error_server = FakeMCPServer(handlers={
+        "inspect_project": lambda **kwargs: {"status": "ok"},
+        "create_setup_plan": lambda **kwargs: {"status": "ok", "plan_id": "plan-1"},
+        "get_setup_plan": lambda **kwargs: {"error": "simulated get_setup_plan failure"},
+        "approve_setup_plan": lambda **kwargs: {"status": "approved"},
+        "execute_setup_plan": lambda **kwargs: {"status": "completed", "results": []},
+    })
+    workflow = AgentSetupWorkflow(llm, error_server)
+
+    result = workflow.start_setup_workflow("proj1", "/tmp/proj")
+
+    assert result.workflow_status == "failed"
+    assert "simulated get_setup_plan failure" in (result.error_message or "")
+    assert result.approval_required is False
+    # No approve or execute calls must have been made.
+    called_tools = {c[0] for c in error_server.calls}
+    assert "approve_setup_plan" not in called_tools
+    assert "execute_setup_plan" not in called_tools
+
+
+def test_no_approve_or_execute_during_start_workflow():
+    """Start workflow must never call approve_setup_plan or execute_setup_plan,
+    even when the LLM skips stopping early."""
+    responses = [
+        '{"tool_calls":[{"name":"inspect_project","arguments":{}}]}',
+        # LLM stops after inspect; workflow must bridge get_setup_plan but must NOT
+        # inadvertently call approve/execute.
+        '{"tool_calls":[]}',
+    ]
+    llm = FakeLLM(responses)
+    server = FakeMCPServer()
+    workflow = AgentSetupWorkflow(llm, server)
+
+    result = workflow.start_setup_workflow("proj1", "/tmp/proj")
+
+    # The result may be pending_approval or a failure; the key invariant is that
+    # approve/execute *never* appear in server calls.
+    called_tools = {c[0] for c in server.calls}
+    assert "approve_setup_plan" not in called_tools
+    assert "execute_setup_plan" not in called_tools
+
+    # If we reached pending_approval, we still must not have called approve/execute.
+    if result.workflow_status == "pending_approval":
+        assert result.approval_required is True
+        assert "approve_setup_plan" not in called_tools
+        assert "execute_setup_plan" not in called_tools
+
+
+def test_pending_approval_detail_fields():
+    """When pending_approval is reached, the result must correctly expose
+    approval_required and approval_status."""
+    # Use sequence where LLM calls everything including get_setup_plan.
+    llm = FakeLLM(_llm_plan_sequence())
+    server = FakeMCPServer()
+    workflow = AgentSetupWorkflow(llm, server)
+
+    result = workflow.start_setup_workflow("proj-X", "/opt/proj")
+
+    assert result.workflow_status == "pending_approval"
+    assert result.approval_required is True
+    assert result.approval_status == "pending_approval"
+    assert result.plan_id is not None

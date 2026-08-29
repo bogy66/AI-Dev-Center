@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Optional, Protocol
 
 from app.llm_agent import AgentLLM, AgentState, LLMProvider
 
@@ -67,7 +67,7 @@ class AgentSetupWorkflow:
         self,
         project_id: str,
         project_path: str,
-    ) -> AgentSetUpWorkflowResult:
+    ) -> AgentSetupWorkflowResult:
         """Run the agent until it reaches pending_approval or fails."""
         prompt = (
             "You are an AI developer assistant driving a setup workflow.\n"
@@ -78,113 +78,122 @@ class AgentSetupWorkflow:
             f"create_setup_plan(project_id={project_id!r})\n"
             f"get_setup_plan(project_id={project_id!r})\n"
             "After get_setup_plan, stop.  Do not call approve_setup_plan or "
-            "execete_setup_plan.  Approval requires explicit human action."
+            "execute_setup_plan.  Approval requires explicit human action."
         )
 
         stop_condition = _stop_if_pending_approval
         state = self.agent.run(prompt, stop_condition=stop_condition)
 
         trace_id = _trace_id(state)
+        initial_stop_reason = _evaluate_stop_reason(state, stop_condition)
+
+        # ------------------------------------------------------------------
+        # Ensure get_setup_plan is always executed, even when the LLM stops
+        # producing tool calls before it.
+        # ------------------------------------------------------------------
+        explicit_get_called = False
+        if not _has_required_sequence(state):
+            # LLM did not call get_setup_plan.  Do it ourselves through MCP.
+            plan_result = self._call_tool(
+                "get_setup_plan", project_id=project_id
+            )
+            explicit_get_called = True
+            # Append a synthetic tool call so later helpers can inspect it.
+            state.tool_calls.append({
+                "name": "get_setup_plan",
+                "arguments": {"project_id": project_id},
+                "result": plan_result,
+            })
+
+        # Re‑evaluate the stop reason against the final state, preferring the
+        # result of the explicit get_setup_plan if it signals pending approval.
+        final_stop_reason = initial_stop_reason
+        if explicit_get_called:
+            explicit_result = state.tool_calls[-1].get("result")
+            if isinstance(explicit_result, dict):
+                new_reason = stop_condition(explicit_result)
+                if new_reason:
+                    final_stop_reason = new_reason
+
         used_turns = _count_assistant_messages(state)
         max_turns_hit = state.max_turns_reached or used_turns >= self.max_turns
+        sequence_done = _has_required_sequence(state)
 
         # ------------------------------------------------------------------
-        # Ensure get_setup_plan is called when the LLM stops after
-        # create_setup_plan but before get_setup_plan.
+        # Normal completion – pending approval after the full tool sequence.
         # ------------------------------------------------------------------
-        if not _has_required_sequence(state):
-            # Check if the sequence up to create_setup_plan is complete.
-            if _has_sequence_up_to_create(state):
-                # The LLM stopped before calling get_setup_plan.
-                # Explicitly invoke get_setup_plan through the MCP boundary.
-                plan_result = self._call_tool(
-                    "get_setup_plan", project_id=project_id
-                )
-                # Record the tool call in the state so that subsequent
-                # helpers can inspect it.
-                state.tool_calls.append({
-                    "name": "get_setup_plan",
-                    "arguments": {"project_id": project_id},
-                    "result": plan_result,
-                })
-                # Re‑evaluate the stop condition on the explicit result.
-                stop_reason = stop_condition(plan_result)
-                if stop_reason == _PENDING_APPROVAL:
-                    state.stop_reason = _PENDING_APPROVAL
-                    return self._pending_result(
-                        project_id, project_path, state, trace_id
-                    )
-                # If the explicit call did not yield pending approval,
-                # treat it as a failure.
-                error_msg = (
-                    plan_result.get("error")
-                    if isintance(plan_result, dict)
-                    else "get_setup_plan did not return pending approval"
-                )
-                return AgentSetUpWorkflowResult(
-                    project_id=project_id,
-                    project_path=project_path,
-                    agent_status="failed",
-                    workflow_status="failed",
-                    error_message=error_msg,
-                    conversatoin_trace_id=trace_id,
-                )
+        if final_stop_reason == _PENDING_APPROVAL and sequence_done:
+            return self._pending_result(
+                project_id, project_path, state, trace_id
+            )
 
+        # Max turns is a hard upper bound but we still accept pending approval
+        # when we have the complete sequence *and* the stop reason is pending.
         if max_turns_hit:
-            # Max turns is a hard upper bound.  Only accept pending approval
-            # when the whole required sequence has been completed.
-            if state.stop_reason == _PENDING_APPROVAL and _has_required_sequence(state):
+            if final_stop_reason == _PENDING_APPROVAL and sequence_done:
                 return self._pending_result(
                     project_id, project_path, state, trace_id
                 )
-            return AgentSetUpWorkflowResult(
+            return AgentSetupWorkflowResult(
                 project_id=project_id,
                 project_path=project_path,
                 agent_status="failed",
                 workflow_status="failed",
                 error_message="Maximum agent turns reached",
-                conversatoin_trace_id=trace_id,
+                conversation_trace_id=trace_id,
             )
 
-        if state.stop_reason == _PENDING_APPROVAL:
-            if _has_required_sequence(state):
-                return self._pending_result(
-                    project_id, project_path, state, trace_id
+        # ------------------------------------------------------------------
+        # If we had to explicitly call get_setup_plan, treat its result as
+        # decisive.
+        # ------------------------------------------------------------------
+        if explicit_get_called:
+            plan_result = state.tool_calls[-1].get("result") or {}
+            if isinstance(plan_result, dict) and plan_result.get("error"):
+                return AgentSetupWorkflowResult(
+                    project_id=project_id,
+                    project_path=project_path,
+                    agent_status="tool_error",
+                    workflow_status="failed",
+                    error_message=str(plan_result["error"]),
+                    conversation_trace_id=trace_id,
                 )
-            return AgentSetUpWorkflowResult(
+            # The explicit call didn't produce an error but also didn't match
+            # pending_approval – treat as an unexpected state.
+            return AgentSetupWorkflowResult(
                 project_id=project_id,
                 project_path=project_path,
-                agent_status="failed",
+                agent_status="completed_without_approval",
                 workflow_status="failed",
-                error_message="Worflow reached pending approval before completing required sequence",
-                conversatoin_trace_id=trace_id,
+                error_message="Agent stopped before reaching pending_approval",
+                conversation_trace_id=trace_id,
             )
 
         if state.last_error:
-            return AgentSetUpWorkflowResult(
+            return AgentSetupWorkflowResult(
                 project_id=project_id,
                 project_path=project_path,
                 agent_status="tool_error",
                 workflow_status="failed",
                 error_message=state.last_error,
-                conversatoin_trace_id=trace_id,
+                conversation_trace_id=trace_id,
             )
 
-        # The agent completed withut a clean pending approval.
-        return AgentSetUpWorkflowResult(
+        # The agent completed without a clean pending approval.
+        return AgentSetupWorkflowResult(
             project_id=project_id,
             project_path=project_path,
             agent_status="completed_without_approval",
             workflow_status="failed",
             error_message="Agent stopped before reaching pending_approval",
-            conversatoin_trace_id=trace_id,
+            conversation_trace_id=trace_id,
         )
 
     def approve_and_execute(
         self,
         project_id: str,
         plan_id: str,
-    ) -> AgentSetUpWorkflowResult:
+    ) -> AgentSetupWorkflowResult:
         """Explicit human approval followed by execution through MCP only."""
         if not plan_id:
             raise ValueError("plan_id is required")
@@ -194,7 +203,7 @@ class AgentSetupWorkflow:
             "get_setup_plan", project_id=project_id, plan_id=plan_id
         )
         if not _plan_exists(plan_result, plan_id):
-            return AgentSetUpWorkflowResult(
+            return AgentSetupWorkflowResult(
                 project_id=project_id,
                 project_path="",
                 agent_status="plan_not_found",
@@ -209,7 +218,7 @@ class AgentSetupWorkflow:
             "approve_setup_plan", project_id=project_id, plan_id=plan_id
         )
         if not _is_approved(approval_result):
-            return AgentSetUpWorkflowResult(
+            return AgentSetupWorkflowResult(
                 project_id=project_id,
                 project_path="",
                 agent_status="approval_failed",
@@ -221,10 +230,10 @@ class AgentSetupWorkflow:
             )
 
         execution_result = self._call_tool(
-            "execete_setup_plan", project_id=project_id, plan_id=plan_id
+            "execute_setup_plan", project_id=project_id, plan_id=plan_id
         )
-        if isintance(execution_result, dict) and execution_result.get("error"):
-            return AgentSetUpWorkflowResult(
+        if isinstance(execution_result, dict) and execution_result.get("error"):
+            return AgentSetupWorkflowResult(
                 project_id=project_id,
                 project_path="",
                 agent_status="execution_failed",
@@ -234,7 +243,7 @@ class AgentSetupWorkflow:
                 error_message=str(execution_result.get("error")),
             )
 
-        return AgentSetUpWorkflowResult(
+        return AgentSetupWorkflowResult(
             project_id=project_id,
             project_path="",
             agent_status="completed",
@@ -243,7 +252,7 @@ class AgentSetupWorkflow:
             approval_required=False,
             approval_status=_APPROVED,
             execution_results=[execution_result],
-            conversatoin_trace_id=None,
+            conversation_trace_id=None,
         )
 
     # ------------------------------------------------------------------
@@ -255,10 +264,10 @@ class AgentSetupWorkflow:
         project_path: str,
         state: AgentState,
         trace_id: str,
-    ) -> AgentSetUpWorkflowResult:
+    ) -> AgentSetupWorkflowResult:
         last_tool = _last_tool(state)
         plan_info = _extract_plan_info(last_tool)
-        return AgentSetUpWorkflowResult(
+        return AgentSetupWorkflowResult(
             project_id=project_id,
             project_path=project_path,
             agent_status=state.stop_reason,
@@ -267,7 +276,7 @@ class AgentSetupWorkflow:
             setup_plan=plan_info.get("setup_plan"),
             approval_required=True,
             approval_status=_PENDING_APPROVAL,
-            conversatoin_trace_id=trace_id,
+            conversation_trace_id=trace_id,
         )
 
     def _call_tool(self, tool_name: str, **kwarggs: Any) -> Any:
@@ -285,13 +294,26 @@ class AgentSetupWorkflow:
 # Stop condition / result helpers
 # ---------------------------------------------------------------------------
 def _stop_if_pending_approval(result: dict[str, Any]) -> str | None:
-    if not isintance(result, dict):
+    if not isinstance(result, dict):
         return None
     status = result.get("status")
     if status == _PENDING_APPROVAL:
         return _PENDING_APPROVAL
     if result.get("approval_required") is True:
         return _PENDING_APPROVAL
+    return None
+
+
+def _evaluate_stop_reason(state: AgentState, stop_condition) -> Optional[str]:
+    """Walk tool results backwards to find a reason to stop."""
+    if state.stop_reason:
+        return state.stop_reason
+    for call in reversed(state.tool_calls):
+        result = call.get("result")
+        if isinstance(result, dict):
+            reason = stop_condition(result)
+            if reason:
+                return reason
     return None
 
 
@@ -305,7 +327,7 @@ def _extract_plan_info(tool_call: dict[str, Any] | None) -> dict[str, Any]:
     if not tool_call:
         return {}
     result = tool_call.get("result")
-    if not isintance(result, dict):
+    if not isinstance(result, dict):
         return {}
 
     plan_id = result.get("plan_id")
@@ -321,7 +343,7 @@ def _extract_plan_info(tool_call: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def _is_approved(result: Any) -> bool:
-    if not isintance(result, dict):
+    if not isinstance(result, dict):
         return False
     if result.get("status") == _APPROVED:
         return True
@@ -331,7 +353,7 @@ def _is_approved(result: Any) -> bool:
 
 
 def _result_status(result: Any) -> str | None:
-    if isintance(result, dict):
+    if isinstance(result, dict):
         return result.get("status")
     return None
 
@@ -349,7 +371,7 @@ def _has_required_sequence(state: AgentState) -> bool:
     """Return True when the agent has executed the required tool sequence."""
     tool_names = [call.get("name") for call in state.tool_calls]
     idx = 0
-    for required in _REQUIRED_TOL_SEQUENCE:
+    for required in _REQUIRED_TOOL_SEQUENCE:
         if required not in tool_names:
             return False
         try:
@@ -364,7 +386,7 @@ def _has_sequence_up_to_create(state: AgentState) -> bool:
     and including create_setup_plan, but not necessarily get_setup_plan."""
     tool_names = [call.get("name") for call in state.tool_calls]
     idx = 0
-    for required in _REQUIRED_TOL_SEQUENCE:
+    for required in _REQUIRED_TOOL_SEQUENCE:
         if required == "get_setup_plan":
             # We only care about the prefix up to create_setup_plan.
             break
@@ -378,7 +400,7 @@ def _has_sequence_up_to_create(state: AgentState) -> bool:
 
 
 def _plan_exists(result: Any, expected_plan_id: str) -> bool:
-    if not isintance(result, dict):
+    if not isinstance(result, dict):
         return False
     if result.get("error"):
         return False
