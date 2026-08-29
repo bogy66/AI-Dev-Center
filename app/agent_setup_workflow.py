@@ -41,17 +41,17 @@ _REQUIRED_TOOL_SEQUENCE = [
 ]
 
 
-class AgentSetUpWorkflow:
+class AgentSetupWorkflow:
     """Integrates the minimal LLM agent with the existing AgentWorkflow/MCPServer boundary.
 
     The LLM agent is only allowed to interact with MCP tools.  This class
-    therefore never imports domain services directly; it talks exclusive
+    therefore never imports domain services directly; it talks exclusively
     through the supplied MCP server.
     """
 
     def __init__(
         self,
-        llm_provider: LLMPovider,
+        llm_provider: LLMProvider,
         mcp_server: MCPSetupTools,
         max_turns: int = 5,
     ):
@@ -67,7 +67,7 @@ class AgentSetUpWorkflow:
         self,
         project_id: str,
         project_path: str,
-    ) -> AgentSetUpWorkflowResult:
+    ) -> AgentSetupWorkflowResult:
         """Run the agent until it reaches pending_approval or fails."""
         prompt = (
             "You are an AI developer assistant driving a setup workflow.\n"
@@ -121,7 +121,7 @@ class AgentSetUpWorkflow:
                     if isinstance(plan_result, dict)
                     else "get_setup_plan did not return pending approval"
                 )
-                return AgentSetUpWorkflowResult(
+                return AgentSetupWorkflowResult(
                     project_id=project_id,
                     project_path=project_path,
                     agent_status="failed",
@@ -137,7 +137,7 @@ class AgentSetUpWorkflow:
                 return self._pending_result(
                     project_id, project_path, state, trace_id
                 )
-            return AgentSetUpWorkflowResult(
+            return AgentSetupWorkflowResult(
                 project_id=project_id,
                 project_path=project_path,
                 agent_status="failed",
@@ -151,7 +151,7 @@ class AgentSetUpWorkflow:
                 return self._pending_result(
                     project_id, project_path, state, trace_id
                 )
-            return AgentSetUpWorkflowResult(
+            return AgentSetupWorkflowResult(
                 project_id=project_id,
                 project_path=project_path,
                 agent_status="failed",
@@ -161,7 +161,7 @@ class AgentSetUpWorkflow:
             )
 
         if state.last_error:
-            return AgentSetUpWorkflowResult(
+            return AgentSetupWorkflowResult(
                 project_id=project_id,
                 project_path=project_path,
                 agent_status="tool_error",
@@ -171,7 +171,7 @@ class AgentSetUpWorkflow:
             )
 
         # The agent completed without a clear pending approval.
-        return AgentSetUpWorkflowResult(
+        return AgentSetupWorkflowResult(
             project_id=project_id,
             project_path=project_path,
             agent_status="completed_without_approval",
@@ -184,7 +184,7 @@ class AgentSetUpWorkflow:
         self,
         project_id: str,
         plan_id: str,
-    ) -> AgentSetUpWorkflowResult:
+    ) -> AgentSetupWorkflowResult:
         """Explicit human approval followed by execution through MCP only."""
         if not plan_id:
             raise ValueError("plan_id is required")
@@ -194,7 +194,7 @@ class AgentSetUpWorkflow:
             "get_setup_plan", project_id=project_id, plan_id=plan_id
         )
         if not _plan_exists(plan_result, plan_id):
-            return AgentSetUpWorkflowResult(
+            return AgentSetupWorkflowResult(
                 project_id=project_id,
                 project_path="",
                 agent_status="plan_not_found",
@@ -209,7 +209,7 @@ class AgentSetUpWorkflow:
             "approve_setup_plan", project_id=project_id, plan_id=plan_id
         )
         if not _is_approved(approval_result):
-            return AgentSetUpWorkflowResult(
+            return AgentSetupWorkflowResult(
                 project_id=project_id,
                 project_path="",
                 agent_status="approval_failed",
@@ -224,7 +224,7 @@ class AgentSetUpWorkflow:
             "execute_setup_plan", project_id=project_id, plan_id=plan_id
         )
         if isinstance(execution_result, dict) and execution_result.get("error"):
-            return AgentSetUpWorkflowResult(
+            return AgentSetupWorkflowResult(
                 project_id=project_id,
                 project_path="",
                 agent_status="execution_failed",
@@ -234,7 +234,7 @@ class AgentSetUpWorkflow:
                 error_message=str(execution_result.get("error")),
             )
 
-        return AgentSetUpWorkflowResult(
+        return AgentSetupWorkflowResult(
             project_id=project_id,
             project_path="",
             agent_status="completed",
@@ -255,10 +255,10 @@ class AgentSetUpWorkflow:
         project_path: str,
         state: AgentState,
         trace_id: str,
-    ) -> AgentSetUpWorkflowResult:
+    ) -> AgentSetupWorkflowResult:
         last_tool = _last_tool(state)
         plan_info = _extract_plan_info(last_tool)
-        return AgentSetUpWorkflowResult(
+        return AgentSetupWorkflowResult(
             project_id=project_id,
             project_path=project_path,
             agent_status=state.stop_reason,
@@ -273,9 +273,125 @@ class AgentSetUpWorkflow:
     def _call_tool(self, tool_name: str, **kwargs: Any) -> Any:
         try:
             method = getattr(self.mcp_server, tool_name)
-        except AttributError:
+        except AttributeError:
             return {"error": f"Unknown tool: {tool_name}"}
         try:
             return method(**kwargs)
         except Exception as exc:
             return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Stop condition / result helpers
+# ---------------------------------------------------------------------------
+def _stop_if_pending_approval(result: dict[str, Any]) -> str | None:
+    if not isinstance(result, dict):
+        return None
+    status = result.get("status")
+    if status == _PENDING_APPROVAL:
+        return _PENDING_APPROVAL
+    if result.get("approval_required") is True:
+        return _PENDING_APPROVAL
+    return None
+
+
+def _last_tool(state: AgentState) -> dict[str, Any] | None:
+    if state.tool_calls:
+        return state.tool_calls[-1]
+    return None
+
+
+def _extract_plan_info(tool_call: dict[str, Any] | None) -> dict[str, Any]:
+    if not tool_call:
+        return {}
+    result = tool_call.get("result")
+    if not isinstance(result, dict):
+        return {}
+
+    plan_id = result.get("plan_id")
+    if plan_id is None:
+        plan_id = result.get("id")
+
+    setup_plan = result.get("setup_plan") if "setup_plan" in result else result
+
+    return {
+        "plan_id": plan_id,
+        "setup_plan": setup_plan,
+    }
+
+
+def _is_approved(result: Any) -> bool:
+    if not isinstance(result, dict):
+        return False
+    if result.get("status") == _APPROVED:
+        return True
+    if result.get("approved") is True:
+        return True
+    return False
+
+
+def _result_status(result: Any) -> str | None:
+    if isinstance(result, dict):
+        return result.get("status")
+    return None
+
+
+def _trace_id(state: AgentState) -> str:
+    return str(id(state))
+
+
+def _count_assistant_messages(state: AgentState) -> int:
+    """Count LLM turns represented by assistant messages."""
+    return sum(1 for msg in state.messages if msg.get("role") == "assistant")
+
+
+def _has_required_sequence(state: AgentState) -> bool:
+    """Return True when the agent has executed the required tool sequence."""
+    tool_names = [call.get("name") for call in state.tool_calls]
+    idx = 0
+    for required in _REQUIRED_TOOL_SEQUENCE:
+        if required not in tool_names:
+            return False
+        try:
+            idx = tool_names.index(required, idx) + 1
+        except ValueError:
+            return False
+    return True
+
+
+def _has_sequence_up_to_create(state: AgentState) -> bool:
+    """Return True when the agent has executed the required sequence up to
+    and including create_setup_plan, but not necessarily get_setup_plan."""
+    tool_names = [call.get("name") for call in state.tool_calls]
+    idx = 0
+    for required in _REQUIRED_TOOL_SEQUENCE:
+        if required == "get_setup_plan":
+            # We only care about the prefix up to create_setup_plan.
+            break
+        if required not in tool_names:
+            return False
+        try:
+            idx = tool_names.index(required, idx) + 1
+        except ValueError:
+            return False
+    return True
+
+
+def _plan_exists(result: Any, expected_plan_id: str) -> bool:
+    if not isinstance(result, dict):
+        return False
+    if result.get("error"):
+        return False
+
+    status = result.get("status")
+    if status in {"not_found", "missing", "failed"}:
+        return False
+
+    result_plan_id = result.get("plan_id")
+    if result_plan_id is None:
+        result_plan_id = result.get("id")
+
+    if result_plan_id is None:
+        return False
+
+    return str(result_plan_id) == str(expected_plan_id)
