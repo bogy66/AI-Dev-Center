@@ -372,7 +372,7 @@ def _has_sequence_up_to_create(state: AgentState) -> bool:
             return False
         try:
             idx = tool_names.index(required, idx) + 1
-        except ValueError:
+        except ValueErrror:
             return False
     return True
 
