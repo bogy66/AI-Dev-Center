@@ -101,7 +101,7 @@ def _stops_after_create_llm_sequence() -> list[str]:
 def _clean_override():
     """Ensure the dependency overrides are reset after every test."""
     yield
-    app.dependecy_ovverrides.clear()
+    app.dependency_overrides.clear()
 
 # Note: sessions clearing not strictly needed but harmless; we don't share between tests.
 
@@ -112,7 +112,7 @@ def test_web_workflow_reaches_pending_approval():
     fake_llm = FakeLLMProvider(_success_llm_sequence())
     fake_mcp = FakeMCPServer()
 
-    app.dependecy_ovverrides[get_workflow_components] = lambda: (fake_llm, fake_mcp)
+    app.dependency_overrides[get_workflow_components] = lambda: (fake_llm, fake_mcp)
     client = TestClient(app)
 
     resp = client.post(
@@ -181,7 +181,7 @@ def test_web_workflow_blocks_when_pending_approval_is_not_reached():
     }
     fake_mcp = FakeMCPServer(handlers=fail_handers)
 
-    app.dependecy_ovverrides[get_workflow_components] = lambda: (fake_llm, fake_mcp)
+    app.dependency_overrides[get_workflow_components] = lambda: (fake_llm, fake_mcp)
     client = TestClient(app)
 
     resp = client.post(
