@@ -8,7 +8,7 @@ read from the YAML file.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -113,6 +113,58 @@ class DiscoveryConfig:
 
 
 @dataclass(frozen=True)
+class CouncilAgentConfig:
+    """Configuration for a single Council agent (A1, A2, A3, or Chairman).
+
+    Each agent may use a different provider, model, and temperature.
+    No model names are hardcoded — everything comes from the YAML config.
+    """
+
+    role: str = ""
+    provider: str = "openrouter"
+    model: str = ""
+    timeout_seconds: float = 60.0
+    temperature: float = 0.7
+
+
+@dataclass(frozen=True)
+class CouncilConfig:
+    """Configuration for the entire Engineering Council."""
+
+    enabled: bool = True
+    max_variants_per_agent: int = 3
+    environment_architect: CouncilAgentConfig = field(default_factory=lambda: CouncilAgentConfig(
+        role="environment_architect",
+        provider="openrouter",
+        model="deepseek/deepseek-v4-pro",
+        timeout_seconds=60.0,
+        temperature=0.7,
+    ))
+    toolchain_integrator: CouncilAgentConfig = field(default_factory=lambda: CouncilAgentConfig(
+        role="toolchain_integrator",
+        provider="openrouter",
+        model="google/gemini-2.0-flash-001",
+        timeout_seconds=60.0,
+        temperature=0.7,
+    ))
+    risk_assessor: CouncilAgentConfig = field(default_factory=lambda: CouncilAgentConfig(
+        role="risk_assessor",
+        provider="openrouter",
+        model="openai/gpt-4o",
+        timeout_seconds=60.0,
+        temperature=0.7,
+    ))
+    chairman: CouncilAgentConfig = field(default_factory=lambda: CouncilAgentConfig(
+        role="chairman",
+        provider="openrouter",
+        model="anthropic/claude-3.5-sonnet",
+        timeout_seconds=90.0,
+        temperature=0.2,
+    ))
+    ollama_url: str | None = None
+
+
+@dataclass(frozen=True)
 class AIConfig:
     """Typed representation of the AI-Dev-Center AI configuration."""
 
@@ -123,6 +175,74 @@ class AIConfig:
     authentication: AuthenticationConfig
     timeout_seconds: float
     discovery: DiscoveryConfig
+    council: CouncilConfig | None = None
+
+
+def _parse_council_agent(data: Any, role: str) -> CouncilAgentConfig:
+    """Parse a single council agent config section."""
+    if data is None:
+        return CouncilAgentConfig(role=role)
+
+    d = _ensure_mapping(data, f"ai.council.agents.{role}")
+
+    provider = _require_non_empty_string(d.get("provider"), f"ai.council.agents.{role}.provider")
+    model = _require_non_empty_string(d.get("model"), f"ai.council.agents.{role}.model")
+    timeout = _validate_timeout(d.get("timeout_seconds"))
+    temperature = float(d.get("temperature", 0.7))
+
+    if not (0.0 <= temperature <= 2.0):
+        raise ValueError(f"ai.council.agents.{role}.temperature must be between 0.0 and 2.0")
+
+    return CouncilAgentConfig(
+        role=role,
+        provider=provider,
+        model=model,
+        timeout_seconds=timeout,
+        temperature=temperature,
+    )
+
+
+def _parse_council(data: Any) -> CouncilConfig | None:
+    """Parse the ``ai.council`` section, or return None if absent/disabled."""
+    if data is None:
+        return None
+
+    d = _ensure_mapping(data, "ai.council")
+
+    enabled = d.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise ValueError("ai.council.enabled must be a boolean")
+
+    if not enabled:
+        return None
+
+    max_variants = d.get("max_variants_per_agent", 3)
+    if isinstance(max_variants, bool) or not isinstance(max_variants, int) or max_variants < 1:
+        raise ValueError("ai.council.max_variants_per_agent must be a positive integer")
+
+    agents_data = d.get("agents")
+    if agents_data is None:
+        raise ValueError("ai.council.agents section is required when council is enabled")
+
+    agents_data = _ensure_mapping(agents_data, "ai.council.agents")
+
+    return CouncilConfig(
+        enabled=True,
+        max_variants_per_agent=max_variants,
+        environment_architect=_parse_council_agent(
+            agents_data.get("environment_architect"), "environment_architect"
+        ),
+        toolchain_integrator=_parse_council_agent(
+            agents_data.get("toolchain_integrator"), "toolchain_integrator"
+        ),
+        risk_assessor=_parse_council_agent(
+            agents_data.get("risk_assessor"), "risk_assessor"
+        ),
+        chairman=_parse_council_agent(
+            agents_data.get("chairman"), "chairman"
+        ),
+        ollama_url=d.get("ollama_url"),
+    )
 
 
 def parse_ai_config(data: dict[str, Any]) -> AIConfig:
@@ -153,6 +273,7 @@ def parse_ai_config(data: dict[str, Any]) -> AIConfig:
 
     authentication = _parse_authentication(ai_data.get("authentication"))
     discovery = _parse_discovery(ai_data.get("discovery"))
+    council = _parse_council(ai_data.get("council"))
 
     return AIConfig(
         version=version,
@@ -162,6 +283,7 @@ def parse_ai_config(data: dict[str, Any]) -> AIConfig:
         authentication=authentication,
         timeout_seconds=timeout_seconds,
         discovery=discovery,
+        council=council,
     )
 
 

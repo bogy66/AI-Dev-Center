@@ -1,0 +1,341 @@
+AI Dev Center – Software Installation Council Requirement
+==============================================================
+
+Status
+------
+Future requirement / architecture concept.
+This must be kept in mind for future AI Dev Center development.
+It is NOT to be implemented as part of the current GUI/workflow work
+unless explicitly requested.
+
+1. Objective
+-------------
+
+When AI Dev Center determines that new software, a new package, a new
+developer tool, or another external capability needs to be installed,
+the system must NOT immediately install it autonomously.
+
+Instead, a multi-AI "Council" shall be started first.
+
+The Council evaluates the proposed installation and produces one or
+more possible tool chains / implementation approaches.
+
+The user remains the final decision-maker.
+
+2. Required Decision Flow
+-------------------------
+
+Trigger:
+A task requires software/tool installation.
+
+        ↓
+
+Start AI Council
+
+        ↓
+
+Several independent AI agents evaluate the requirement
+
+        ↓
+
+Each AI may propose a different tool chain
+
+        ↓
+
+Council compares the proposals
+
+        ↓
+
+Present alternatives to the user
+
+        ↓
+
+User decides how to proceed
+
+        ↓
+
+Only the user-approved approach is executed
+
+3. Council
+----------
+
+The Council should consist of multiple independent AI participants.
+
+The participants should not be forced to reach the same solution.
+
+They may independently evaluate:
+
+- which software/tool should be installed
+- whether installation is actually necessary
+- alternative tools
+- alternative versions
+- installation methods
+- dependencies
+- integration consequences
+- security implications
+- maintenance effort
+- portability
+- resource requirements
+- licensing considerations where relevant
+- rollback/removal implications
+
+The purpose of multiple AIs is to generate genuine alternatives rather
+than one AI simply confirming its first proposal.
+
+4. Different Tool Chains
+------------------------
+
+The Council may intentionally produce different approaches.
+
+Example:
+
+Task requires capability X.
+
+AI A:
+Tool chain A → package/tool 1 → adapter → workflow
+
+AI B:
+Tool chain B → package/tool 2 → different adapter → workflow
+
+AI C:
+Tool chain C → existing local capability → minimal additional software
+
+These alternatives must remain distinguishable.
+
+The system should NOT silently merge them into one solution.
+
+5. Recommendation Format
+------------------------
+
+For each proposed approach, present at least:
+
+Name / short description
+
+Tool chain
+
+Required installations
+
+Dependencies
+
+Advantages
+
+Disadvantages
+
+Risks / concerns
+
+Expected integration effort
+
+Expected maintenance effort
+
+Resource requirements
+
+Reversibility / rollback considerations
+
+The comparison should be understandable to the human decision-maker.
+
+6. User Decision
+----------------
+
+The Council does not have authority to make the final installation
+decision.
+
+The user chooses the approach.
+
+Possible user decisions:
+
+- Approve option A
+- Approve option B
+- Approve option C
+- Request another analysis
+- Reject all options
+- Ask for clarification
+- Modify the proposed approach
+
+Only after explicit user approval may the selected installation/tool
+chain be executed.
+
+7. Transparency
+---------------
+
+The user should be able to see:
+
+- that a Council was started
+- which AI participants contributed
+- which options were proposed
+- why the options differ
+- advantages/disadvantages
+- the final user decision
+
+The process should appear in the normal AI Dev Center status/trace
+system.
+
+Example:
+
+Thinking…
+Council · Evaluating installation requirement…
+
+Council · AI 1 proposes Tool Chain A
+Council · AI 2 proposes Tool Chain B
+Council · AI 3 proposes Tool Chain C
+
+Council · Comparing alternatives…
+
+Awaiting user decision.
+
+8. Trace / Debugging
+--------------------
+
+The Council must be traceable.
+
+Trace should be able to show, where appropriate:
+
+Council
+participant
+role
+tool
+action
+decision
+status
+duration
+result summary
+
+The existing detail levels remain applicable:
+
+INFO
+DEBUG
+VERBOSE
+VERY_VERBOSE
+
+Sensitive information must not be exposed.
+
+Do not expose:
+- API keys
+- passwords
+- secrets
+- private credentials
+- chain-of-thought
+- sensitive raw tool arguments
+
+9. Installation Safety
+----------------------
+
+The installation stage must remain separated from the analysis stage.
+
+Required conceptual phases:
+
+ANALYZE
+    ↓
+COUNCIL
+    ↓
+OPTIONS
+    ↓
+USER DECISION
+    ↓
+INSTALL
+    ↓
+VERIFY
+
+The Council must NOT itself silently install software.
+
+The agent must not treat "we need X" as equivalent to "install X now".
+
+10. Verification
+-----------------
+
+After the user approves an installation approach, the selected tool
+chain should eventually be:
+
+- installed
+- checked for successful installation
+- integrated
+- tested
+- reported back to the user
+
+The post-install verification should become part of the normal workflow
+and trace.
+
+11. Human in Control
+--------------------
+
+This requirement reinforces a fundamental AI Dev Center principle:
+
+AI proposes.
+AI compares.
+Human decides.
+AI executes the approved decision.
+
+The system should make consequential technical decisions explicit
+rather than hiding them inside an autonomous agent loop.
+
+12. Future Applicability
+------------------------
+
+This Council concept should apply to software and tooling decisions
+across future AI Dev Center domains.
+
+Examples:
+
+Software development:
+- Python packages
+- compilers
+- linters
+- test frameworks
+- build tools
+- CLI utilities
+
+ESPHome / embedded:
+- ESPHome
+- SDKs
+- flashing tools
+- platform-specific utilities
+
+Hardware development:
+- LTspice
+- schematic tools
+- PCB/EDA tools
+- manufacturing utilities
+- measurement/test tooling
+
+The same Council principle should be reusable across these domains.
+
+13. Architectural Direction
+----------------------------
+
+AI Dev Center should eventually treat installation/tool selection as a
+decision point in the larger engineering workflow.
+
+Conceptually:
+
+Project Requirement
+    ↓
+Capability Missing?
+    ↓ YES
+Software / Tool Council
+    ↓
+Multiple Alternatives
+    ↓
+Pros / Cons / Risks / Effort
+    ↓
+Human Decision
+    ↓
+Approved Tool Chain
+    ↓
+Installation
+    ↓
+Verification
+    ↓
+Continue Engineering Workflow
+
+14. Current Scope Boundary
+--------------------------
+
+This is a future requirement.
+
+Do NOT implement it now unless explicitly requested.
+
+However, future architecture decisions should avoid preventing this
+capability.
+
+In particular, future workflow, role, trace and tool abstractions should
+allow a Council phase to be introduced without redesigning the entire
+AI Dev Center.

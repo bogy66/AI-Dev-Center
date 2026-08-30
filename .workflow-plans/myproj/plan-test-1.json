@@ -1,0 +1,22 @@
+{
+  "created_at": "2026-08-30 20:58:42.126538",
+  "id": "plan-test-1",
+  "project_id": "myproj",
+  "requires_user_approval": true,
+  "rollback_steps": [],
+  "status": "pending_approval",
+  "steps": [
+    {
+      "action": "install",
+      "command": null,
+      "id": "step-1",
+      "install_method": "python_package",
+      "is_approved": false,
+      "package": "some-pkg",
+      "requirement_id": "req-1",
+      "verification_after": null,
+      "version": "1.2.3"
+    }
+  ],
+  "warnings": []
+}

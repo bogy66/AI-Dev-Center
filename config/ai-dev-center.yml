@@ -17,3 +17,34 @@ ai:
     enabled: true
     require_json: true
     max_requirements: 50
+
+  council:
+    enabled: true
+    max_variants_per_agent: 3
+
+    agents:
+      environment_architect:
+        provider: openrouter
+        model: deepseek/deepseek-v4-pro
+        timeout_seconds: 60
+        temperature: 0.7
+
+      toolchain_integrator:
+        provider: openrouter
+        model: google/gemini-2.0-flash-001
+        timeout_seconds: 60
+        temperature: 0.7
+
+      risk_assessor:
+        provider: openrouter
+        model: openai/gpt-4o
+        timeout_seconds: 60
+        temperature: 0.7
+
+      chairman:
+        provider: openrouter
+        model: anthropic/claude-3.5-sonnet
+        timeout_seconds: 90
+        temperature: 0.2
+
+    ollama_url: http://localhost:11434

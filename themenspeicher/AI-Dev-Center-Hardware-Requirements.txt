@@ -1,0 +1,420 @@
+AI Dev Center – Future Hardware Development Requirements
+===============================================================
+
+Status
+------
+This document captures a future extension of AI Dev Center.
+It is a requirements/theme document for later implementation.
+It is NOT part of the current software-development workflow yet.
+
+1. Vision
+---------
+
+AI Dev Center shall later support not only software development, but
+also complete hardware development.
+
+The intention is to extend the AI-Dev-Center concept from an AI software
+development team to an AI engineering team that can take a hardware
+idea/requirement through the complete development lifecycle.
+
+The target is a workflow from:
+
+Requirement
+    ↓
+System concept
+    ↓
+Circuit design / schematic
+    ↓
+Simulation
+    ↓
+Component selection
+    ↓
+PCB design
+    ↓
+PCB layout
+    ↓
+Design verification
+    ↓
+Manufacturing data
+    ↓
+Prototype / production
+    ↓
+Test / validation
+    ↓
+Documentation
+
+The human remains in control, especially at design decisions,
+approvals and manufacturing release.
+
+2. Hardware Workflow
+--------------------
+
+The future hardware workflow shall include at least:
+
+2.1 Requirements
+    - capture electrical and functional requirements
+    - interfaces
+    - supply voltages
+    - currents
+    - timing
+    - environmental requirements
+    - mechanical constraints
+    - cost targets
+    - manufacturing requirements
+
+2.2 System Architecture
+    - define system blocks
+    - define interfaces between blocks
+    - identify major components
+    - define power architecture
+    - define signal architecture
+
+2.3 Schematic / Circuit Design
+    - create and modify schematics
+    - select components
+    - define component values
+    - define nets and interfaces
+    - check design rules
+    - maintain schematic versions
+
+2.4 Simulation
+    - LTspice is the planned primary simulation basis
+    - generate/update LTspice models/netlists where applicable
+    - run simulations
+    - evaluate simulation results
+    - compare variants
+    - verify electrical requirements
+    - use simulation results to drive design changes
+
+2.5 Component Engineering
+    - component selection
+    - alternatives / second sources
+    - availability
+    - electrical limits
+    - tolerances
+    - thermal aspects
+    - lifecycle / obsolescence considerations
+    - BOM generation
+
+2.6 PCB Design
+    - board definition
+    - layer stack
+    - footprint selection
+    - placement
+    - routing
+    - power distribution
+    - grounding
+    - signal integrity considerations
+    - thermal considerations
+    - design-rule checking
+
+2.7 PCB Layout
+    - optimize placement
+    - optimize routing
+    - ensure manufacturability
+    - handle clearances
+    - review critical nets
+    - maintain mechanical constraints
+
+2.8 Verification
+    - schematic checks
+    - ERC where supported
+    - PCB DRC where supported
+    - simulation checks
+    - electrical requirement checks
+    - mechanical checks
+    - BOM consistency
+    - schematic/PCB consistency
+
+2.9 Manufacturing
+    - generate manufacturing outputs
+    - Gerber / drill data where applicable
+    - pick-and-place data where applicable
+    - BOM
+    - assembly documentation
+    - production documentation
+    - revision/release management
+
+2.10 Prototype and Production
+    - prepare prototype build
+    - document deviations
+    - capture test results
+    - validate against requirements
+    - prepare production release
+
+3. AI Team for Hardware Development
+-----------------------------------
+
+The existing AI-Dev-Center role concept should later be extended or
+specialized for hardware work.
+
+Current core roles:
+
+Project Manager
+    Coordinates the overall project and workflow.
+
+Architect
+    Defines the system architecture and technical approach.
+
+Developer
+    For hardware projects, this role may become or include an
+    Electrical/Hardware Engineer responsible for implementation of the
+    schematic, simulation and design artifacts.
+
+Tester
+    Verifies simulation, electrical requirements, design rules and
+    manufacturing/test requirements.
+
+Reviewer
+    Performs an independent technical review of the design and release.
+
+Future specialized hardware roles may be introduced later, for example:
+
+Hardware Engineer
+Simulation Engineer
+PCB Engineer
+Manufacturing Engineer
+
+These specialized roles are future concepts and are NOT yet part of
+the current AI Dev Center implementation.
+
+4. Simulation Basis: LTspice
+----------------------------
+
+LTspice is the planned foundation for circuit simulation.
+
+AI Dev Center should eventually be able to:
+
+    Requirement
+        ↓
+    Circuit concept
+        ↓
+    Schematic
+        ↓
+    LTspice model / simulation setup
+        ↓
+    Simulation
+        ↓
+    Result analysis
+        ↓
+    Design iteration
+
+The system should be able to reason from simulation results back into
+the design workflow.
+
+Examples of future tasks:
+
+    "Check whether the regulator remains stable under the required
+     load range."
+
+    "Simulate the input filter and compare two capacitor values."
+
+    "Verify the switching behavior at the worst-case load."
+
+    "Find a component value that satisfies the ripple requirement."
+
+5. Design Traceability
+----------------------
+
+Hardware development requires traceability.
+
+The future AI Dev Center should maintain relationships between:
+
+    Requirement
+        ↕
+    Architecture
+        ↕
+    Schematic
+        ↕
+    Simulation
+        ↕
+    PCB
+        ↕
+    Manufacturing Data
+        ↕
+    Test Result
+
+A change to a requirement should make affected design artifacts
+identifiable.
+
+Example:
+
+Requirement changed
+    ↓
+affected circuit block
+    ↓
+affected schematic
+    ↓
+affected simulation
+    ↓
+affected PCB area
+    ↓
+affected BOM
+    ↓
+affected manufacturing outputs
+
+6. Human Approval
+-----------------
+
+Human approval should remain a first-class workflow element.
+
+Potential approval gates:
+
+    Architecture approval
+    Schematic release
+    Simulation acceptance
+    PCB release
+    Manufacturing release
+
+The AI may prepare and validate the work, but the human controls the
+release of consequential engineering artifacts.
+
+7. Transparency and Debugging
+-----------------------------
+
+The existing AI Dev Center transparency concept should also apply to
+hardware development.
+
+The user should be able to see:
+
+    Thinking…
+    Hardware Engineer · Designing power stage…
+    Simulation Engineer · Running LTspice…
+    PCB Engineer · Checking placement…
+    Tester · Verifying limits…
+    Reviewer · Reviewing release…
+
+The technical Trace should additionally expose, where available:
+
+    role
+    artifact
+    tool
+    simulation
+    design step
+    event
+    status
+    result
+
+The same Trace detail concept should remain:
+
+    INFO
+    DEBUG
+    VERBOSE
+    VERY_VERBOSE
+
+No secrets and no chain-of-thought should be exposed.
+
+8. Manufacturing Release
+------------------------
+
+The target is not only a schematic or simulation.
+
+AI Dev Center should eventually be able to drive a design all the way
+to a manufacturable release package.
+
+A future release package may include:
+
+    schematic
+    PCB layout
+    BOM
+    component alternatives
+    fabrication outputs
+    assembly outputs
+    drawings
+    test documentation
+    revision information
+    release notes
+
+The exact file formats and supported EDA tools are future decisions.
+
+9. Future EDA Integration
+-------------------------
+
+LTspice is the initial simulation basis.
+
+The specific schematic / PCB / EDA platform for implementation is still
+to be decided.
+
+This requirement document therefore does NOT prescribe a specific PCB
+tool yet.
+
+The architecture should nevertheless be designed so that hardware
+tools can be integrated through tools/adapters in the same spirit as
+MCP-based software project operations.
+
+10. Future Use Cases
+--------------------
+
+Examples of intended future hardware use cases:
+
+    - design a small power supply
+    - analyze an existing circuit
+    - simulate a circuit in LTspice
+    - optimize component values
+    - compare component alternatives
+    - create/update a schematic
+    - design a PCB
+    - optimize PCB placement and routing
+    - run electrical and PCB verification
+    - generate manufacturing data
+    - prepare a prototype release
+    - review a hardware revision
+    - trace a requirement change through the complete design
+
+11. Current Scope Boundary
+--------------------------
+
+These hardware-development capabilities are future requirements.
+
+The current AI Dev Center implementation remains focused on the
+existing software-development workflow.
+
+Do NOT implement hardware support as part of the current GUI redesign
+unless explicitly requested later.
+
+The purpose of this document is to preserve the vision and requirements
+so that future architecture decisions remain compatible with the goal
+of complete hardware development.
+
+12. Long-Term Target
+--------------------
+
+Long-term target:
+
+AI Dev Center becomes a general engineering development workspace.
+
+Software:
+
+    requirement
+    → architecture
+    → implementation
+    → test
+    → review
+    → release
+
+Hardware:
+
+    requirement
+    → system architecture
+    → schematic
+    → LTspice simulation
+    → component engineering
+    → PCB
+    → layout
+    → verification
+    → manufacturing
+    → prototype/production
+    → validation
+    → release
+
+Both workflows should follow the same fundamental AI-Dev-Center
+principles:
+
+    specialized AI roles
+    orchestrated workflow
+    tool-based execution
+    traceability
+    transparency
+    verification
+    human approval
+    reproducible release
