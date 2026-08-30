@@ -1,0 +1,20 @@
+# Runtime dependencies
+aiohttp==3.13.3
+fastapi==0.128.8
+GitPython==3.1.46
+openai==2.20.0
+pydantic==2.12.5
+python-dotenv==1.2.1
+PyYAML==6.0.3
+requests==2.34.2
+rich==14.3.2
+uvicorn==0.52.3
+
+# Test dependencies
+# AnyIO 4.12.1 blocks synchronous FastAPI TestClient requests in this project
+# environment; 4.11.0 retains the compatible thread-portal behavior.
+anyio==4.11.0
+pytest==9.1.1
+pytest-base-url==2.1.0
+pytest-playwright==0.9.0
+playwright==1.58.0
