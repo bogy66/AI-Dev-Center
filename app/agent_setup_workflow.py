@@ -92,7 +92,7 @@ class AgentSetupWorkflow:
         # producing tool calls before it.
         # ------------------------------------------------------------------
         explicit_get_called = False
-        if not _has_required_sequence(state):
+        if _has_sequence_up_to_create(state) and not _has_required_sequence(state):
             # LLM did not call get_setup_plan.  Do it ourselves through MCP.
             plan_result = self._call_tool(
                 "get_setup_plan", project_id=project_id
