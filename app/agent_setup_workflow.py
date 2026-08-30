@@ -120,6 +120,40 @@ class AgentSetupWorkflow:
         sequence_done = _has_required_sequence(state)
 
         # ------------------------------------------------------------------
+        # If we had to explicitly call get_setup_plan, treat its result as
+        # decisive.  This must be evaluated *before* the generic max‑turn
+        # check so that a completed explicit bridge is never hidden by a
+        # max‑turn error.
+        # ------------------------------------------------------------------
+        if explicit_get_called:
+            plan_result = state.tool_calls[-1].get("result") or {}
+            if isinstance(plan_result, dict) and plan_result.get("error"):
+                return AgentSetupWorkflowResult(
+                    project_id=project_id,
+                    project_path=project_path,
+                    agent_status="tool_error",
+                    workflow_status="failed",
+                    error_message=str(plan_result["error"]),
+                    conversation_trace_id=trace_id,
+                )
+            # The explicit call succeeded.  If it signals pending approval
+            # we return the pending result regardless of max_turns_hit.
+            if final_stop_reason == _PENDING_APPROVAL and sequence_done:
+                return self._pending_result(
+                    project_id, project_path, state, trace_id
+                )
+            # Otherwise the explicit call did not produce a pending‑approval
+            # status – treat as an unexpected state.
+            return AgentSetupWorkflowResult(
+                project_id=project_id,
+                project_path=project_path,
+                agent_status="completed_without_approval",
+                workflow_status="failed",
+                error_message="Agent stopped before reaching pending_approval",
+                conversation_trace_id=trace_id,
+            )
+
+        # ------------------------------------------------------------------
         # Normal completion – pending approval after the full tool sequence.
         # ------------------------------------------------------------------
         if final_stop_reason == _PENDING_APPROVAL and sequence_done:
@@ -140,32 +174,6 @@ class AgentSetupWorkflow:
                 agent_status="failed",
                 workflow_status="failed",
                 error_message="Maximum agent turns reached",
-                conversation_trace_id=trace_id,
-            )
-
-        # ------------------------------------------------------------------
-        # If we had to explicitly call get_setup_plan, treat its result as
-        # decisive.
-        # ------------------------------------------------------------------
-        if explicit_get_called:
-            plan_result = state.tool_calls[-1].get("result") or {}
-            if isinstance(plan_result, dict) and plan_result.get("error"):
-                return AgentSetupWorkflowResult(
-                    project_id=project_id,
-                    project_path=project_path,
-                    agent_status="tool_error",
-                    workflow_status="failed",
-                    error_message=str(plan_result["error"]),
-                    conversation_trace_id=trace_id,
-                )
-            # The explicit call didn't produce an error but also didn't match
-            # pending_approval – treat as an unexpected state.
-            return AgentSetupWorkflowResult(
-                project_id=project_id,
-                project_path=project_path,
-                agent_status="completed_without_approval",
-                workflow_status="failed",
-                error_message="Agent stopped before reaching pending_approval",
                 conversation_trace_id=trace_id,
             )
 

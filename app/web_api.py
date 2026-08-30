@@ -406,6 +406,7 @@ async def start_workflow(
     session.approval_required = bool(result.approval_required)
     session.approval_status = getattr(result, "approval_status", "pending")
     session.error_message = result.error_message
+    session.workflow_status = result.workflow_status
 
     recorder.record(
         level=TraceLevel.INFO,

@@ -158,6 +158,19 @@ def test_web_workflow_reaches_pending_approval():
     # LLM completion call count ≤ max turns (5 by default) for a clean run
     assert len(fake_llm.calls) <= 5
 
+    # Exact MCP call order
+    expected_order = [
+        "inspect_project",
+        "discover_requirements",
+        "get_preflight",
+        "create_setup_plan",
+        "get_setup_plan",
+    ]
+    actual_order = [c[0] for c in fake_mcp.calls]
+    assert actual_order[:5] == expected_order, f"Unexpected call order: {actual_order[:5]}"
+    assert "approve_setup_plan" not in actual_order
+    assert "execute_setup_plan" not in actual_order
+
 
 def test_web_workflow_blocks_when_pending_approval_is_not_reached():
     """When the LLM stops after create_setup_plan and the explicit get_setup_plan
@@ -213,3 +226,16 @@ def test_web_workflow_blocks_when_pending_approval_is_not_reached():
     called_tools = {c[0] for c in fake_mcp.calls}
     assert "approve_setup_plan" not in called_tools
     assert "execute_setup_plan" not in called_tools
+
+    # Exact MCP call order – the explicit get_setup_plan must be present.
+    expected_order = [
+        "inspect_project",
+        "discover_requirements",
+        "get_preflight",
+        "create_setup_plan",
+        "get_setup_plan",
+    ]
+    actual_order = [c[0] for c in fake_mcp.calls]
+    assert actual_order[:5] == expected_order, f"Unexpected call order: {actual_order[:5]}"
+    assert "approve_setup_plan" not in actual_order
+    assert "execute_setup_plan" not in actual_order
