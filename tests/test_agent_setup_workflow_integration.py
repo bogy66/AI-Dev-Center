@@ -318,12 +318,17 @@ def test_explicit_get_call_error_handling():
     the workflow must report a genuine failure."""
     responses = [
         '{"tool_calls":[{"name":"inspect_project","arguments":{}}]}',
+        '{"tool_calls":[{"name":"discover_requirements","arguments":{}}]}',
+        '{"tool_calls":[{"name":"get_preflight","arguments":{}}]}',
         '{"tool_calls":[{"name":"create_setup_plan","arguments":{}}]}',
+        # LLM stops here; workflow must bridge the gap.
     ]
     llm = FakeLLM(responses)
     # get_setup_plan will raise an error (simulated by handler returning {"error":...})
     error_server = FakeMCPServer(handlers={
         "inspect_project": lambda **kwargs: {"status": "ok"},
+        "discover_requirements": lambda **kwargs: {"status": "ok", "requirements": []},
+        "get_preflight": lambda **kwargs: {"status": "ok", "preflight": {}},
         "create_setup_plan": lambda **kwargs: {"status": "ok", "plan_id": "plan-1"},
         "get_setup_plan": lambda **kwargs: {"error": "simulated get_setup_plan failure"},
         "approve_setup_plan": lambda **kwargs: {"status": "approved"},
@@ -336,6 +341,11 @@ def test_explicit_get_call_error_handling():
     assert result.workflow_status == "failed"
     assert "simulated get_setup_plan failure" in (result.error_message or "")
     assert result.approval_required is False
+
+    # get_setup_plan must have been called (the explicit bridge).
+    get_calls = [c for c in error_server.calls if c[0] == "get_setup_plan"]
+    assert len(get_calls) >= 1
+
     # No approve or execute calls must have been made.
     called_tools = {c[0] for c in error_server.calls}
     assert "approve_setup_plan" not in called_tools
