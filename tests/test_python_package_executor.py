@@ -1,4 +1,5 @@
 import subprocess
+import sys
 
 import pytest
 
@@ -8,6 +9,7 @@ from app.python_package_executor import (
     PythonPackageExecutor,
     RequirementIdMissingError,
     SubprocessCommandRunner,
+    UnsupportedInstallMethodError,
 )
 from app.requirement_model import SetupStep
 from app.setup_executor import StepNotApprovedError
@@ -40,6 +42,7 @@ def make_step(**overrides):
         "id": "step-1",
         "requirement_id": "req-1",
         "action": "install",
+        "install_method": "python_package",
         "package": "requests",
         "version": None,
         "command": None,
@@ -57,20 +60,45 @@ def test_approved_package_runner_gets_correct_argv():
 
     result = executor.execute(step)
 
-    assert runner.calls == [["python", "-m", "pip", "install", "requests"]]
+    assert runner.calls == [[sys.executable, "-m", "pip", "install", "requests"]]
     assert result.success is True
     assert result.verification_passed is True
 
 
-def test_approved_package_with_version_passes_version_to_pip():
+@pytest.mark.parametrize(
+    "version",
+    [">=2.0", "<=2.0", ">2.0", "<2.0", "!=2.0", "==2.0"],
+)
+def test_approved_package_with_comparator_passes_version_to_pip(version):
     runner = FakeRunner()
     verifier = FakeVerifier(True)
     executor = PythonPackageExecutor(runner=runner, verifier=verifier)
-    step = make_step(version=">=2.0")
+    step = make_step(version=version)
 
     executor.execute(step)
 
-    assert runner.calls == [["python", "-m", "pip", "install", "requests>=2.0"]]
+    assert runner.calls == [[sys.executable, "-m", "pip", "install", f"requests{version}"]]
+
+
+def test_approved_package_with_plain_version_normalizes_to_exact_pin():
+    runner = FakeRunner()
+    verifier = FakeVerifier(True)
+    executor = PythonPackageExecutor(runner=runner, verifier=verifier)
+    step = make_step(version="1.2.3")
+
+    executor.execute(step)
+
+    assert runner.calls == [[sys.executable, "-m", "pip", "install", "requests==1.2.3"]]
+
+
+def test_structured_install_method_can_leave_version_in_separate_field():
+    runner = FakeRunner()
+    executor = PythonPackageExecutor(runner=runner, verifier=FakeVerifier(True))
+    step = make_step(install_method="pip install requests", version="1.2.3")
+
+    executor.execute(step)
+
+    assert runner.calls == [[sys.executable, "-m", "pip", "install", "requests==1.2.3"]]
 
 
 def test_not_approved_raises_and_runner_not_called():
@@ -120,8 +148,60 @@ def test_arbitrary_step_command_ignored():
 
     executor.execute(step)
 
-    assert runner.calls == [["python", "-m", "pip", "install", "requests"]]
+    assert runner.calls == [[sys.executable, "-m", "pip", "install", "requests"]]
     assert "echo" not in runner.calls[0]
+
+
+def test_unsupported_install_method_raises_and_runner_not_called():
+    runner = FakeRunner()
+    verifier = FakeVerifier(True)
+    executor = PythonPackageExecutor(runner=runner, verifier=verifier)
+    step = make_step(install_method="apt install requests")
+
+    with pytest.raises(UnsupportedInstallMethodError):
+        executor.execute(step)
+
+    assert runner.calls == []
+    assert verifier.calls == []
+
+
+@pytest.mark.parametrize(
+    "install_method",
+    [
+        "pip",
+        "python_package",
+        "pip install requests",
+        "python -m pip install requests",
+    ],
+)
+def test_supported_python_install_methods_use_structured_pip_command(install_method):
+    runner = FakeRunner()
+    executor = PythonPackageExecutor(runner=runner, verifier=FakeVerifier(True))
+
+    executor.execute(make_step(install_method=install_method))
+
+    assert runner.calls == [[sys.executable, "-m", "pip", "install", "requests"]]
+
+
+@pytest.mark.parametrize(
+    "install_method",
+    [
+        None,
+        "",
+        "pip install other-package",
+        "pip install --user requests",
+        "pip install requests; echo pwned",
+        "python -c 'print(1)'",
+    ],
+)
+def test_unsupported_or_mismatched_install_methods_are_rejected(install_method):
+    runner = FakeRunner()
+    executor = PythonPackageExecutor(runner=runner, verifier=FakeVerifier(True))
+
+    with pytest.raises(UnsupportedInstallMethodError):
+        executor.execute(make_step(install_method=install_method))
+
+    assert runner.calls == []
 
 
 def test_subprocess_runner_forwards_shell_false(monkeypatch):
@@ -135,9 +215,9 @@ def test_subprocess_runner_forwards_shell_false(monkeypatch):
     monkeypatch.setattr("app.python_package_executor.subprocess.run", fake_run)
 
     runner = SubprocessCommandRunner()
-    result = runner.run(["python", "-m", "pip", "install", "requests"])
+    result = runner.run([sys.executable, "-m", "pip", "install", "requests"])
 
-    assert captured["args"] == ["python", "-m", "pip", "install", "requests"]
+    assert captured["args"] == [sys.executable, "-m", "pip", "install", "requests"]
     assert captured["kwargs"]["shell"] is False
     assert captured["kwargs"]["check"] is False
     assert captured["kwargs"]["text"] is True
@@ -196,6 +276,61 @@ def test_verification_failure():
     assert result.success is False
     assert result.verification_passed is False
     assert "verification failed" in result.message
+
+
+def test_default_verifier_passes_when_package_metadata_exists(monkeypatch):
+    runner = FakeRunner(returncode=0)
+    executor = PythonPackageExecutor(runner=runner)
+    step = make_step()
+
+    monkeypatch.setattr(
+        "app.python_package_executor.metadata.version",
+        lambda package: "1.0.0",
+    )
+
+    result = executor.execute(step)
+
+    assert result.success is True
+    assert result.verification_passed is True
+
+
+def test_default_verifier_fails_when_package_metadata_is_missing(monkeypatch):
+    runner = FakeRunner(returncode=0)
+    executor = PythonPackageExecutor(runner=runner)
+    step = make_step()
+
+    def missing_package(package):
+        raise __import__("importlib").metadata.PackageNotFoundError(package)
+
+    monkeypatch.setattr(
+        "app.python_package_executor.metadata.version",
+        missing_package,
+    )
+
+    result = executor.execute(step)
+
+    assert result.success is False
+    assert result.verification_passed is False
+
+
+def test_verification_after_is_never_executed(monkeypatch):
+    runner = FakeRunner(returncode=0)
+    verifier = FakeVerifier(True)
+    executor = PythonPackageExecutor(runner=runner, verifier=verifier)
+    step = make_step(verification_after="echo pwned")
+
+    def subprocess_must_not_run(*args, **kwargs):
+        pytest.fail("verification_after must not be executed as a command")
+
+    monkeypatch.setattr(
+        "app.python_package_executor.subprocess.run",
+        subprocess_must_not_run,
+    )
+
+    executor.execute(step)
+
+    assert runner.calls == [[sys.executable, "-m", "pip", "install", "requests"]]
+    assert verifier.calls == [step]
 
 
 def test_input_step_unchanged():
