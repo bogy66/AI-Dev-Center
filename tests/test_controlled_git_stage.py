@@ -153,6 +153,61 @@ def test_success_is_persisted_and_second_call_does_not_commit_again(tmp_path):
     assert state["change_provenance"]["run-1"]
 
 
+def test_commit_state_crash_recovers_only_proven_run_commit(tmp_path, monkeypatch):
+    service, manager, _ = _approved_service(tmp_path)
+    real_persist = manager.persist_git_commit_result
+    crashed = {"done": False}
+
+    def crash_once(state, run_id, result):
+        if result.get("status") == "committed" and not crashed["done"]:
+            crashed["done"] = True
+            raise RuntimeError("simulated state crash")
+        return real_persist(state, run_id, result)
+
+    monkeypatch.setattr(manager, "persist_git_commit_result", crash_once)
+    with pytest.raises(RuntimeError, match="state crash"):
+        service.commit_approved_run("run-1", tmp_path, "recoverable")
+    run_commit = _git(tmp_path, "rev-parse", "HEAD").stdout.strip()
+    assert manager.get_execution_state("run-1", "git")["status"] == "started"
+
+    recovered = ProjectSetupApplicationService(
+        Mock(), workflow_manager=WorkflowManager(manager.storage),
+    ).commit_approved_run("run-1", tmp_path, "recoverable")
+
+    assert recovered.status == "committed"
+    assert recovered.commit_hash == run_commit
+    state = WorkflowManager(manager.storage).load()
+    assert state["git_commit_results"]["run-1"]["commit_hash"] == run_commit
+    assert state["execution_lifecycles"]["run-1"]["git"]["recovered"] is True
+
+
+def test_foreign_new_head_is_not_adopted_as_run_commit_after_state_crash(tmp_path, monkeypatch):
+    service, manager, _ = _approved_service(tmp_path)
+    real_persist = manager.persist_git_commit_result
+
+    def crash_commit_state(state, run_id, result):
+        if result.get("status") == "committed":
+            raise RuntimeError("simulated state crash")
+        return real_persist(state, run_id, result)
+
+    monkeypatch.setattr(manager, "persist_git_commit_result", crash_commit_state)
+    with pytest.raises(RuntimeError):
+        service.commit_approved_run("run-1", tmp_path, "recoverable")
+    run_commit = _git(tmp_path, "rev-parse", "HEAD").stdout.strip()
+    foreign = tmp_path / "foreign.txt"
+    foreign.write_text("foreign\n", encoding="utf-8")
+    _git(tmp_path, "add", "--", "foreign.txt")
+    _git(tmp_path, "commit", "-m", "foreign")
+    foreign_head = _git(tmp_path, "rev-parse", "HEAD").stdout.strip()
+
+    recovered = ProjectSetupApplicationService(
+        Mock(), workflow_manager=WorkflowManager(manager.storage),
+    ).commit_approved_run("run-1", tmp_path, "recoverable")
+
+    assert recovered.commit_hash == run_commit
+    assert recovered.commit_hash != foreign_head
+
+
 def test_nothing_to_commit_is_structured_and_persisted(tmp_path):
     service, manager, path = _approved_service(tmp_path, content="before\n")
 

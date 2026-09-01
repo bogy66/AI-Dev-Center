@@ -20,6 +20,7 @@ from app.setup_planner import SetupPlanner
 from app.toolchain_materializer import ToolchainMaterializer
 from app.development_testing_stage import DevelopmentTestingResult, DevelopmentTestingStage
 from app.controlled_rework_stage import ControlledReworkResult, ControlledReworkStage
+from app.diagnostic_trace import DiagnosticTraceError
 
 
 class WorkflowExecutionError(Exception):
@@ -90,10 +91,13 @@ class DevelopmentWorkflow:
 
     def _trace(self, run_id, phase, event_type, status, summary, **kwargs):
         if self._diagnostic_trace is not None:
-            self._diagnostic_trace.record(
-                run_id, phase, event_type, status, summary,
-                source="development_workflow", **kwargs,
-            )
+            try:
+                self._diagnostic_trace.record(
+                    run_id, phase, event_type, status, summary,
+                    source="development_workflow", **kwargs,
+                )
+            except DiagnosticTraceError:
+                return None
 
     def run(self, project_info: object, project_id: str, run_id: str | None = None) -> WorkflowResult:
         """Run discovery through Council-based planning only.

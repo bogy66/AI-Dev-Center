@@ -18,6 +18,10 @@ Der Central Diagnostic Trace ergänzt den fachlichen Workflow als persistente, r
 
 Read-only kann der Central Trace für eine Web-Session über `GET /api/workflow/<session_id>/diagnostic-trace` abgerufen werden. Der Adapter delegiert dabei an den kanonischen Application Service und öffnet keine frei wählbaren Trace-Dateien.
 
+Mutierende kanonische Ausführungen sind pro normalisiertem Projektpfad exklusiv: Setup, Development/Testing/Rework, Controlled Git und Controlled Publish können für denselben Projektbestand nicht gleichzeitig laufen. Ihr run- und stage-spezifischer Lifecycle (`started`, `completed`, `failed`, `recovery_required`) wird im bestehenden Workflow State persistiert. Bleibt nach Prozessabbruch ein `started`-Zustand ohne lokalen Owner zurück, wird die Mutation nicht automatisch wiederholt; ein erneuter Request stoppt kontrolliert mit `recovery_required`. Damit werden insbesondere nicht-idempotente Setup-, LLM- und Dateioperationen nicht blind erneut ausgeführt. Planning bleibt davon getrennt und read-only. Final Approval und Publish Approval bleiben eigenständige menschliche Grenzen.
+
+Controlled Git markiert einen erzeugten Run-Commit zusätzlich lokal und bindet eine eng begrenzte Crash-Recovery an den vorher persistierten HEAD, die exakten Provenance-Pfade und deren finale Hashes. Ein beliebiger aktueller oder fremder Commit genügt nie als Recovery-Beweis. Der aktuelle Web-Start nutzt einen einzelnen Uvicorn-Worker; die Projekt-Ownership ist daher eine Garantie des unterstützten lokalen Single-Process-Betriebs und kein Distributed-Lock- oder Multi-Node-Consensus-System.
+
 ## Kanonischer Setup-Flow
 
 ```text

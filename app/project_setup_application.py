@@ -19,6 +19,11 @@ from app.controlled_git_stage import ControlledGitStage, GitCommitRequest, GitCo
 from app.controlled_publish_stage import ControlledPublishStage, PublishRequest, PublishResult
 from app.publish_approval import PublishApprovalResult
 from app.diagnostic_trace import DiagnosticTrace, DiagnosticTraceStore
+from app.diagnostic_trace import DiagnosticTraceError
+from app.canonical_execution import (
+    PROCESS_OWNER_ID, ConcurrentExecutionError, ExecutionReentryError,
+    RecoveryRequiredError, acquire_project_execution,
+)
 
 
 class ProjectSetupApplicationService:
@@ -44,10 +49,13 @@ class ProjectSetupApplicationService:
             self._development_workflow.set_diagnostic_trace(self._diagnostic_trace)
 
     def _trace(self, run_id, phase, event_type, status, summary, **kwargs):
-        return self._diagnostic_trace.record(
-            run_id, phase, event_type, status, summary,
-            source="project_setup_application", **kwargs,
-        )
+        try:
+            return self._diagnostic_trace.record(
+                run_id, phase, event_type, status, summary,
+                source="project_setup_application", **kwargs,
+            )
+        except DiagnosticTraceError:
+            return None
 
     def get_diagnostic_trace(self, run_id: str):
         """Return the ordered, read-only central trace for one run."""
@@ -108,26 +116,57 @@ class ProjectSetupApplicationService:
         if not isinstance(task, str) or not task.strip():
             raise ValueError("task must be a non-empty string")
 
+        execution_run_id = run_id or plan.id
         request = DevelopmentRequest(
             project_id=project_id,
             project_path=project_path,
             task=task,
-            run_id=run_id or plan.id,
-            provenance_recorder=RunChangeProvenance(self._workflow_manager, run_id or plan.id, project_path),
+            run_id=execution_run_id,
+            provenance_recorder=RunChangeProvenance(self._workflow_manager, execution_run_id, project_path),
         )
-        result = self._development_workflow.execute_approved_and_run_development(
-            plan,
-            request,
-        )
-        approval = self._final_approval_for(
-            run_id or plan.id,
-            result.status,
-        )
+        stage = "development"
+        try:
+            lease = acquire_project_execution(project_path, execution_run_id, stage)
+        except ConcurrentExecutionError:
+            self._trace(execution_run_id, "workflow_end", "blocked", "blocked", "Concurrent mutating execution rejected", details={"execution_stage": stage})
+            raise
+        try:
+            self._workflow_manager.begin_execution(
+                execution_run_id, stage, lease.project_root, PROCESS_OWNER_ID,
+            )
+        except RecoveryRequiredError:
+            lease.release()
+            self._trace(execution_run_id, "workflow_end", "blocked", "recovery_required", "Execution re-entry rejected", details={"execution_stage": stage})
+            raise
+        except ExecutionReentryError:
+            lease.release()
+            self._trace(execution_run_id, "workflow_end", "blocked", "blocked", "Execution re-entry rejected", details={"execution_stage": stage})
+            raise
+        self._trace(execution_run_id, "setup_execution", "started", "started", "Mutating execution lifecycle started", details={"execution_stage": stage})
+        try:
+            result = self._development_workflow.execute_approved_and_run_development(
+                plan, request,
+            )
+            approval = self._workflow_manager.complete_development_execution(
+                execution_run_id, PROCESS_OWNER_ID, result.status,
+            )
+            if approval is None:
+                approval = FinalApprovalResult(execution_run_id, "not_applicable", False, False)
+        except Exception as error:
+            self._workflow_manager.finish_execution(
+                execution_run_id, stage, PROCESS_OWNER_ID, "failed",
+                type(error).__name__,
+            )
+            self._trace(execution_run_id, "workflow_end", "failed", "failed", "Mutating execution failed", details={"execution_stage": stage})
+            raise
+        finally:
+            lease.release()
+        self._trace(execution_run_id, "workflow_end", "completed", "completed", "Mutating execution lifecycle completed", details={"execution_stage": stage})
         from dataclasses import replace
         approval_type = approval.status if approval.status in {"pending", "approved", "rejected"} else "completed"
-        self._trace(run_id or plan.id, "final_approval", approval_type, approval.status if approval.status in {"pending", "approved", "rejected"} else "completed", f"Final approval state: {approval.status}", related_result_id=f"final-approval:{run_id or plan.id}:{approval.status}")
+        self._trace(execution_run_id, "final_approval", approval_type, approval.status if approval.status in {"pending", "approved", "rejected"} else "completed", f"Final approval state: {approval.status}", related_result_id=f"final-approval:{execution_run_id}:{approval.status}")
         end_state = "final_approval_pending" if approval.status == "pending" else result.status
-        self._trace(run_id or plan.id, "workflow_end", "completed", "pending" if approval.status == "pending" else "completed", f"Workflow stopped at {end_state}", details={"end_state": end_state}, related_result_id=f"workflow-end:{run_id or plan.id}:{end_state}")
+        self._trace(execution_run_id, "workflow_end", "completed", "pending" if approval.status == "pending" else "completed", f"Workflow stopped at {end_state}", details={"end_state": end_state}, related_result_id=f"workflow-end:{execution_run_id}:{end_state}")
         return replace(result, final_approval_result=approval)
 
     def decide_final_approval(
@@ -150,30 +189,79 @@ class ProjectSetupApplicationService:
     ) -> GitCommitResult:
         """Run the explicit post-approval local Git stage exactly once."""
         self._trace(run_id, "controlled_git", "requested", "started", "Controlled Git stage requested", related_result_id=f"git:{run_id}:requested")
-        with self._workflow_manager.git_stage_transaction():
-            state = self._workflow_manager.load()
-            persisted = state.get("git_commit_results", {}).get(run_id)
-            if persisted and persisted.get("status") in {"committed", "nothing_to_commit"}:
-                result = GitCommitResult.from_record(persisted)
+        state = self._workflow_manager.load()
+        persisted = state.get("git_commit_results", {}).get(run_id)
+        if persisted and persisted.get("status") in {"committed", "nothing_to_commit"}:
+            result = GitCommitResult.from_record(persisted)
+            self._trace_git_result(result)
+            return result
+        try:
+            lease = acquire_project_execution(project_root, run_id, "git")
+        except ConcurrentExecutionError:
+            self._trace(run_id, "controlled_git", "blocked", "blocked", "Concurrent Git execution rejected", details={"execution_stage": "git"})
+            raise
+        result = None
+        try:
+            lifecycle = self._workflow_manager.get_execution_state(run_id, "git")
+            if lifecycle.get("status") == "started":
+                request = self._git_request(state, run_id, project_root, commit_message)
+                baseline = (lifecycle.get("metadata") or {}).get("baseline_head")
+                result = self._controlled_git_stage.recover_committed_result(request, baseline)
+                if result is None:
+                    self._workflow_manager.require_recovery(run_id, "git")
+                    raise RecoveryRequiredError("Git execution requires manual recovery")
+                with self._workflow_manager.git_stage_transaction():
+                    recovered_state = self._workflow_manager.load()
+                    self._workflow_manager.persist_git_commit_result(
+                        recovered_state, run_id, result.to_record(),
+                    )
+                    self._workflow_manager.create_publish_approval(run_id)
+                self._workflow_manager.complete_recovered_execution(
+                    run_id, "git", PROCESS_OWNER_ID,
+                )
                 self._trace_git_result(result)
                 return result
-            approval = state.get("final_approvals", {}).get(run_id, {})
-            request = GitCommitRequest(
-                run_id=run_id,
-                project_root=project_root,
-                commit_message=commit_message,
-                development_status=approval.get("development_status", "missing"),
-                final_approval_status=approval.get("status", "missing"),
-                ready_for_git=approval.get("status") == "approved",
-                provenance=state.get("change_provenance", {}).get(run_id, {}),
-                all_provenance=state.get("change_provenance", {}),
+            baseline_head = self._controlled_git_stage.current_head(project_root)
+            if not isinstance(baseline_head, str):
+                baseline_head = None
+            self._workflow_manager.begin_execution(
+                run_id, "git", lease.project_root, PROCESS_OWNER_ID,
+                {"baseline_head": baseline_head},
             )
-            result = self._controlled_git_stage.run(request)
-            self._workflow_manager.persist_git_commit_result(
-                state, run_id, result.to_record(),
+            with self._workflow_manager.git_stage_transaction():
+                state = self._workflow_manager.load()
+                request = self._git_request(state, run_id, project_root, commit_message)
+                result = self._controlled_git_stage.run(request)
+                self._workflow_manager.persist_git_commit_result(
+                    state, run_id, result.to_record(),
+                )
+                if result.status == "committed":
+                    self._workflow_manager.create_publish_approval(run_id)
+            terminal = "completed" if result.status in {"committed", "nothing_to_commit"} else "failed"
+            self._workflow_manager.finish_execution(
+                run_id, "git", PROCESS_OWNER_ID, terminal,
             )
-            if result.status == "committed":
-                self._workflow_manager.create_publish_approval(run_id)
+        except RecoveryRequiredError:
+            self._trace(run_id, "controlled_git", "blocked", "recovery_required", "Git execution requires recovery", details={"execution_stage": "git"})
+            raise
+        except ExecutionReentryError:
+            self._trace(run_id, "controlled_git", "blocked", "blocked", "Git execution re-entry rejected", details={"execution_stage": "git"})
+            raise
+        except Exception as error:
+            lifecycle = self._workflow_manager.get_execution_state(run_id, "git")
+            # A successful commit followed by a state-save failure is an
+            # ambiguous crash window.  Preserve STARTED so the next process
+            # requires proof-based recovery instead of recording a retryable
+            # controlled failure.
+            if lifecycle.get("status") == "started" and not (
+                result is not None and result.status == "committed"
+            ):
+                self._workflow_manager.finish_execution(
+                    run_id, "git", PROCESS_OWNER_ID, "failed", type(error).__name__,
+                )
+            raise
+        finally:
+            lease.release()
         self._trace_git_result(result)
         if result.status == "committed":
             self._trace(run_id, "publish_approval", "pending", "pending", "Publish approval is pending", related_result_id=f"publish-approval:{run_id}:pending")
@@ -181,6 +269,19 @@ class ProjectSetupApplicationService:
         else:
             self._trace(run_id, "workflow_end", "completed", "failed" if result.status == "failed" else "completed", f"Workflow stopped after Controlled Git: {result.status}", details={"end_state": f"git_{result.status}"}, related_result_id=f"workflow-end:{run_id}:git-{result.status}")
         return result
+
+    @staticmethod
+    def _git_request(state, run_id, project_root, commit_message):
+        approval = state.get("final_approvals", {}).get(run_id, {})
+        return GitCommitRequest(
+            run_id=run_id, project_root=project_root,
+            commit_message=commit_message,
+            development_status=approval.get("development_status", "missing"),
+            final_approval_status=approval.get("status", "missing"),
+            ready_for_git=approval.get("status") == "approved",
+            provenance=state.get("change_provenance", {}).get(run_id, {}),
+            all_provenance=state.get("change_provenance", {}),
+        )
 
     def _trace_git_result(self, result: GitCommitResult):
         event_type = result.status if result.status in {"committed", "nothing_to_commit", "failed"} else "completed"
@@ -204,32 +305,62 @@ class ProjectSetupApplicationService:
     ) -> PublishResult:
         """Run the explicit post-publish-approval remote stage exactly once."""
         self._trace(run_id, "controlled_publish", "requested", "started", "Controlled Publish stage requested", details={"remote": remote if isinstance(remote, str) and "://" not in remote else ""}, related_result_id=f"publish:{run_id}:requested")
-        with self._workflow_manager.git_stage_transaction():
-            state = self._workflow_manager.load()
-            persisted = state.get("publish_results", {}).get(run_id)
-            if persisted and persisted.get("status") in {"published", "already_published"}:
-                result = PublishResult.from_record(persisted, status="already_published")
-                self._trace_publish_result(result)
-                return result
-            commit = state.get("git_commit_results", {}).get(run_id, {})
-            approval = state.get("publish_approvals", {}).get(run_id, {})
-            request = PublishRequest(
-                run_id=run_id,
-                project_root=project_root,
-                remote=remote,
-                git_commit_status=commit.get("status", "missing"),
-                local_commit_hash=commit.get("commit_hash"),
-                ready_for_publish=(
-                    commit.get("status") == "committed"
-                    and bool(commit.get("commit_hash"))
-                    and approval.get("ready_for_publish") is True
-                ),
-                publish_approval_status=approval.get("status", "missing"),
+        state = self._workflow_manager.load()
+        persisted = state.get("publish_results", {}).get(run_id)
+        if persisted and persisted.get("status") in {"published", "already_published"}:
+            result = PublishResult.from_record(persisted, status="already_published")
+            self._trace_publish_result(result)
+            return result
+        try:
+            lease = acquire_project_execution(project_root, run_id, "publish")
+        except ConcurrentExecutionError:
+            self._trace(run_id, "controlled_publish", "blocked", "blocked", "Concurrent publish execution rejected", details={"execution_stage": "publish"})
+            raise
+        result = None
+        try:
+            lifecycle = self._workflow_manager.get_execution_state(run_id, "publish")
+            if lifecycle.get("status") in {"started", "recovery_required"}:
+                self._workflow_manager.resume_publish_execution(run_id, PROCESS_OWNER_ID)
+            else:
+                self._workflow_manager.begin_execution(
+                    run_id, "publish", lease.project_root, PROCESS_OWNER_ID,
+                )
+            with self._workflow_manager.git_stage_transaction():
+                state = self._workflow_manager.load()
+                commit = state.get("git_commit_results", {}).get(run_id, {})
+                approval = state.get("publish_approvals", {}).get(run_id, {})
+                request = PublishRequest(
+                    run_id=run_id, project_root=project_root, remote=remote,
+                    git_commit_status=commit.get("status", "missing"),
+                    local_commit_hash=commit.get("commit_hash"),
+                    ready_for_publish=(commit.get("status") == "committed" and bool(commit.get("commit_hash")) and approval.get("ready_for_publish") is True),
+                    publish_approval_status=approval.get("status", "missing"),
+                )
+                result = self._controlled_publish_stage.run(request)
+                self._workflow_manager.persist_publish_result(
+                    state, run_id, result.to_record(),
+                )
+            terminal = "completed" if result.status in {"published", "already_published"} else "failed"
+            self._workflow_manager.finish_execution(
+                run_id, "publish", PROCESS_OWNER_ID, terminal,
             )
-            result = self._controlled_publish_stage.run(request)
-            self._workflow_manager.persist_publish_result(
-                state, run_id, result.to_record(),
-            )
+        except RecoveryRequiredError:
+            self._trace(run_id, "controlled_publish", "blocked", "recovery_required", "Publish execution requires recovery", details={"execution_stage": "publish"})
+            raise
+        except ExecutionReentryError:
+            self._trace(run_id, "controlled_publish", "blocked", "blocked", "Publish execution re-entry rejected", details={"execution_stage": "publish"})
+            raise
+        except Exception as error:
+            lifecycle = self._workflow_manager.get_execution_state(run_id, "publish")
+            if lifecycle.get("status") == "started" and not (
+                result is not None and result.status in {"published", "already_published"}
+            ):
+                self._workflow_manager.finish_execution(
+                    run_id, "publish", PROCESS_OWNER_ID, "failed", type(error).__name__,
+                )
+            raise
+        finally:
+            lease.release()
         self._trace_publish_result(result)
         end_state = result.status if result.status in {"published", "already_published"} else "publish_failed"
         self._trace(run_id, "workflow_end", "completed", "published" if result.status in {"published", "already_published"} else "failed", f"Workflow stopped after publish: {result.status}", details={"end_state": end_state}, related_result_id=f"workflow-end:{run_id}:{end_state}")

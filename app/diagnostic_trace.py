@@ -135,7 +135,7 @@ EVENT_TYPES = frozenset({
     "failed", "timeout", "rework_required", "committed", "published",
     "already_published", "nothing_to_commit", "requested",
 })
-STATUSES = EVENT_TYPES | frozenset({"accepted", "passed", "success", "incomplete", "review_failed", "ready_for_git", "ready_for_publish"})
+STATUSES = EVENT_TYPES | frozenset({"accepted", "passed", "success", "incomplete", "review_failed", "ready_for_git", "ready_for_publish", "recovery_required"})
 DETAIL_KEYS = frozenset({
     "project_id", "project_type_count", "file_count", "warning_count",
     "requirement_count", "error_count", "missing_count", "result_count",
@@ -145,6 +145,7 @@ DETAIL_KEYS = frozenset({
     "passed_count", "failed_count", "skipped_count", "duration_seconds",
     "rework_executed", "cycle", "commit_hash", "remote", "remote_ref",
     "published_commit_hash", "blockers", "failure_summary", "end_state",
+    "execution_stage",
 })
 
 _locks_guard = threading.Lock()

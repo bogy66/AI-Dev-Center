@@ -25,6 +25,9 @@ from app.local_secret_store import LocalSecretStore
 from app.project_inspector import ProjectInspector
 from app.project_test_runner import ProjectTestRunner
 from app.project_setup_application import ProjectSetupApplicationService
+from app.canonical_execution import (
+    ConcurrentExecutionError, ExecutionReentryError, RecoveryRequiredError,
+)
 from app.mcp_server import MCPServer
 from app.python_package_executor import PythonPackageExecutor
 from app.requirement_preflight import RequirementPreflight
@@ -635,6 +638,12 @@ async def execute_canonical_workflow(session_id: str):
             session.task_description,
             session.run_id,
         )
+    except ConcurrentExecutionError as exc:
+        return JSONResponse(content={"status": "concurrent_execution_rejected", "error": str(exc)}, status_code=409)
+    except RecoveryRequiredError as exc:
+        return JSONResponse(content={"status": "recovery_required", "error": str(exc)}, status_code=409)
+    except ExecutionReentryError as exc:
+        return JSONResponse(content={"status": "reentry_rejected", "error": str(exc)}, status_code=409)
     except Exception as exc:
         return JSONResponse(content={"error": str(exc)}, status_code=409)
 

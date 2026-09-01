@@ -2,7 +2,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.logger import get_logger
 from app.state_lock import get_state_lock
@@ -49,6 +49,7 @@ class WorkflowManager:
             "git_commit_results": {},
             "publish_approvals": {},
             "publish_results": {},
+            "execution_lifecycles": {},
         }
 
     def _merge_with_defaults(self, default, state):
@@ -279,3 +280,127 @@ class WorkflowManager:
     def persist_publish_result(self, state, run_id, result):
         state.setdefault("publish_results", {})[run_id] = result
         self.save(state)
+
+    @staticmethod
+    def _execution_record(state, run_id, stage):
+        return state.setdefault("execution_lifecycles", {}).setdefault(run_id, {}).get(stage)
+
+    def get_execution_state(self, run_id, stage="development"):
+        """Read one lifecycle without mutating persistent state."""
+        state = self.load()
+        record = state.get("execution_lifecycles", {}).get(run_id, {}).get(stage)
+        return dict(record) if isinstance(record, dict) else {
+            "run_id": run_id, "stage": stage, "status": "not_started"
+        }
+
+    def begin_execution(self, run_id, stage, project_root, owner_id, metadata=None):
+        from app.canonical_execution import ExecutionReentryError, RecoveryRequiredError
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            state = self.load()
+            stages = state.setdefault("execution_lifecycles", {}).setdefault(run_id, {})
+            record = stages.get(stage)
+            if isinstance(record, dict):
+                if record.get("status") == "started":
+                    record.update({"status": "recovery_required", "interrupted_at": now})
+                    self.save(state)
+                    raise RecoveryRequiredError(
+                        f"{stage} execution was previously started and requires recovery"
+                    )
+                raise ExecutionReentryError(
+                    f"{stage} execution is already {record.get('status', 'recorded')}"
+                )
+            record = {
+                "run_id": run_id, "stage": stage, "status": "started",
+                "project_root": str(Path(project_root).resolve(strict=False)),
+                "owner_id": owner_id, "started_at": now,
+            }
+            if isinstance(metadata, dict):
+                record["metadata"] = dict(metadata)
+            stages[stage] = record
+            self.save(state)
+            return dict(record)
+
+    def finish_execution(self, run_id, stage, owner_id, status, error_type=None):
+        if status not in {"completed", "failed"}:
+            raise ValueError("execution terminal status must be completed or failed")
+        with self._lock:
+            state = self.load()
+            record = self._execution_record(state, run_id, stage)
+            if not isinstance(record, dict) or record.get("status") != "started":
+                raise ValueError("execution is not started")
+            if record.get("owner_id") != owner_id:
+                raise ValueError("execution owner does not match")
+            record["status"] = status
+            record["finished_at"] = datetime.now(timezone.utc).isoformat()
+            if error_type:
+                record["error_type"] = str(error_type)[:100]
+            self.save(state)
+            return dict(record)
+
+    def complete_development_execution(self, run_id, owner_id, development_status):
+        """Atomically complete mutation and open Final Approval when eligible."""
+        from app.final_approval import result_from_record
+        with self._lock:
+            state = self.load()
+            record = self._execution_record(state, run_id, "development")
+            if not isinstance(record, dict) or record.get("status") != "started":
+                raise ValueError("development execution is not started")
+            if record.get("owner_id") != owner_id:
+                raise ValueError("execution owner does not match")
+            approval_record = None
+            if development_status == "accepted":
+                approvals = state.setdefault("final_approvals", {})
+                approval_record = approvals.get(run_id)
+                if approval_record is None:
+                    approval_record = {
+                        "status": "pending", "development_status": "accepted",
+                        "approved_by": None, "approved_at": None, "comment": None,
+                    }
+                    approvals[run_id] = approval_record
+            record.update({
+                "status": "completed",
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+            })
+            self.save(state)
+            return result_from_record(run_id, approval_record) if approval_record else None
+
+    def require_recovery(self, run_id, stage):
+        with self._lock:
+            state = self.load()
+            record = self._execution_record(state, run_id, stage)
+            if not isinstance(record, dict):
+                return None
+            if record.get("status") == "started":
+                record["status"] = "recovery_required"
+                record["interrupted_at"] = datetime.now(timezone.utc).isoformat()
+                self.save(state)
+            return dict(record)
+
+    def complete_recovered_execution(self, run_id, stage, owner_id):
+        with self._lock:
+            state = self.load()
+            record = self._execution_record(state, run_id, stage)
+            if not isinstance(record, dict) or record.get("status") not in {"started", "recovery_required"}:
+                raise ValueError("execution is not recoverable")
+            record.update({
+                "status": "completed", "owner_id": owner_id,
+                "recovered": True,
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+            })
+            self.save(state)
+            return dict(record)
+
+    def resume_publish_execution(self, run_id, owner_id):
+        """Reclaim only the idempotently verifiable Controlled Publish stage."""
+        with self._lock:
+            state = self.load()
+            record = self._execution_record(state, run_id, "publish")
+            if not isinstance(record, dict) or record.get("status") not in {"started", "recovery_required"}:
+                raise ValueError("publish execution is not recoverable")
+            record.update({
+                "status": "started", "owner_id": owner_id,
+                "recovery_attempted_at": datetime.now(timezone.utc).isoformat(),
+            })
+            self.save(state)
+            return dict(record)

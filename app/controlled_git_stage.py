@@ -103,6 +103,15 @@ class ControlledGitStage:
         commit_hash = self._git(repo_root, "rev-parse", "HEAD")
         if commit_hash.returncode:
             return self._failed(request, ("created commit hash could not be read",), commit_hash.stderr.strip())
+        noted = self._git(
+            repo_root, "notes", "--ref=ai-dev-center", "add", "-m",
+            self._run_marker(request.run_id), commit_hash.stdout.strip(),
+        )
+        if noted.returncode:
+            return self._failed(
+                request, ("run ownership note could not be persisted",),
+                noted.stderr.strip(),
+            )
         return GitCommitResult(
             request.run_id, "committed", request.commit_message, paths,
             commit_hash.stdout.strip(), ready_for_publish=True,
@@ -113,6 +122,8 @@ class ControlledGitStage:
         blockers = []
         if not isinstance(request.run_id, str) or not request.run_id.strip():
             blockers.append("run_id is required")
+        elif any(ord(character) < 32 or ord(character) == 127 for character in request.run_id):
+            blockers.append("run_id contains control characters")
         if request.development_status != "accepted":
             blockers.append("development/testing result is not accepted")
         if request.final_approval_status != "approved":
@@ -174,6 +185,68 @@ class ControlledGitStage:
         return tuple(safe), tuple(blockers)
 
     @staticmethod
+    def _run_marker(run_id: str) -> str:
+        return f"AI-Dev-Center-Run: {run_id}"
+
+    def current_head(self, project_root) -> str | None:
+        result = self._git(Path(project_root).resolve(), "rev-parse", "HEAD")
+        return result.stdout.strip().lower() if result.returncode == 0 else None
+
+    def recover_committed_result(self, request, baseline_head):
+        """Adopt only a uniquely provable run-marked child of the saved baseline."""
+        if self._gate_blockers(request) or not baseline_head:
+            return None
+        root = Path(request.project_root).resolve()
+        repository = self._git(root, "rev-parse", "--show-toplevel")
+        if repository.returncode:
+            return None
+        repo_root = Path(repository.stdout.strip()).resolve()
+        marker = self._run_marker(request.run_id)
+        listed = self._git(repo_root, "notes", "--ref=ai-dev-center", "list")
+        candidates = tuple(
+            fields[1] for line in listed.stdout.splitlines()
+            if len(fields := line.split()) == 2
+        ) if not listed.returncode else ()
+        expected_paths = tuple(sorted(request.provenance))
+        proven = []
+        for candidate in candidates:
+            parents = self._git(repo_root, "show", "-s", "--format=%P", candidate)
+            note = self._git(repo_root, "notes", "--ref=ai-dev-center", "show", candidate)
+            changed = self._git(repo_root, "diff-tree", "--no-commit-id", "--name-only", "-r", "-z", candidate)
+            repo_paths = tuple(sorted((root / path).relative_to(repo_root).as_posix() for path in expected_paths))
+            if parents.returncode or parents.stdout.strip().lower() != baseline_head.lower():
+                continue
+            if note.returncode or note.stdout.strip() != marker:
+                continue
+            if changed.returncode or tuple(sorted(self._nul_paths(changed.stdout))) != repo_paths:
+                continue
+            if self._commit_matches_provenance(repo_root, root, candidate, request.provenance):
+                proven.append(candidate.lower())
+        if len(proven) != 1:
+            return None
+        return GitCommitResult(
+            request.run_id, "committed", request.commit_message,
+            expected_paths, proven[0], ready_for_publish=True,
+        )
+
+    def _commit_matches_provenance(self, repo_root, root, commit, provenance):
+        for relative, entry in provenance.items():
+            events = entry.get("events") if isinstance(entry, dict) else None
+            if not isinstance(entry, dict) or entry.get("project_root") != str(root) or not isinstance(events, list) or not events:
+                return False
+            final = events[-1]
+            if not isinstance(final, dict):
+                return False
+            repo_path = (root / relative).relative_to(repo_root).as_posix()
+            blob = self._git_bytes(repo_root, "show", f"{commit}:{repo_path}")
+            if final.get("file_exists_after") is True:
+                if blob.returncode or hashlib.sha256(blob.stdout).hexdigest() != final.get("content_hash_after"):
+                    return False
+            elif blob.returncode == 0:
+                return False
+        return True
+
+    @staticmethod
     def _is_mixed(request: GitCommitRequest, root: Path, relative: str) -> bool:
         for run_id, entries in request.all_provenance.items():
             if run_id == request.run_id or not isinstance(entries, dict):
@@ -199,6 +272,15 @@ class ControlledGitStage:
             )
         except OSError as error:
             return subprocess.CompletedProcess(["git", *args], 1, "", str(error))
+
+    @staticmethod
+    def _git_bytes(cwd: Path, *args: str):
+        try:
+            return subprocess.run(
+                ["git", *args], cwd=cwd, capture_output=True, check=False,
+            )
+        except OSError as error:
+            return subprocess.CompletedProcess(["git", *args], 1, b"", str(error).encode())
 
     @staticmethod
     def _failed(request, blockers, error=None):

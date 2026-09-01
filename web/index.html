@@ -133,6 +133,10 @@
                     <p>Each canonical run has a persistent, ordered diagnostic timeline showing reached phases, structured results, separate approval boundaries, blockers and Git/publish outcomes such as pending, failed, rework_required, approved, committed and published.</p>
                     <p>Workflow State remains authoritative for decisions, while logging remains intended for developer logs. The Diagnostic Trace observes both but cannot approve setup, Git or publish. Its details are allowlisted and redacted: secrets, raw environments, request headers and full file contents are not stored.</p>
 
+                    <h3>Safe execution and recovery</h3>
+                    <p>Only one mutating canonical run can own a project path at a time. Concurrent setup, development, test application, rework, Git or publish requests for the same project are rejected, while read-only planning remains separate.</p>
+                    <p>If a process stops after mutation began but before a terminal result was saved, the persisted run becomes recovery required. AI Dev Center does not automatically repeat uncertain setup, LLM or file changes. Human approval boundaries remain separate and are never inferred from recovery state.</p>
+
                     <h3>The AI team</h3>
                     <ul>
                         <li><strong>Project Manager</strong> – Coordinates the overall task and workflow.</li>

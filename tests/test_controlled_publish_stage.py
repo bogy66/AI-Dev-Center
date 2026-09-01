@@ -127,6 +127,32 @@ def test_publish_is_idempotent_without_second_stage_call(tmp_path):
     stage.run.assert_not_called()
 
 
+def test_publish_state_crash_rechecks_remote_and_recovers_as_already_published(tmp_path, monkeypatch):
+    service, manager, local, _, _, run_hash, _ = _service(tmp_path)
+    service.decide_publish_approval("run-1", "approved")
+    real_persist = manager.persist_publish_result
+    crashed = {"done": False}
+
+    def crash_once(state, run_id, result):
+        if result.get("status") == "published" and not crashed["done"]:
+            crashed["done"] = True
+            raise RuntimeError("simulated publish state crash")
+        return real_persist(state, run_id, result)
+
+    monkeypatch.setattr(manager, "persist_publish_result", crash_once)
+    with pytest.raises(RuntimeError, match="publish state crash"):
+        service.publish_approved_run("run-1", local, "origin")
+    assert manager.get_execution_state("run-1", "publish")["status"] == "started"
+
+    recovered = ProjectSetupApplicationService(
+        Mock(), workflow_manager=WorkflowManager(manager.storage),
+    ).publish_approved_run("run-1", local, "origin")
+
+    assert recovered.status == "already_published"
+    assert recovered.published_commit_hash == run_hash
+    assert WorkflowManager(manager.storage).get_execution_state("run-1", "publish")["status"] == "completed"
+
+
 @pytest.mark.parametrize("commit_status", ["failed", "nothing_to_commit"])
 def test_unsuccessful_git_commit_result_never_becomes_ready(tmp_path, commit_status):
     service, manager, local, remote, branch, _, base_hash = _service(
