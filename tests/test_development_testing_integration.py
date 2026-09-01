@@ -40,14 +40,17 @@ def _workflow(stage, success=True):
         validator=Mock(),
         preflight=Mock(),
         executor=executor,
-        development_testing_stage=stage,
+        controlled_rework_stage=stage,
     ), executor
 
 
 def test_successful_approved_setup_runs_development_testing_once():
     stage = Mock()
     development_testing_result = SimpleNamespace(status="accepted")
-    stage.run.return_value = development_testing_result
+    stage.run.return_value = SimpleNamespace(
+        status="accepted",
+        final_result=development_testing_result,
+    )
     workflow, executor = _workflow(stage)
     request = SimpleNamespace(project_path="/project", task="add feature")
 
@@ -63,7 +66,10 @@ def test_successful_approved_setup_runs_development_testing_once():
 @pytest.mark.parametrize("status", ["rework_required", "review_failed"])
 def test_canonical_testing_status_is_returned_without_retry(status):
     stage = Mock()
-    stage.run.return_value = SimpleNamespace(status=status)
+    stage.run.return_value = SimpleNamespace(
+        status=status,
+        final_result=SimpleNamespace(status=status),
+    )
     workflow, executor = _workflow(stage)
 
     result = workflow.execute_approved_and_run_development(_plan(), Mock())
@@ -105,6 +111,38 @@ def test_development_testing_error_fails_fast_without_synthetic_result():
 
     executor.execute.assert_called_once()
     stage.run.assert_called_once()
+
+
+def test_workflow_uses_one_controlled_rework_cycle_when_the_initial_stage_requires_it():
+    initial = SimpleNamespace(
+        status="rework_required",
+        development_result=Mock(),
+        test_result=Mock(),
+        testing_stage_result=SimpleNamespace(
+            rework_request=SimpleNamespace(
+                reason="tests require rework",
+                diagnostics="failure",
+            ),
+        ),
+    )
+    final = SimpleNamespace(status="accepted")
+    stage = Mock()
+    stage.run.side_effect = [initial, final]
+    executor = Mock()
+    executor.execute.return_value = ExecutionResult("step-1", True, "ok")
+    workflow = DevelopmentWorkflow(
+        discovery=Mock(),
+        validator=Mock(),
+        preflight=Mock(),
+        executor=executor,
+        development_testing_stage=stage,
+    )
+
+    result = workflow.execute_approved_and_run_development(_plan(), Mock())
+
+    assert result.status == "accepted"
+    executor.execute.assert_called_once()
+    assert stage.run.call_count == 2
 
 
 def test_outer_workflow_uses_only_the_development_testing_boundary():

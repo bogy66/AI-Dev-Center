@@ -19,6 +19,7 @@ from app.setup_executor import ExecutionResult, SetupExecutor
 from app.setup_planner import SetupPlanner
 from app.toolchain_materializer import ToolchainMaterializer
 from app.development_testing_stage import DevelopmentTestingResult, DevelopmentTestingStage
+from app.controlled_rework_stage import ControlledReworkResult, ControlledReworkStage
 
 
 class WorkflowExecutionError(Exception):
@@ -41,11 +42,15 @@ class SetupDevelopmentTestingResult:
     """Results of approved setup execution followed by canonical testing."""
 
     setup_execution_results: tuple[ExecutionResult, ...]
-    development_testing_result: DevelopmentTestingResult
+    controlled_rework_result: ControlledReworkResult
+
+    @property
+    def development_testing_result(self) -> DevelopmentTestingResult:
+        return self.controlled_rework_result.final_result
 
     @property
     def status(self) -> str:
-        return self.development_testing_result.status
+        return self.controlled_rework_result.status
 
 
 class DevelopmentWorkflow:
@@ -61,6 +66,7 @@ class DevelopmentWorkflow:
         council: EngineeringCouncil | None = None,
         materializer: ToolchainMaterializer | None = None,
         development_testing_stage: DevelopmentTestingStage | None = None,
+        controlled_rework_stage: ControlledReworkStage | None = None,
     ) -> None:
         self._discovery = discovery
         self._validator = validator
@@ -74,6 +80,7 @@ class DevelopmentWorkflow:
         self._council = council
         self._materializer = materializer
         self._development_testing_stage = development_testing_stage
+        self._controlled_rework_stage = controlled_rework_stage
 
     def run(self, project_info: object, project_id: str) -> WorkflowResult:
         """Run discovery through Council-based planning only.
@@ -215,7 +222,12 @@ class DevelopmentWorkflow:
     ) -> SetupDevelopmentTestingResult:
         """Run development/testing only after successful approved setup."""
 
-        if self._development_testing_stage is None:
+        controlled_rework_stage = self._controlled_rework_stage
+        if controlled_rework_stage is None and self._development_testing_stage is not None:
+            controlled_rework_stage = ControlledReworkStage(
+                self._development_testing_stage,
+            )
+        if controlled_rework_stage is None:
             raise WorkflowExecutionError(
                 "No DevelopmentTestingStage has been configured."
             )
@@ -226,10 +238,10 @@ class DevelopmentWorkflow:
                 "Setup execution did not complete successfully."
             )
 
-        development_testing_result = self._development_testing_stage.run(
+        controlled_rework_result = controlled_rework_stage.run(
             development_request,
         )
         return SetupDevelopmentTestingResult(
             setup_execution_results=setup_execution_results,
-            development_testing_result=development_testing_result,
+            controlled_rework_result=controlled_rework_result,
         )
