@@ -6,14 +6,15 @@ from pathlib import Path
 
 from app.ai_config import load_ai_config
 from app.ai_requirement_discovery import AIRequirementDiscovery
-from app.dev_workflow import DevelopmentWorkflow
+from app.dev_workflow import DevelopmentWorkflow, WorkflowExecutionError
+from app.engineering_council import EngineeringCouncil
 from app.llm_provider_factory import create_llm_provider
 from app.local_secret_store import LocalSecretStore
 from app.requirement_preflight import RequirementPreflight
 from app.requirement_validator import RequirementValidator
 from app.setup_planner import SetupPlanner
+from app.toolchain_materializer import ToolchainMaterializer
 from app.workflow_plan_store import WorkflowPlanStore
-from app.dev_workflow import DevelopmentWorkflow, WorkflowExecutionError
 
 
 MAX_FILE_SIZE = 1_000_000
@@ -54,6 +55,12 @@ def read_project_files(project_path: Path) -> tuple[list[dict], list[str]]:
 
 
 def build_workflow(config):
+    council_config = config.council
+    if council_config is None or not getattr(council_config, "enabled", False):
+        raise WorkflowExecutionError(
+            "Engineering Council configuration must be enabled."
+        )
+
     secret_resolver = LocalSecretStore()
     provider = create_llm_provider(config, secret_resolver)
 
@@ -61,12 +68,18 @@ def build_workflow(config):
         llm_provider=provider,
         ai_model=config.model,
     )
+    council = EngineeringCouncil(
+        council_config=council_config,
+        secret_resolver=secret_resolver,
+    )
 
     return DevelopmentWorkflow(
         discovery=discovery,
         validator=RequirementValidator,
         preflight=RequirementPreflight,
         planner=SetupPlanner(),
+        council=council,
+        materializer=ToolchainMaterializer(),
     )
 
 

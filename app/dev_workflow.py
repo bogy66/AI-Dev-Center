@@ -1,10 +1,12 @@
-"""Deterministic development workflow with explicit approved execution."""
+"""Development workflow with Council planning and explicit approved execution."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 from app.ai_requirement_discovery import AIRequirementDiscovery
+from app.council_models import CouncilInput, CouncilResult
+from app.engineering_council import EngineeringCouncil
 from app.requirement_model import (
     DiscoveryResult,
     PreflightResult,
@@ -15,41 +17,51 @@ from app.requirement_preflight import RequirementPreflight
 from app.requirement_validator import RequirementValidator
 from app.setup_executor import ExecutionResult, SetupExecutor
 from app.setup_planner import SetupPlanner
+from app.toolchain_materializer import ToolchainMaterializer
 
 
 class WorkflowExecutionError(Exception):
-    """Raised when an approved setup plan cannot be executed safely."""
+    """Raised when the workflow cannot continue safely."""
 
 
 @dataclass(frozen=True)
 class WorkflowResult:
-    """Immutable result of discovery, validation, preflight and planning."""
+    """Immutable result of discovery through Council-based planning."""
 
     discovery_result: DiscoveryResult
     validation_result: ValidationResult
     preflight_result: PreflightResult
+    council_result: CouncilResult
     setup_plan: SetupPlan
 
 
 class DevelopmentWorkflow:
-    """Run deterministic planning and, separately, approved execution."""
+    """Run canonical planning and, separately, approved execution."""
 
     def __init__(
         self,
         discovery: AIRequirementDiscovery,
         validator: RequirementValidator,
         preflight: RequirementPreflight,
-        planner: SetupPlanner,
+        planner: SetupPlanner | None = None,
         executor: SetupExecutor | None = None,
+        council: EngineeringCouncil | None = None,
+        materializer: ToolchainMaterializer | None = None,
     ) -> None:
         self._discovery = discovery
         self._validator = validator
         self._preflight = preflight
+
+        # Transitional constructor compatibility only.
+        # The canonical planning flow no longer uses SetupPlanner.
         self._planner = planner
+
         self._executor = executor
+        self._council = council
+        self._materializer = materializer
 
     def run(self, project_info: object, project_id: str) -> WorkflowResult:
-        """Run discovery through planning only.
+        """Run discovery through Council-based planning only.
 
         This method never approves, rejects or executes setup steps.
         """
@@ -74,9 +86,28 @@ class DevelopmentWorkflow:
             project_id,
         )
 
-        setup_plan = self._planner.plan(
-            validation_result.required_requirements,
-            preflight_result,
+        if self._council is None:
+            raise WorkflowExecutionError(
+                "No Engineering Council has been configured."
+            )
+
+        if self._materializer is None:
+            raise WorkflowExecutionError(
+                "No ToolchainMaterializer has been configured."
+            )
+
+        council_input = CouncilInput(
+            requirements=validation_result.normalized_requirements,
+            preflight=preflight_result,
+            project_id=project_id,
+            project_files=self._extract_project_files(project_info),
+            validation_warnings=validation_result.warnings,
+        )
+
+        council_result = self._council.evaluate(council_input)
+
+        setup_plan = self._materializer.materialize(
+            council_result,
             project_id,
         )
 
@@ -84,8 +115,32 @@ class DevelopmentWorkflow:
             discovery_result=discovery_result,
             validation_result=validation_result,
             preflight_result=preflight_result,
+            council_result=council_result,
             setup_plan=setup_plan,
         )
+
+    @staticmethod
+    def _extract_project_files(project_info: object) -> tuple[str, ...]:
+        """Return only explicitly supplied project file paths."""
+
+        if not isinstance(project_info, dict):
+            return ()
+
+        files = project_info.get("files")
+        if not isinstance(files, (list, tuple)):
+            return ()
+
+        paths: list[str] = []
+
+        for item in files:
+            if not isinstance(item, dict):
+                continue
+
+            path = item.get("path")
+            if isinstance(path, str) and path:
+                paths.append(path)
+
+        return tuple(paths)
 
     def _validate_executable_step(self, step) -> None:
         """Reject steps that are not safe for automatic execution."""

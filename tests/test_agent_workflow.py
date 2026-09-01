@@ -66,117 +66,34 @@ class TestBuildProjectInfo:
 
 class TestInspectAndPlan:
     def test_success(self, tmp_path):
-        """Full successful flow with real file contents."""
         project = tmp_path / "proj"
         project.mkdir()
         (project / "a.py").write_text("content")
-
         wf = make_workflow()
         wf._server._project_scanner.scan.return_value = ["a.py"]
-        discovery_res = Mock(fallback_used=False)
-        wf._server._discovery.discover.return_value = discovery_res
-        wf._server._preflight.check.return_value = Mock()
         plan_mock = Mock(id="plan-1", status="pending_approval")
-        wf._server._planner.plan.return_value = plan_mock
-        wf._server._plan_store.save.return_value = (
-            "/tmp/.workflow-plans/proj/plan-1.json"
-        )
+        wf._server._development_workflow.run.return_value = Mock(setup_plan=plan_mock)
         wf._server._plan_store.load.return_value = plan_mock
-
         result = wf.inspect_and_plan("proj", str(project))
-
-        assert result.project_id == "proj"
-        assert result.inspected_files == ["a.py"]
-        assert result.discovery_fallback is False
         assert result.plan_id == "plan-1"
         assert result.setup_plan is plan_mock
-        assert result.approval_required is True
-        assert result.approval_status == "pending_approval"
         assert result.final_workflow_status == "pending_approval"
 
-    def test_discovery_fallback_blocks_before_preflight(self):
-        """When discovery uses a heuristic fallback the workflow must stop
-        immediately – no ``get_preflight`` or ``create_setup_plan``
-        may be called."""
-        wf = make_workflow()
-        wf._server._project_scanner.scan.return_value = []
-        discovery_res = Mock(fallback_used=True)
-        wf._server._discovery.discover.return_value = discovery_res
-
-        result = wf.inspect_and_plan("proj", "/tmp/proj")
-
-        assert result.discovery_fallback is True
-        assert result.final_workflow_status == "discovery_fallback_blocked"
-        assert ("Discovery fallback" in result.error_message)
-        # critical: preflight and planner must NOT have been called
-        wf._server._preflight.check.assert_not_called()
-        wf._server._planner.plan.assert_not_called()
-
-    def test_discovery_uses_project_info_shape(self, tmp_path):
-        """Verify that the discovery call receives a project-info
-        dict with the expected keys and actual file contents."""
+    def test_uses_canonical_mcp_planning_with_project_info(self, tmp_path):
         project = tmp_path / "dummy_project"
         project.mkdir()
         (project / "a.py").write_text("hello a")
-        (project / "b.py").write_text("hello b")
-
-        wf = make_workflow()
-        wf._server._project_scanner.scan.return_value = ["a.py", "b.py"]
-        discovery_res = Mock(fallback_used=False)
-        wf._server._discovery.discover.return_value = discovery_res
-        wf._server._preflight.check.return_value = Mock()
-        wf._server._planner.plan.return_value = Mock(
-            id="x", status="pending_approval"
-        )
-        wf._server._plan_store.save.return_value = (
-            "/tmp/.workflow-plans/dummy_project/x.json"
-        )
-        wf._server._plan_store.load.return_value = Mock(
-            status="pending_approval"
-        )
-
-        wf.inspect_and_plan("dummy_project", str(project))
-
-        args, _ = wf._server._discovery.discover.call_args
-        project_info = args[0]
-        assert isinstance(project_info, dict)
-        assert "project_id" in project_info
-        assert "project_path" in project_info
-        assert "files" in project_info
-        files = project_info["files"]
-        assert len(files) == 2
-        assert files[0]["path"] == "a.py"
-        assert files[0]["content"] == "hello a"
-        assert files[1]["path"] == "b.py"
-        assert files[1]["content"] == "hello b"
-
-    def test_mcp_call_sequence(self, tmp_path):
-        """Ensure the MCP tools are called in the expected order."""
-        project = tmp_path / "proj"
-        project.mkdir()
-        (project / "a.py").write_text("content")
-
         wf = make_workflow()
         wf._server._project_scanner.scan.return_value = ["a.py"]
-        discovery_res = Mock(fallback_used=False)
-        wf._server._discovery.discover.return_value = discovery_res
-        wf._server._preflight.check.return_value = Mock()
-        plan_mock = Mock(id="plan-1", status="pending_approval")
-        wf._server._planner.plan.return_value = plan_mock
-        wf._server._plan_store.save.return_value = (
-            "/tmp/.workflow-plans/proj/plan-1.json"
-        )
-        wf._server._plan_store.load.return_value = plan_mock
-
-        wf.inspect_and_plan("proj", str(project))
-
-        # Verify each collaborator was called exactly once
-        wf._server._project_scanner.scan.assert_called_once()
-        wf._server._discovery.discover.assert_called_once()
-        wf._server._preflight.check.assert_called_once()
-        wf._server._planner.plan.assert_called_once()
-        wf._server._plan_store.save.assert_called_once()
-        wf._server._plan_store.load.assert_called_once()
+        plan = Mock(id="plan-1", status="pending_approval")
+        wf._server._development_workflow.run.return_value = Mock(setup_plan=plan)
+        wf._server._plan_store.load.return_value = plan
+        wf.inspect_and_plan("dummy_project", str(project))
+        args, _ = wf._server._development_workflow.run.call_args
+        project_info = args[0]
+        assert project_info["files"] == [{"path": "a.py", "content": "hello a"}]
+        assert args[1] == "dummy_project"
+        wf._server._planner.plan.assert_not_called()
 
     def test_inspect_failure(self):
         wf = make_workflow()
@@ -187,36 +104,13 @@ class TestInspectAndPlan:
         assert result.final_workflow_status == "inspect_failed"
         assert "scan error" in result.error_message
 
-    def test_discovery_failure(self):
+    def test_canonical_planning_failure(self):
         wf = make_workflow()
         wf._server._project_scanner.scan.return_value = []
-        wf._server._discovery.discover.side_effect = RuntimeError("disc error")
-
+        wf._server._development_workflow.run.side_effect = RuntimeError("disc error")
         result = wf.inspect_and_plan("proj", "/tmp/proj")
-
-        assert result.final_workflow_status == "discovery_failed"
-        assert "disc error" in result.error_message
-
-    def test_preflight_failure(self):
-        wf = make_workflow()
-        wf._server._project_scanner.scan.return_value = []
-        wf._server._discovery.discover.return_value = Mock(fallback_used=False)
-        wf._server._preflight.check.side_effect = RuntimeError("prefl error")
-
-        result = wf.inspect_and_plan("proj", "/tmp/proj")
-
-        assert result.final_workflow_status == "preflight_failed"
-
-    def test_plan_creation_failure(self):
-        wf = make_workflow()
-        wf._server._project_scanner.scan.return_value = []
-        wf._server._discovery.discover.return_value = Mock(fallback_used=False)
-        wf._server._preflight.check.return_value = Mock()
-        wf._server._planner.plan.side_effect = RuntimeError("plan error")
-
-        result = wf.inspect_and_plan("proj", "/tmp/proj")
-
         assert result.final_workflow_status == "plan_creation_failed"
+        assert "disc error" in result.error_message
 
     def test_plan_retrieval_failure(self):
         wf = make_workflow()

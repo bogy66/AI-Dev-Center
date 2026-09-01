@@ -113,58 +113,22 @@ class AgentWorkflow:
             result.error_message = str(exc)
             return result
 
-        # 2. discover_requirements  (uses the real project-info shape)
+        # 2. Canonical planning through DevelopmentWorkflow.run() via MCP.
         try:
             project_info = self._build_project_info(
                 project_path, result.inspected_files
             )
-            discovery_res = self._server.discover_requirements(
-                project_info
-            )
-            result.discovered_requirements = discovery_res
-            if (
-                discovery_res is not None
-                and getattr(discovery_res, "fallback_used", False)
-            ):
-                result.discovery_fallback = True
-                result.final_workflow_status = "discovery_fallback_blocked"
-                result.error_message = (
-                    "Discovery fallback used; workflow halted before "
-                    "preflight / plan creation."
-                )
-                return result
-        except Exception as exc:
-            result.final_workflow_status = "discovery_failed"
-            result.error_message = str(exc)
-            return result
-
-        # 3. get_preflight
-        try:
-            preflight_res = self._server.get_preflight(
-                result.discovered_requirements, project_id
-            )
-            result.preflight_result = preflight_res
-        except Exception as exc:
-            result.final_workflow_status = "preflight_failed"
-            result.error_message = str(exc)
-            return result
-
-        # 4. create_setup_plan
-        try:
-            plan_path = self._server.create_setup_plan(
-                result.discovered_requirements,
-                result.preflight_result,
+            plan = self._server.plan_project_setup(
+                project_info,
                 project_id,
             )
-            # Extract the plan id from the persisted file path.
-            plan_id = Path(plan_path).stem
-            result.plan_id = plan_id
+            result.plan_id = getattr(plan, "id", None)
         except Exception as exc:
             result.final_workflow_status = "plan_creation_failed"
             result.error_message = str(exc)
             return result
 
-        # 5. get_setup_plan (retrieve so the caller can inspect)
+        # 3. get_setup_plan (retrieve so the caller can inspect)
         try:
             plan = self._server.get_setup_plan(project_id, result.plan_id)
             result.setup_plan = plan

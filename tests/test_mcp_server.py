@@ -70,6 +70,22 @@ def test_create_setup_plan_calls_planner_and_store():
     assert result is saved_path
 
 
+def test_plan_project_setup_uses_development_workflow_and_store():
+    server = make_server()
+    setup_plan = Mock(id="plan-456", status="pending_approval")
+    server._development_workflow.run.return_value = Mock(setup_plan=setup_plan)
+
+    project_info = {"project_id": "project-123", "files": []}
+    result = server.plan_project_setup(project_info, "project-123")
+
+    server._development_workflow.run.assert_called_once_with(
+        project_info, "project-123"
+    )
+    server._planner.plan.assert_not_called()
+    server._plan_store.save.assert_called_once_with(setup_plan)
+    assert result is setup_plan
+
+
 def test_get_setup_plan_loads_from_store():
     server = make_server()
     plan = object()
@@ -130,6 +146,7 @@ def test_list_tools_contains_all_expected_names():
         "discover_requirements",
         "get_preflight",
         "create_setup_plan",
+        "plan_project_setup",
         "get_setup_plan",
         "approve_setup_plan",
         "execute_setup_plan",

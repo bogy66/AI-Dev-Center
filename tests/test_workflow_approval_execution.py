@@ -1,7 +1,9 @@
 from unittest.mock import MagicMock
 
 from app.ai_requirement_discovery import AIRequirementDiscovery
+from app.council_models import CouncilResult
 from app.dev_workflow import DevelopmentWorkflow
+from app.engineering_council import EngineeringCouncil
 from app.python_package_executor import PythonPackageExecutor
 from app.requirement_model import (
     DiscoveryResult,
@@ -19,6 +21,7 @@ from app.requirement_validator import RequirementValidator
 from app.setup_approval import SetupApproval
 from app.setup_executor import ExecutionResult
 from app.setup_planner import SetupPlanner
+from app.toolchain_materializer import ToolchainMaterializer
 
 
 def _make_requirement():
@@ -45,6 +48,8 @@ def _make_workflow(executor):
     validator = MagicMock(spec=RequirementValidator)
     preflight = MagicMock(spec=RequirementPreflight)
     planner = MagicMock(spec=SetupPlanner)
+    council = MagicMock(spec=EngineeringCouncil)
+    materializer = MagicMock(spec=ToolchainMaterializer)
 
     requirement = _make_requirement()
 
@@ -100,10 +105,16 @@ def _make_workflow(executor):
         status="pending_approval",
     )
 
+    council_result = CouncilResult(
+        id="council-1",
+        project_id="workflow-integration",
+    )
+
     discovery.discover.return_value = discovery_result
     validator.validate.return_value = validation_result
     preflight.check.return_value = preflight_result
-    planner.plan.return_value = setup_plan
+    council.evaluate.return_value = council_result
+    materializer.materialize.return_value = setup_plan
 
     workflow = DevelopmentWorkflow(
         discovery=discovery,
@@ -111,9 +122,11 @@ def _make_workflow(executor):
         preflight=preflight,
         planner=planner,
         executor=executor,
+        council=council,
+        materializer=materializer,
     )
 
-    return workflow, setup_plan
+    return workflow, setup_plan, planner, council, materializer, council_result
 
 
 def test_run_to_approval_to_execution():
@@ -127,7 +140,14 @@ def test_run_to_approval_to_execution():
     )
     executor.execute.return_value = execution_result
 
-    workflow, original_plan = _make_workflow(executor)
+    (
+        workflow,
+        original_plan,
+        planner,
+        council,
+        materializer,
+        council_result,
+    ) = _make_workflow(executor)
 
     workflow_result = workflow.run(
         {"name": "workflow-integration"},
@@ -137,6 +157,12 @@ def test_run_to_approval_to_execution():
     assert workflow_result.setup_plan is original_plan
     assert original_plan.status == "pending_approval"
     assert original_plan.steps[0].is_approved is False
+    council.evaluate.assert_called_once()
+    materializer.materialize.assert_called_once_with(
+        council_result,
+        "workflow-integration",
+    )
+    planner.plan.assert_not_called()
     executor.execute.assert_not_called()
 
     approved_plan = SetupApproval.approve(original_plan)
@@ -157,7 +183,7 @@ def test_run_to_approval_to_execution():
 def test_rejected_plan_never_executes():
     executor = MagicMock(spec=PythonPackageExecutor)
 
-    workflow, original_plan = _make_workflow(executor)
+    workflow, original_plan, *_ = _make_workflow(executor)
 
     workflow.run(
         {"name": "workflow-integration"},
@@ -179,7 +205,7 @@ def test_rejected_plan_never_executes():
 def test_approval_creates_approved_copy():
     executor = MagicMock(spec=PythonPackageExecutor)
 
-    workflow, original_plan = _make_workflow(executor)
+    workflow, original_plan, *_ = _make_workflow(executor)
 
     workflow.run(
         {"name": "workflow-integration"},

@@ -34,9 +34,7 @@ _APPROVED = "approved"
 
 _REQUIRED_TOOL_SEQUENCE = [
     "inspect_project",
-    "discover_requirements",
-    "get_preflight",
-    "create_setup_plan",
+    "plan_project_setup",
     "get_setup_plan",
 ]
 
@@ -73,9 +71,7 @@ class AgentSetupWorkflow:
             "You are an AI developer assistant driving a setup workflow.\n"
             "Call MCP tools in the following order:\n"
             f"inspect_project(project_id={project_id!r}, project_path={project_path!r})\n"
-            f"discover_requirements(project_id={project_id!r})\n"
-            f"get_preflight(project_id={project_id!r})\n"
-            f"create_setup_plan(project_id={project_id!r})\n"
+            f"plan_project_setup(project_id={project_id!r})\n"
             f"get_setup_plan(project_id={project_id!r})\n"
             "After get_setup_plan, stop.  Do not call approve_setup_plan or "
             "execute_setup_plan.  Approval requires explicit human action."
@@ -83,6 +79,26 @@ class AgentSetupWorkflow:
 
         stop_condition = _stop_if_pending_approval
         state = self.agent.run(prompt, stop_condition=stop_condition)
+
+        if _has_inspection_result(state) and not _has_canonical_plan_call(state):
+            project_info = _project_info_from_inspection(
+                state,
+                project_id,
+                project_path,
+            )
+            plan_result = self._call_tool(
+                "plan_project_setup",
+                project_info=project_info,
+                project_id=project_id,
+            )
+            state.tool_calls.append({
+                "name": "plan_project_setup",
+                "arguments": {
+                    "project_info": project_info,
+                    "project_id": project_id,
+                },
+                "result": plan_result,
+            })
 
         trace_id = _trace_id(state)
         initial_stop_reason = _evaluate_stop_reason(state, stop_condition)
@@ -273,7 +289,14 @@ class AgentSetupWorkflow:
         state: AgentState,
         trace_id: str,
     ) -> AgentSetupWorkflowResult:
-        last_tool = _last_tool(state)
+        last_tool = next(
+            (
+                call
+                for call in reversed(state.tool_calls)
+                if call.get("name") == "get_setup_plan"
+            ),
+            _last_tool(state),
+        )
         plan_info = _extract_plan_info(last_tool)
         return AgentSetupWorkflowResult(
             project_id=project_id,
@@ -390,13 +413,12 @@ def _has_required_sequence(state: AgentState) -> bool:
 
 
 def _has_sequence_up_to_create(state: AgentState) -> bool:
-    """Return True when the agent has executed the required sequence up to
-    and including create_setup_plan, but not necessarily get_setup_plan."""
+    """Return True when planning completed but setup-plan retrieval did not."""
     tool_names = [call.get("name") for call in state.tool_calls]
     idx = 0
     for required in _REQUIRED_TOOL_SEQUENCE:
         if required == "get_setup_plan":
-            # We only care about the prefix up to create_setup_plan.
+            # We only care about the planning prefix.
             break
         if required not in tool_names:
             return False
@@ -405,6 +427,38 @@ def _has_sequence_up_to_create(state: AgentState) -> bool:
         except ValueError:
             return False
     return True
+
+
+def _has_inspection_result(state: AgentState) -> bool:
+    return any(
+        call.get("name") == "inspect_project"
+        and isinstance(call.get("result"), dict)
+        for call in state.tool_calls
+    )
+
+
+def _has_canonical_plan_call(state: AgentState) -> bool:
+    return any(
+        call.get("name") == "plan_project_setup"
+        and isinstance(call.get("arguments", {}).get("project_info"), dict)
+        and call.get("arguments", {}).get("project_id")
+        for call in state.tool_calls
+    )
+
+
+def _project_info_from_inspection(
+    state: AgentState, project_id: str, project_path: str
+) -> dict[str, Any]:
+    for call in reversed(state.tool_calls):
+        if call.get("name") == "inspect_project":
+            result = call.get("result")
+            if isinstance(result, dict):
+                return {
+                    "project_id": project_id,
+                    "project_path": result.get("project_path", project_path),
+                    "files": result.get("files", []),
+                }
+    return {"project_id": project_id, "project_path": project_path, "files": []}
 
 
 def _plan_exists(result: Any, expected_plan_id: str) -> bool:

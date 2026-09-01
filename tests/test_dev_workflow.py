@@ -5,11 +5,13 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.ai_requirement_discovery import AIRequirementDiscovery
+from app.council_models import CouncilInput, CouncilResult
 from app.dev_workflow import (
     DevelopmentWorkflow,
     WorkflowExecutionError,
     WorkflowResult,
 )
+from app.engineering_council import EngineeringCouncil
 from app.python_package_executor import PythonPackageExecutor
 from app.requirement_model import (
     DiscoveryResult,
@@ -26,6 +28,7 @@ from app.requirement_preflight import RequirementPreflight
 from app.requirement_validator import RequirementValidator
 from app.setup_executor import ExecutionResult
 from app.setup_planner import SetupPlanner
+from app.toolchain_materializer import ToolchainMaterializer
 
 
 def _make_requirement(req_id: str = "req-1") -> Requirement:
@@ -127,27 +130,38 @@ def _make_components(project_id: str = "proj-1"):
     validator = MagicMock(spec=RequirementValidator)
     preflight = MagicMock(spec=RequirementPreflight)
     planner = MagicMock(spec=SetupPlanner)
+    council = MagicMock(spec=EngineeringCouncil)
+    materializer = MagicMock(spec=ToolchainMaterializer)
 
     discovery_result = _make_discovery_result(project_id)
     validation_result = _make_validation_result(
         discovery_result.requirements,
     )
     preflight_result = _make_preflight_result(project_id)
+    council_result = CouncilResult(
+        id="council-1",
+        project_id=project_id,
+    )
     plan_result = _make_setup_plan(project_id)
 
     discovery.discover.return_value = discovery_result
     validator.validate.return_value = validation_result
     preflight.check.return_value = preflight_result
     planner.plan.return_value = plan_result
+    council.evaluate.return_value = council_result
+    materializer.materialize.return_value = plan_result
 
     return (
         discovery,
         validator,
         preflight,
         planner,
+        council,
+        materializer,
         discovery_result,
         validation_result,
         preflight_result,
+        council_result,
         plan_result,
     )
 
@@ -159,9 +173,12 @@ class TestDevelopmentWorkflow:
             validator,
             preflight,
             planner,
+            council,
+            materializer,
             discovery_result,
             validation_result,
             preflight_result,
+            council_result,
             plan_result,
         ) = _make_components()
 
@@ -170,6 +187,8 @@ class TestDevelopmentWorkflow:
             validator,
             preflight,
             planner,
+            council=council,
+            materializer=materializer,
         )
 
         result = workflow.run({"name": "test-project"}, "proj-1")
@@ -178,16 +197,19 @@ class TestDevelopmentWorkflow:
         assert result.discovery_result is discovery_result
         assert result.validation_result is validation_result
         assert result.preflight_result is preflight_result
+        assert result.council_result is council_result
         assert result.setup_plan is plan_result
 
     def test_discovery_called_with_correct_args(self):
-        discovery, validator, preflight, planner, *_ = _make_components()
+        discovery, validator, preflight, planner, council, materializer, *_ = _make_components()
 
         workflow = DevelopmentWorkflow(
             discovery,
             validator,
             preflight,
             planner,
+            council=council,
+            materializer=materializer,
         )
 
         project_info = {"name": "test"}
@@ -206,6 +228,8 @@ class TestDevelopmentWorkflow:
             validator,
             preflight,
             planner,
+            council,
+            materializer,
             discovery_result,
             *_,
         ) = _make_components()
@@ -215,6 +239,8 @@ class TestDevelopmentWorkflow:
             validator,
             preflight,
             planner,
+            council=council,
+            materializer=materializer,
         )
 
         workflow.run({"name": "test"}, "proj-1")
@@ -229,6 +255,8 @@ class TestDevelopmentWorkflow:
             validator,
             preflight,
             planner,
+            council,
+            materializer,
             _,
             validation_result,
             *_,
@@ -239,6 +267,8 @@ class TestDevelopmentWorkflow:
             validator,
             preflight,
             planner,
+            council=council,
+            materializer=materializer,
         )
 
         workflow.run({"name": "test"}, "proj-1")
@@ -248,15 +278,18 @@ class TestDevelopmentWorkflow:
             "proj-1",
         )
 
-    def test_planner_receives_required_requirements_and_preflight(self):
+    def test_council_receives_canonical_input(self):
         (
             discovery,
             validator,
             preflight,
             planner,
+            council,
+            materializer,
             _,
             validation_result,
             preflight_result,
+            _,
             _,
         ) = _make_components()
 
@@ -265,51 +298,90 @@ class TestDevelopmentWorkflow:
             validator,
             preflight,
             planner,
+            council=council,
+            materializer=materializer,
         )
 
-        workflow.run({"name": "test"}, "proj-1")
-
-        planner.plan.assert_called_once_with(
-            validation_result.required_requirements,
-            preflight_result,
+        workflow.run(
+            {
+                "files": [
+                    {"path": "pyproject.toml", "content": ""},
+                    {"path": "app/main.py", "content": ""},
+                ],
+            },
             "proj-1",
         )
 
-    def test_setup_plan_remains_pending_approval(self):
-        discovery, validator, preflight, planner, *_ = _make_components()
+        council.evaluate.assert_called_once()
+        council_input = council.evaluate.call_args.args[0]
+        assert isinstance(council_input, CouncilInput)
+        assert council_input.requirements == validation_result.normalized_requirements
+        assert council_input.preflight is preflight_result
+        assert council_input.project_id == "proj-1"
+        assert council_input.project_files == ("pyproject.toml", "app/main.py")
+        assert council_input.validation_warnings == validation_result.warnings
+
+    def test_invalid_project_file_information_is_ignored(self):
+        discovery, validator, preflight, planner, council, materializer, *_ = _make_components()
 
         workflow = DevelopmentWorkflow(
             discovery,
             validator,
             preflight,
             planner,
+            council=council,
+            materializer=materializer,
+        )
+
+        workflow.run({"files": "not-a-file-list"}, "proj-1")
+
+        assert council.evaluate.call_args.args[0].project_files == ()
+
+    def test_materializer_receives_exact_council_result_and_project_id(self):
+        (
+            discovery,
+            validator,
+            preflight,
+            planner,
+            council,
+            materializer,
+            _,
+            _,
+            _,
+            council_result,
+            plan_result,
+        ) = _make_components()
+
+        workflow = DevelopmentWorkflow(
+            discovery,
+            validator,
+            preflight,
+            planner,
+            council=council,
+            materializer=materializer,
         )
 
         result = workflow.run({"name": "test"}, "proj-1")
 
-        assert result.setup_plan.status == "pending_approval"
+        materializer.materialize.assert_called_once_with(council_result, "proj-1")
+        assert result.council_result is council_result
+        assert result.setup_plan is plan_result
 
-    def test_no_approval_or_execution_calls(self):
-        discovery, validator, preflight, planner, *_ = _make_components()
+    def test_planner_is_never_called(self):
+        discovery, validator, preflight, planner, council, materializer, *_ = _make_components()
 
         workflow = DevelopmentWorkflow(
             discovery,
             validator,
             preflight,
             planner,
+            council=council,
+            materializer=materializer,
         )
 
         workflow.run({"name": "test"}, "proj-1")
 
-        for mock_obj in (
-            discovery,
-            validator,
-            preflight,
-            planner,
-        ):
-            for forbidden in ("approve", "reject", "execute"):
-                if hasattr(mock_obj, forbidden):
-                    getattr(mock_obj, forbidden).assert_not_called()
+        planner.plan.assert_not_called()
 
     def test_discovery_error_propagates(self):
         discovery = MagicMock(spec=AIRequirementDiscovery)
@@ -337,6 +409,8 @@ class TestDevelopmentWorkflow:
             validator,
             preflight,
             planner,
+            council,
+            materializer,
             discovery_result,
             *_,
         ) = _make_components()
@@ -373,6 +447,40 @@ class TestDevelopmentWorkflow:
         validator.validate.assert_not_called()
         preflight.check.assert_not_called()
         planner.plan.assert_not_called()
+        council.evaluate.assert_not_called()
+        materializer.materialize.assert_not_called()
+
+    def test_missing_council_blocks_planning(self):
+        discovery, validator, preflight, planner, _, materializer, *_ = _make_components()
+
+        workflow = DevelopmentWorkflow(
+            discovery,
+            validator,
+            preflight,
+            planner,
+            materializer=materializer,
+        )
+
+        with pytest.raises(WorkflowExecutionError, match="Engineering Council"):
+            workflow.run({"name": "test"}, "proj-1")
+
+        materializer.materialize.assert_not_called()
+
+    def test_missing_materializer_blocks_planning(self):
+        discovery, validator, preflight, planner, council, _, *_ = _make_components()
+
+        workflow = DevelopmentWorkflow(
+            discovery,
+            validator,
+            preflight,
+            planner,
+            council=council,
+        )
+
+        with pytest.raises(WorkflowExecutionError, match="ToolchainMaterializer"):
+            workflow.run({"name": "test"}, "proj-1")
+
+        council.evaluate.assert_not_called()
 
 
     def test_intermediate_objects_are_not_mutated(self):
@@ -381,9 +489,12 @@ class TestDevelopmentWorkflow:
             validator,
             preflight,
             planner,
+            council,
+            materializer,
             discovery_result,
             validation_result,
             preflight_result,
+            council_result,
             plan_result,
         ) = _make_components()
 
@@ -392,6 +503,8 @@ class TestDevelopmentWorkflow:
             validator,
             preflight,
             planner,
+            council=council,
+            materializer=materializer,
         )
 
         result = workflow.run({"name": "test"}, "proj-1")
@@ -399,6 +512,7 @@ class TestDevelopmentWorkflow:
         assert result.discovery_result is discovery_result
         assert result.validation_result is validation_result
         assert result.preflight_result is preflight_result
+        assert result.council_result is council_result
         assert result.setup_plan is plan_result
 
 
@@ -629,23 +743,19 @@ class TestApprovedExecution:
 
     def test_run_never_executes_even_with_executor_configured(self):
         executor = MagicMock(spec=PythonPackageExecutor)
-
-        discovery = MagicMock(spec=AIRequirementDiscovery)
-        validator = MagicMock(spec=RequirementValidator)
-        preflight = MagicMock(spec=RequirementPreflight)
-        planner = MagicMock(spec=SetupPlanner)
-
-        discovery_result = _make_discovery_result("proj-1")
-        validation_result = _make_validation_result(
-            discovery_result.requirements,
-        )
-        preflight_result = _make_preflight_result("proj-1")
-        plan_result = _make_setup_plan("proj-1")
-
-        discovery.discover.return_value = discovery_result
-        validator.validate.return_value = validation_result
-        preflight.check.return_value = preflight_result
-        planner.plan.return_value = plan_result
+        (
+            discovery,
+            validator,
+            preflight,
+            planner,
+            council,
+            materializer,
+            _,
+            _,
+            _,
+            _,
+            plan_result,
+        ) = _make_components()
 
         workflow = DevelopmentWorkflow(
             discovery,
@@ -653,6 +763,8 @@ class TestApprovedExecution:
             preflight,
             planner,
             executor=executor,
+            council=council,
+            materializer=materializer,
         )
 
         result = workflow.run({"name": "test"}, "proj-1")

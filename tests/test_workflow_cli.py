@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -69,9 +70,68 @@ def _make_fake_result(
     return result
 
 
+@pytest.fixture(autouse=True)
+def isolate_workflow_plan_store(monkeypatch):
+    """Keep CLI tests from persisting plans in the repository."""
+    store = MagicMock()
+    monkeypatch.setattr(cli, "WorkflowPlanStore", lambda root: store)
+    return store
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+class TestWorkflowComposition:
+    def test_build_workflow_injects_council_and_materializer(self, monkeypatch):
+        config = SimpleNamespace(
+            model="test-model",
+            council=SimpleNamespace(enabled=True),
+        )
+        secret_resolver = MagicMock()
+        provider = MagicMock()
+        council = MagicMock()
+        materializer = MagicMock()
+        council_factory = MagicMock(return_value=council)
+        materializer_factory = MagicMock(return_value=materializer)
+
+        monkeypatch.setattr(cli, "LocalSecretStore", lambda: secret_resolver)
+        monkeypatch.setattr(cli, "create_llm_provider", lambda c, s: provider)
+        monkeypatch.setattr(cli, "EngineeringCouncil", council_factory)
+        monkeypatch.setattr(cli, "ToolchainMaterializer", materializer_factory)
+
+        workflow = cli.build_workflow(config)
+
+        council_factory.assert_called_once_with(
+            council_config=config.council,
+            secret_resolver=secret_resolver,
+        )
+        materializer_factory.assert_called_once_with()
+        assert workflow._discovery._provider is provider
+        assert workflow._discovery._ai_model == "test-model"
+        assert workflow._council is council
+        assert workflow._materializer is materializer
+
+    def test_build_workflow_blocks_missing_council_config(self, monkeypatch):
+        config = SimpleNamespace(council=None)
+        secret_store = MagicMock()
+        provider_factory = MagicMock()
+        council_factory = MagicMock()
+
+        monkeypatch.setattr(cli, "LocalSecretStore", secret_store)
+        monkeypatch.setattr(cli, "create_llm_provider", provider_factory)
+        monkeypatch.setattr(cli, "EngineeringCouncil", council_factory)
+
+        with pytest.raises(
+            cli.WorkflowExecutionError,
+            match="Engineering Council configuration",
+        ):
+            cli.build_workflow(config)
+
+        secret_store.assert_not_called()
+        provider_factory.assert_not_called()
+        council_factory.assert_not_called()
+
+
 class TestValidProject:
     def test_successful_run(self, tmp_path, monkeypatch, capsys):
         """End‑to‑end happy path: valid project, workflow succeeds."""
@@ -266,6 +326,9 @@ class TestFileReading:
         mock_instance.run.return_value = _make_fake_result()
         monkeypatch.setattr(cli, "DevelopmentWorkflow", mock_workflow_cls)
         monkeypatch.setattr(cli, "build_workflow", lambda config: mock_instance)
+
+        store = MagicMock()
+        monkeypatch.setattr(cli, "WorkflowPlanStore", lambda root: store)
 
         monkeypatch.setattr(sys, "argv", ["workflow_cli.py", str(project)])
 

@@ -28,6 +28,7 @@ class FakeMCPServer:
                 "discover_requirements": lambda **kwargs: {"status": "ok", "requirements": []},
                 "get_preflight": lambda **kwargs: {"status": "ok", "preflight": {}},
                 "create_setup_plan": lambda **kwargs: {"status": "ok", "plan_id": "plan-1"},
+                "plan_project_setup": lambda **kwargs: {"status": "ok", "plan_id": "plan-1"},
                 "get_setup_plan": lambda **kwargs: {
                     "status": "pending_approval",
                     "plan_id": "plan-1",
@@ -36,6 +37,10 @@ class FakeMCPServer:
                 "approve_setup_plan": lambda **kwargs: {"status": "approved"},
                 "execute_setup_plan": lambda **kwargs: {"status": "completed", "results": ["done"]},
             }
+        handlers.setdefault(
+            "plan_project_setup",
+            lambda **kwargs: {"status": "ok", "plan_id": "plan-1"},
+        )
         self.handlers = handlers
         self.tool_names = list(handlers.keys())
         self.calls = []
@@ -58,9 +63,7 @@ def _llm_plan_sequence():
     """Return scripted LLM responses that call the required tools and stop after get_setup_plan."""
     return [
         '{"tool_calls":[{"name":"inspect_project","arguments":{}}]}',
-        '{"tool_calls":[{"name":"discover_requirements","arguments":{}}]}',
-        '{"tool_calls":[{"name":"get_preflight","arguments":{}}]}',
-        '{"tool_calls":[{"name":"create_setup_plan","arguments":{}}]}',
+        '{"tool_calls":[{"name":"plan_project_setup","arguments":{}}]}',
         '{"tool_calls":[{"name":"get_setup_plan","arguments":{}}]}',
         # The agent would likely issue more calls in a real LLM, but our
         # stop_condition should halt after the pending_approval tool result.
@@ -84,6 +87,10 @@ def test_start_reaches_pending_approval_and_stops_llm():
     # The LLM should not be called again after pending approval.
     assert len(llm.calls) <= 5
     assert server.list_tools_called is True
+    canonical_calls = [call for call in server.calls if call[0] == "plan_project_setup"]
+    assert canonical_calls
+    assert canonical_calls[-1][1]["project_id"] == "proj1"
+    assert canonical_calls[-1][1]["project_info"]["project_path"] == "/tmp/proj"
 
 
 def test_approve_and_execute_success():
@@ -246,9 +253,7 @@ def test_start_handles_real_setup_plan_shape_with_id():
     """Start should produce pending result when get_setup_plan returns a real SetupPlan representation."""
     responses = [
         '{"tool_calls":[{"name":"inspect_project","arguments":{}}]}',
-        '{"tool_calls":[{"name":"discover_requirements","arguments":{}}]}',
-        '{"tool_calls":[{"name":"get_preflight","arguments":{}}]}',
-        '{"tool_calls":[{"name":"create_setup_plan","arguments":{}}]}',
+        '{"tool_calls":[{"name":"plan_project_setup","arguments":{}}]}',
         '{"tool_calls":[{"name":"get_setup_plan","arguments":{}}]}',
     ]
     llm = FakeLLM(responses)
@@ -286,9 +291,7 @@ def test_explicit_get_call_when_llm_stops_after_create():
     # LLM only calls up to create_setup_plan, then returns no more calls.
     responses = [
         '{"tool_calls":[{"name":"inspect_project","arguments":{}}]}',
-        '{"tool_calls":[{"name":"discover_requirements","arguments":{}}]}',
-        '{"tool_calls":[{"name":"get_preflight","arguments":{}}]}',
-        '{"tool_calls":[{"name":"create_setup_plan","arguments":{}}]}',
+        '{"tool_calls":[{"name":"plan_project_setup","arguments":{}}]}',
         # LLM stops here; workflow must bridge the gap.
     ]
     llm = FakeLLM(responses)
@@ -318,9 +321,7 @@ def test_explicit_get_call_error_handling():
     the workflow must report a genuine failure."""
     responses = [
         '{"tool_calls":[{"name":"inspect_project","arguments":{}}]}',
-        '{"tool_calls":[{"name":"discover_requirements","arguments":{}}]}',
-        '{"tool_calls":[{"name":"get_preflight","arguments":{}}]}',
-        '{"tool_calls":[{"name":"create_setup_plan","arguments":{}}]}',
+        '{"tool_calls":[{"name":"plan_project_setup","arguments":{}}]}',
         # LLM stops here; workflow must bridge the gap.
     ]
     llm = FakeLLM(responses)

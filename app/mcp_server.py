@@ -66,6 +66,18 @@ class MCPServer:
         plan = self._planner.plan(requirements, preflight_result, project_id)
         return self._plan_store.save(plan)
 
+    def plan_project_setup(
+        self, project_info: dict[str, Any], project_id: str
+    ) -> Any:
+        """Create and persist a setup plan through the canonical workflow."""
+        workflow_result = self._development_workflow.run(
+            project_info,
+            project_id,
+        )
+        setup_plan = workflow_result.setup_plan
+        self._plan_store.save(setup_plan)
+        return setup_plan
+
     def get_setup_plan(self, project_id: str, plan_id: str) -> Any:
         """Load a previously saved setup plan."""
         return self._plan_store.load(project_id, plan_id)
@@ -132,6 +144,18 @@ class MCPServer:
                         "project_id": {"type": "string"},
                     },
                     "required": ["requirements", "preflight_result", "project_id"],
+                },
+            ),
+            ToolDefinition(
+                name="plan_project_setup",
+                description="Plan a project through the canonical development workflow.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "project_info": {"type": "object"},
+                        "project_id": {"type": "string"},
+                    },
+                    "required": ["project_info", "project_id"],
                 },
             ),
             ToolDefinition(

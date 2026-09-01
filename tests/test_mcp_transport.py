@@ -1,9 +1,11 @@
 import io
 import json
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
 
+import app.mcp_transport as transport
 from app.mcp_server import MCPServer, ToolDefinition
 from app.mcp_transport import (
     MCPRequestHandler,
@@ -127,6 +129,7 @@ class TestRequestHandler:
             "discover_requirements",
             "get_preflight",
             "create_setup_plan",
+            "plan_project_setup",
             "get_setup_plan",
             "approve_setup_plan",
             "execute_setup_plan",
@@ -343,6 +346,101 @@ class TestStdioSmoke:
 # ---------------------------------------------------------------------------
 # Entry point test (python -m app.mcp_transport)
 # ---------------------------------------------------------------------------
+
+class TestMCPCompositionRoot:
+    @pytest.mark.parametrize("council_config", [None, SimpleNamespace(enabled=False)])
+    def test_create_mcp_server_rejects_missing_or_disabled_council(
+        self, monkeypatch, council_config
+    ):
+        """Configuration errors must occur before secret or AI setup."""
+        config = SimpleNamespace(council=council_config)
+        load_config = Mock(return_value=config)
+        secret_store = Mock()
+        provider_factory = Mock()
+        council_factory = Mock()
+
+        monkeypatch.setattr(transport, "load_ai_config", load_config)
+        monkeypatch.setattr(transport, "LocalSecretStore", secret_store)
+        monkeypatch.setattr(transport, "create_llm_provider", provider_factory)
+        monkeypatch.setattr(transport, "EngineeringCouncil", council_factory)
+
+        with pytest.raises(
+            transport.WorkflowExecutionError,
+            match="Engineering Council configuration must be enabled",
+        ):
+            transport._create_mcp_server()
+
+        load_config.assert_called_once_with("config/ai-dev-center.yml")
+        secret_store.assert_not_called()
+        provider_factory.assert_not_called()
+        council_factory.assert_not_called()
+
+    def test_create_mcp_server_wires_one_secret_resolver_without_side_effects(
+        self, monkeypatch
+    ):
+        """The composition root shares its resolver and uses injected fakes only."""
+        council_config = SimpleNamespace(enabled=True)
+        config = SimpleNamespace(council=council_config, model="test-model")
+        resolver = Mock()
+        provider = Mock()
+        executor = Mock()
+        discovery = Mock()
+        council = Mock()
+        materializer = Mock()
+        workflow = Mock()
+        server = Mock()
+        scanner = Mock()
+        planner = Mock()
+        plan_store = Mock()
+
+        load_config = Mock(return_value=config)
+        secret_store = Mock(return_value=resolver)
+        provider_factory = Mock(return_value=provider)
+        executor_factory = Mock(return_value=executor)
+        discovery_factory = Mock(return_value=discovery)
+        council_factory = Mock(return_value=council)
+        materializer_factory = Mock(return_value=materializer)
+        workflow_factory = Mock(return_value=workflow)
+        server_factory = Mock(return_value=server)
+        scanner_factory = Mock(return_value=scanner)
+        planner_factory = Mock(return_value=planner)
+        plan_store_factory = Mock(return_value=plan_store)
+
+        monkeypatch.setattr(transport, "load_ai_config", load_config)
+        monkeypatch.setattr(transport, "LocalSecretStore", secret_store)
+        monkeypatch.setattr(transport, "create_llm_provider", provider_factory)
+        monkeypatch.setattr(transport, "PythonPackageExecutor", executor_factory)
+        monkeypatch.setattr(transport, "AIRequirementDiscovery", discovery_factory)
+        monkeypatch.setattr(transport, "EngineeringCouncil", council_factory)
+        monkeypatch.setattr(transport, "ToolchainMaterializer", materializer_factory)
+        monkeypatch.setattr(transport, "DevelopmentWorkflow", workflow_factory)
+        monkeypatch.setattr(transport, "MCPServer", server_factory)
+        monkeypatch.setattr(transport, "ProjectScanner", scanner_factory)
+        monkeypatch.setattr(transport, "SetupPlanner", planner_factory)
+        monkeypatch.setattr(transport, "WorkflowPlanStore", plan_store_factory)
+
+        assert transport._create_mcp_server() is server
+
+        secret_store.assert_called_once_with()
+        provider_factory.assert_called_once_with(config, resolver)
+        council_factory.assert_called_once_with(
+            council_config=council_config,
+            secret_resolver=resolver,
+        )
+        discovery_factory.assert_called_once_with(
+            llm_provider=provider,
+            ai_model="test-model",
+        )
+
+        workflow_kwargs = workflow_factory.call_args.kwargs
+        assert workflow_kwargs["discovery"] is discovery
+        assert workflow_kwargs["executor"] is executor
+        assert workflow_kwargs["council"] is council
+        assert workflow_kwargs["materializer"] is materializer
+
+        server_kwargs = server_factory.call_args.kwargs
+        assert server_kwargs["discovery"] is discovery
+        assert server_kwargs["development_workflow"] is workflow
 
 class TestEntryPoint:
     def test_entry_point_processes_initialize_and_tools_list(self):

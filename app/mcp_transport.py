@@ -21,14 +21,19 @@ from app.workflow_plan_store import WorkflowPlanStoreError
 # Concrete dependencies – imported at module level so tests can patch them.
 # ---------------------------------------------------------------------------
 from app.project_scanner import ProjectScanner
+from app.ai_config import load_ai_config
 from app.ai_requirement_discovery import AIRequirementDiscovery
+from app.engineering_council import EngineeringCouncil
+from app.llm_provider_factory import create_llm_provider
+from app.local_secret_store import LocalSecretStore
 from app.requirement_preflight import RequirementPreflight
 from app.setup_planner import SetupPlanner
 from app.workflow_plan_store import WorkflowPlanStore
 from app.setup_approval import SetupApproval
-from app.dev_workflow import DevelopmentWorkflow
+from app.dev_workflow import DevelopmentWorkflow, WorkflowExecutionError
 from app.python_package_executor import PythonPackageExecutor
 from app.requirement_validator import RequirementValidator
+from app.toolchain_materializer import ToolchainMaterializer
 
 
 # ---------------------------------------------------------------------------
@@ -280,10 +285,23 @@ class MCPStdioServer:
 
 def _create_mcp_server() -> MCPServer:
     """Build an MCPServer wired to the real AI-Dev-Center components."""
+    config = load_ai_config("config/ai-dev-center.yml")
+    council_config = config.council
+    if council_config is None or not council_config.enabled:
+        raise WorkflowExecutionError(
+            "Engineering Council configuration must be enabled."
+        )
+
+    secret_resolver = LocalSecretStore()
+    provider = create_llm_provider(config, secret_resolver)
     executor = PythonPackageExecutor()
     discovery = AIRequirementDiscovery(
-        llm_provider=None,
-        ai_model=None,
+        llm_provider=provider,
+        ai_model=config.model,
+    )
+    council = EngineeringCouncil(
+        council_config=council_config,
+        secret_resolver=secret_resolver,
     )
     workflow = DevelopmentWorkflow(
         discovery=discovery,
@@ -291,6 +309,8 @@ def _create_mcp_server() -> MCPServer:
         preflight=RequirementPreflight,
         planner=SetupPlanner(),
         executor=executor,
+        council=council,
+        materializer=ToolchainMaterializer(),
     )
 
     return MCPServer(
