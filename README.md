@@ -14,6 +14,10 @@ Für jede kontrolliert angewendete Datei hält AI-Dev-Center run-spezifische Cha
 
 Ein erfolgreicher lokaler Commit erzeugt lediglich `ready_for_publish` und eine davon getrennte, zunächst `pending` Publish Approval. Erst deren ausdrückliches `approved` erlaubt einen weiteren expliziten Controlled Publish Stage: Er pusht exakt den persistierten Run-Commit über eine explizite Branch-Refspec zu einem bereits konfigurierten Git-Remote. Ein fehlendes Remote, Detached HEAD, ein fremder lokaler Folge-Commit, Authentifizierungsfehler oder Non-Fast-Forward führen fail-safe zu `failed`. Es gibt weder Force Push noch automatische Merge-/Rebase-Reparatur. Publish bedeutet hier ausschließlich Git-Remote-Push – nicht Release, Pull Request, Merge, Deployment, Hardware-Flash, OTA oder Package-/Artifact-Publishing.
 
+Der Central Diagnostic Trace ergänzt den fachlichen Workflow als persistente, run-spezifische und geordnete Diagnose-Timeline. Er dokumentiert erreichte Phasen, strukturierte Resultate, getrennte Approval-Grenzen sowie Git-/Publish-Endzustände mit monotoner Sequenz und UTC-Zeit. Workflow State bleibt Eigentümer aller fachlichen Entscheidungen; Python Logging bleibt Entwickler-Logging; der Trace ersetzt weder Approval noch Business State. Persistiert werden ausschließlich allowlist-basierte, redigierte Metadaten – keine Datei-Inhalte, Environment-Dumps, Request Header, Prompts, Tokens oder Credential-URLs. Die Timeline bleibt nach Prozess-Neustarts lesbar, ist aber weder Event-Sourcing-System noch kryptographische Audit Chain oder Distributed-Tracing-Backend.
+
+Read-only kann der Central Trace für eine Web-Session über `GET /api/workflow/<session_id>/diagnostic-trace` abgerufen werden. Der Adapter delegiert dabei an den kanonischen Application Service und öffnet keine frei wählbaren Trace-Dateien.
+
 ## Kanonischer Setup-Flow
 
 ```text

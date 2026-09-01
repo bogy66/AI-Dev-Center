@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import subprocess
-import uuid
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -421,7 +420,9 @@ async def start_workflow(
     task_description = req.task_description
     trace_level = req.trace_level
 
-    run_id = uuid.uuid4().hex
+    # The established two-argument application-service contract uses the
+    # project identifier as the canonical planning run identifier.
+    session_id = run_id = project_id
     recorder = DiagnosticTraceRecorder(run_id=run_id, trace_level=trace_level)
     session = Session(
         project_id,
@@ -464,7 +465,7 @@ async def start_workflow(
             status="failed",
             result_summary=str(exc),
         )
-        sessions[session_id := str(uuid.uuid4())] = session
+        sessions[session_id] = session
         return JSONResponse(
             content={"session_id": session_id, "blocked": True, "error": str(exc)},
             status_code=500,
@@ -497,7 +498,7 @@ async def start_workflow(
         result_summary=f"Project {project_id}, Plan {plan.id}",
     )
 
-    sessions[session_id := run_id] = session
+    sessions[session_id] = session
     return {"session_id": session_id, "plan_id": plan.id, "status": plan.status}
 
 
@@ -699,6 +700,33 @@ async def export_trace(session_id: str):
         return JSONResponse(content={"error": "unknown session"}, status_code=404)
 
     return JSONResponse(content=session.recorder.export())
+
+
+@app.get("/api/workflow/{session_id}/diagnostic-trace")
+async def get_central_diagnostic_trace(session_id: str):
+    """Read the persistent central trace through the application contract."""
+    session = sessions.get(session_id)
+    if not session or not session.project_setup_service:
+        return JSONResponse(content={"error": "unknown session"}, status_code=404)
+    events = session.project_setup_service.get_diagnostic_trace(session.run_id)
+    return {
+        "run_id": session.run_id,
+        "events": [
+            {
+                "event_id": event.event_id,
+                "sequence": event.sequence,
+                "timestamp": event.timestamp,
+                "phase": event.phase,
+                "event_type": event.event_type,
+                "status": event.status,
+                "summary": event.summary,
+                "source": event.source,
+                "details": event.details,
+                "related_result_id": event.related_result_id,
+            }
+            for event in events
+        ],
+    }
 
 
 @app.post("/api/project/open")

@@ -68,6 +68,7 @@ class DevelopmentWorkflow:
         materializer: ToolchainMaterializer | None = None,
         development_testing_stage: DevelopmentTestingStage | None = None,
         controlled_rework_stage: ControlledReworkStage | None = None,
+        diagnostic_trace: object | None = None,
     ) -> None:
         self._discovery = discovery
         self._validator = validator
@@ -82,32 +83,55 @@ class DevelopmentWorkflow:
         self._materializer = materializer
         self._development_testing_stage = development_testing_stage
         self._controlled_rework_stage = controlled_rework_stage
+        self._diagnostic_trace = diagnostic_trace
 
-    def run(self, project_info: object, project_id: str) -> WorkflowResult:
+    def set_diagnostic_trace(self, diagnostic_trace) -> None:
+        self._diagnostic_trace = diagnostic_trace
+
+    def _trace(self, run_id, phase, event_type, status, summary, **kwargs):
+        if self._diagnostic_trace is not None:
+            self._diagnostic_trace.record(
+                run_id, phase, event_type, status, summary,
+                source="development_workflow", **kwargs,
+            )
+
+    def run(self, project_info: object, project_id: str, run_id: str | None = None) -> WorkflowResult:
         """Run discovery through Council-based planning only.
 
         This method never approves, rejects or executes setup steps.
         """
 
-        discovery_result = self._discovery.discover(
-            project_info,
-            project_id,
-        )
+        run_id = run_id or project_id
+        self._trace(run_id, "requirement_discovery", "started", "started", "Requirement discovery started")
+        try:
+            discovery_result = self._discovery.discover(project_info, project_id)
+        except Exception as error:
+            self._trace(run_id, "requirement_discovery", "failed", "failed", f"Requirement discovery failed: {type(error).__name__}")
+            raise
+        self._trace(run_id, "requirement_discovery", "completed", "completed", "Requirement discovery completed", details={"requirement_count": len(discovery_result.requirements), "warning_count": len(discovery_result.warnings)})
 
         if discovery_result.fallback_used:
+            self._trace(run_id, "requirement_discovery", "blocked", "blocked", "Requirement discovery fallback blocked planning")
             raise WorkflowExecutionError(
                 "Requirement discovery fallback was used; "
                 "workflow planning is blocked."
             )
 
-        validation_result = self._validator.validate(
-            discovery_result.requirements,
-        )
+        self._trace(run_id, "requirement_validation", "started", "started", "Requirement validation started")
+        try:
+            validation_result = self._validator.validate(discovery_result.requirements)
+        except Exception as error:
+            self._trace(run_id, "requirement_validation", "failed", "failed", f"Requirement validation failed: {type(error).__name__}")
+            raise
+        self._trace(run_id, "requirement_validation", "completed", "completed", "Requirement validation completed", details={"requirement_count": len(validation_result.normalized_requirements), "warning_count": len(validation_result.warnings), "error_count": len(validation_result.errors)})
 
-        preflight_result = self._preflight.check(
-            validation_result.normalized_requirements,
-            project_id,
-        )
+        self._trace(run_id, "preflight", "started", "started", "Requirement preflight started")
+        try:
+            preflight_result = self._preflight.check(validation_result.normalized_requirements, project_id)
+        except Exception as error:
+            self._trace(run_id, "preflight", "failed", "failed", f"Preflight failed: {type(error).__name__}")
+            raise
+        self._trace(run_id, "preflight", "completed", "completed", "Requirement preflight completed", details={"result_count": len(preflight_result.results), "missing_count": len(preflight_result.missing_requirements), "warning_count": len(preflight_result.warnings)})
 
         if self._council is None:
             raise WorkflowExecutionError(
@@ -127,12 +151,25 @@ class DevelopmentWorkflow:
             validation_warnings=validation_result.warnings,
         )
 
-        council_result = self._council.evaluate(council_input)
+        self._trace(run_id, "engineering_council", "started", "started", "Engineering Council started")
+        try:
+            council_result = self._council.evaluate(council_input)
+        except Exception as error:
+            self._trace(run_id, "engineering_council", "failed", "failed", f"Engineering Council failed: {type(error).__name__}")
+            raise
+        council_status = "completed" if council_result.council_complete else "incomplete"
+        self._trace(run_id, "engineering_council", "completed", council_status, "Engineering Council completed", details={"variant_count": len(council_result.variants), "recommendation": council_result.recommendation or "", "council_complete": council_result.council_complete, "error_count": len(council_result.agent_errors) + bool(council_result.chairman_error)}, related_result_id=council_result.id)
 
-        setup_plan = self._materializer.materialize(
-            council_result,
-            project_id,
-        )
+        self._trace(run_id, "toolchain_materialization", "started", "started", "Toolchain materialization started")
+        try:
+            setup_plan = self._materializer.materialize(council_result, project_id)
+        except Exception as error:
+            self._trace(run_id, "toolchain_materialization", "failed", "failed", f"Toolchain materialization failed: {type(error).__name__}")
+            raise
+        self._trace(run_id, "toolchain_materialization", "completed", "completed", "Toolchain materialization completed", details={"plan_id": setup_plan.id, "step_count": len(setup_plan.steps)}, related_result_id=setup_plan.id)
+        self._trace(run_id, "setup_plan", "completed", "completed", "Setup plan created", details={"plan_id": setup_plan.id, "step_count": len(setup_plan.steps)}, related_result_id=setup_plan.id)
+        self._trace(run_id, "setup_approval", "pending", "pending", "Setup approval is pending", details={"plan_id": setup_plan.id}, related_result_id=f"setup-approval:{setup_plan.id}:pending")
+        self._trace(run_id, "workflow_end", "completed", "pending", "Workflow stopped at pending setup approval", details={"end_state": "setup_approval_pending"}, related_result_id=f"workflow-end:{setup_plan.id}:pending")
 
         return WorkflowResult(
             discovery_result=discovery_result,
@@ -233,16 +270,107 @@ class DevelopmentWorkflow:
                 "No DevelopmentTestingStage has been configured."
             )
 
-        setup_execution_results = self.execute_approved(plan)
+        run_id = getattr(development_request, "run_id", None) or plan.id
+        self._trace(run_id, "setup_approval", "approved", "approved", "Setup approval granted", details={"plan_id": plan.id}, related_result_id=f"setup-approval:{plan.id}:approved")
+        self._trace(run_id, "setup_execution", "started", "started", "Setup execution started", details={"step_count": len(plan.steps)})
+        try:
+            setup_execution_results = self.execute_approved(plan)
+        except Exception as error:
+            self._trace(run_id, "setup_execution", "failed", "failed", f"Setup execution failed: {type(error).__name__}")
+            raise
         if not all(result.success for result in setup_execution_results):
+            self._trace(run_id, "setup_execution", "failed", "failed", "Setup execution returned unsuccessful results", details={"result_count": len(setup_execution_results)})
             raise WorkflowExecutionError(
                 "Setup execution did not complete successfully."
             )
+        self._trace(run_id, "setup_execution", "completed", "completed", "Setup execution completed", details={"result_count": len(setup_execution_results)})
 
-        controlled_rework_result = controlled_rework_stage.run(
-            development_request,
-        )
+        controlled_rework_result = controlled_rework_stage.run(development_request)
+        self._trace_development_cycles(run_id, controlled_rework_result)
         return SetupDevelopmentTestingResult(
             setup_execution_results=setup_execution_results,
             controlled_rework_result=controlled_rework_result,
         )
+
+    def _trace_development_cycles(self, run_id, result):
+        initial_result = getattr(result, "initial_result", None)
+        rework_result = getattr(result, "rework_result", None)
+        if initial_result is None:
+            initial_result = getattr(result, "final_result", None)
+
+        cycles = []
+        if initial_result is not None:
+            cycles.append(("initial", initial_result))
+        if rework_result is not None and rework_result is not initial_result:
+            cycles.append(("rework", rework_result))
+
+        for index, (cycle, item) in enumerate(cycles):
+            if index:
+                self._trace(run_id, "controlled_rework", "rework_required", "rework_required", "Controlled rework was requested", details={"rework_executed": True}, related_result_id=f"rework:{run_id}:requested")
+                self._trace(run_id, "controlled_rework", "started", "started", "Controlled rework cycle started", details={"cycle": cycle})
+            development = getattr(item, "development_result", None)
+            self._trace(run_id, "development", "started", "started", f"Development cycle started: {cycle}", details={"cycle": cycle})
+            development_status = getattr(development, "status", None)
+            development_succeeded = development_status == "success"
+            development_details = {"cycle": cycle}
+            applied = getattr(development, "applied_changes", None)
+            if isinstance(applied, dict):
+                applied_paths = applied.get("applied")
+                skipped_paths = applied.get("skipped")
+                if isinstance(applied_paths, (list, tuple)):
+                    development_details["applied_path_count"] = len(applied_paths)
+                if isinstance(skipped_paths, (list, tuple)):
+                    development_details["skipped_path_count"] = len(skipped_paths)
+            development_event = "completed" if development_succeeded else "failed"
+            development_trace_status = development_event
+            if not isinstance(development_status, str):
+                development_event = "completed"
+                development_trace_status = "incomplete"
+            self._trace(run_id, "development", development_event, development_trace_status, f"Development cycle finished: {cycle}", details=development_details)
+
+            changes = getattr(item, "test_changes", None)
+            self._trace(run_id, "test_generation", "started", "started", f"Test generation started: {cycle}", details={"cycle": cycle})
+            test_generation_details = {"cycle": cycle}
+            if isinstance(changes, dict) and isinstance(changes.get("changes"), (list, tuple)):
+                test_generation_details["controlled_path_count"] = len(changes["changes"])
+            self._trace(run_id, "test_generation", "completed", "completed", f"Test generation completed: {cycle}", details=test_generation_details)
+
+            provenance_details = {"cycle": cycle}
+            applied_result = getattr(item, "apply_result", None)
+            controlled_path_count = 0
+            path_count_available = False
+            for candidate in (applied, applied_result):
+                if isinstance(candidate, dict) and isinstance(candidate.get("applied"), (list, tuple)):
+                    controlled_path_count += len(candidate["applied"])
+                    path_count_available = True
+            if path_count_available:
+                provenance_details["controlled_path_count"] = controlled_path_count
+            self._trace(run_id, "change_provenance", "completed", "completed", f"Change provenance captured: {cycle}", details=provenance_details)
+
+            test_result = getattr(item, "test_result", None)
+            self._trace(run_id, "testing", "started", "started", f"Controlled testing started: {cycle}", details={"cycle": cycle, "runner": type(test_result).__name__})
+            timed_out = getattr(test_result, "timed_out", None) is True
+            passed = getattr(test_result, "passed", None) is True
+            test_type = "timeout" if timed_out else "completed"
+            test_status = "timeout" if timed_out else ("passed" if passed else "failed")
+            testing_details = {"cycle": cycle}
+            if isinstance(getattr(test_result, "timed_out", None), bool):
+                testing_details["timed_out"] = timed_out
+            if isinstance(getattr(test_result, "passed", None), bool):
+                testing_details["passed"] = passed
+            return_code = getattr(test_result, "return_code", None)
+            if isinstance(return_code, int):
+                testing_details["return_code"] = return_code
+            if not any(key in testing_details for key in ("timed_out", "passed", "return_code")):
+                test_status = "incomplete"
+            self._trace(run_id, "testing", test_type, test_status, f"Controlled testing finished: {cycle}", details=testing_details)
+            testing_stage_result = getattr(item, "testing_stage_result", None)
+            decision = getattr(testing_stage_result, "status", None)
+            if not isinstance(decision, str):
+                decision = getattr(item, "status", "incomplete")
+            if not isinstance(decision, str):
+                decision = "incomplete"
+            decision_type = decision if decision in {"rework_required", "failed"} else "completed"
+            self._trace(run_id, "diagnosis_review", decision_type, decision, f"Diagnosis review finished: {decision}", details={"cycle": cycle})
+            if index:
+                self._trace(run_id, "controlled_rework", "completed", "completed", "Controlled rework cycle completed", details={"cycle": cycle})

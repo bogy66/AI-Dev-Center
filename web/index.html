@@ -129,6 +129,10 @@
                     <p>That local commit only makes the run ready for publish and creates a separate pending Publish Approval. After explicit publish approval, a separate Controlled Publish Stage can push the exact run commit to an existing configured Git remote and explicit branch ref.</p>
                     <p>Preexisting or mixed changes, foreign staged content, a final hash mismatch, missing remotes, detached HEAD, unrelated later commits and non-fast-forward pushes are fail-safe blockers. There is no force push or automatic merge/rebase repair. Publish means Git remote push here—not release automation, deployment, hardware flashing or OTA.</p>
 
+                    <h3>Central Diagnostic Trace</h3>
+                    <p>Each canonical run has a persistent, ordered diagnostic timeline showing reached phases, structured results, separate approval boundaries, blockers and Git/publish outcomes such as pending, failed, rework_required, approved, committed and published.</p>
+                    <p>Workflow State remains authoritative for decisions, while logging remains intended for developer logs. The Diagnostic Trace observes both but cannot approve setup, Git or publish. Its details are allowlisted and redacted: secrets, raw environments, request headers and full file contents are not stored.</p>
+
                     <h3>The AI team</h3>
                     <ul>
                         <li><strong>Project Manager</strong> – Coordinates the overall task and workflow.</li>
