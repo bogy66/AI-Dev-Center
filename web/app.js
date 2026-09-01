@@ -692,7 +692,7 @@ const helpSlides = [
                 <li>traceability</li>
             </ul>
             <p>The Development Stage has a controlled boundary: the Developer produces structured changes, while the File Applier alone writes validated files inside the project root. It does not use arbitrary shell commands; testing, review and Git remain later stages.</p>
-            <p>Test generation and execution are also separate: the TestChangeGenerator produces structured test changes without writing files, while the Git-free ProjectTestRunner runs only an allowed test action. It never accepts arbitrary LLM-generated shell commands; the Git-based legacy TestBench is not this canonical core path.</p>
+            <p>The canonical Development-Testing flow connects structured development changes, structured test changes, controlled application, real test execution and diagnosis in that order. The TestChangeGenerator produces test changes without writing files, while the Git-free ProjectTestRunner runs only an allowed test action. It never accepts arbitrary LLM-generated shell commands; the Git-based legacy TestBench is not this canonical core path.</p>
             <p>Real test results take priority over diagnosis: a Diagnosis Reviewer can describe failures and create structured rework, but cannot approve a failed or timed-out run. There is no automatic rework loop, Git or publish step here.</p>
             <p>Human control remains central.</p>
         `

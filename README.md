@@ -4,7 +4,7 @@ AI-Dev-Center analysiert Softwareprojekte und leitet daraus nachvollziehbare tec
 
 Nach dem kontrollierten Setup kann die Development Stage strukturierte Entwicklungsänderungen erzeugen. Der Developer Agent liefert dabei deklarative Changes statt Shell-Aktionen; ausschließlich ein separater File Applier setzt validierte Änderungen innerhalb des Projekt-Roots um.
 
-Teständerungen und Testausführung bleiben ebenfalls getrennt: Ein Generator liefert strukturierte Test-Changes, während ein Git-freier, allowlist-basierter Runner nur die vorgesehene Testaktion ausführt. AI-Dev-Center führt dabei keine beliebigen LLM-generierten Shell-Kommandos aus.
+Teständerungen und Testausführung bleiben ebenfalls getrennt: Ein Generator liefert strukturierte Test-Changes, während ein Git-freier, allowlist-basierter Runner nur die vorgesehene Testaktion ausführt. Der kanonische Development-Testing-Ablauf verbindet Entwicklungsänderungen, Teständerungen, kontrolliertes Anwenden, reale Testausführung und Diagnose in dieser Reihenfolge. AI-Dev-Center führt dabei keine beliebigen LLM-generierten Shell-Kommandos aus.
 
 Reale Testergebnisse haben Vorrang vor KI-Diagnosen: Fehlgeschlagene oder abgelaufene Tests erzeugen strukturiertes Rework und können nicht künstlich freigegeben werden. Ein automatischer Rework-Loop, Git und Publish gehören nicht zu diesem Stage.
 
