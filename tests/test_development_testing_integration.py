@@ -4,10 +4,11 @@ from unittest.mock import ANY, Mock
 
 import pytest
 
-from app.dev_workflow import DevelopmentWorkflow, WorkflowExecutionError
+from app.dev_workflow import DevelopmentWorkflow, SetupDevelopmentTestingResult, WorkflowExecutionError
 from app.project_setup_application import ProjectSetupApplicationService
 from app.requirement_model import SetupPlan, SetupStep
 from app.setup_executor import ExecutionResult
+from app.workflow_manager import WorkflowManager
 
 
 def _plan(status="approved"):
@@ -160,9 +161,13 @@ def test_outer_workflow_uses_only_the_development_testing_boundary():
 
 def test_application_service_preserves_explicit_project_root_for_stage_request(tmp_path):
     workflow = Mock()
-    expected = Mock()
+    expected = SetupDevelopmentTestingResult(
+        (), SimpleNamespace(status="review_failed", final_result=SimpleNamespace()),
+    )
     workflow.execute_approved_and_run_development.return_value = expected
-    service = ProjectSetupApplicationService(workflow, Mock())
+    service = ProjectSetupApplicationService(
+        workflow, Mock(), WorkflowManager(tmp_path / "workflow_state.json")
+    )
     plan = _plan()
 
     result = service.execute_approved_setup_and_development(
@@ -172,7 +177,7 @@ def test_application_service_preserves_explicit_project_root_for_stage_request(t
         "add feature",
     )
 
-    assert result is expected
+    assert result.controlled_rework_result is expected.controlled_rework_result
     workflow.execute_approved_and_run_development.assert_called_once_with(
         plan,
         ANY,

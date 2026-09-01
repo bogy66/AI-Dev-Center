@@ -145,6 +145,7 @@ class Session:
         self.workflow_status: str = "unknown"
         self.error_message: Optional[str] = None
         self.blocked: bool = False
+        self.final_approval_result = None
 
     @property
     def trace_events(self) -> List[TraceEvent]:
@@ -399,6 +400,12 @@ class OpenProjectRequest(BaseModel):
     project_path: str
 
 
+class FinalApprovalRequest(BaseModel):
+    decision: str
+    approved_by: str | None = None
+    comment: str | None = None
+
+
 @app.get("/")
 async def root():
     return FileResponse("web/index.html")
@@ -625,12 +632,36 @@ async def execute_canonical_workflow(session_id: str):
             session.project_id,
             session.project_path,
             session.task_description,
+            session.run_id,
         )
     except Exception as exc:
         return JSONResponse(content={"error": str(exc)}, status_code=409)
 
-    session.workflow_status = result.status
-    return {"plan_id": plan.id, "status": result.status, "results": result.setup_execution_results}
+    session.final_approval_result = result.final_approval_result
+    session.workflow_status = result.final_approval_result.status
+    return {
+        "plan_id": plan.id,
+        "status": result.final_approval_result.status,
+        "development_status": result.status,
+        "results": result.setup_execution_results,
+    }
+
+
+@app.post("/api/workflow/{session_id}/final-approval")
+async def decide_final_approval(session_id: str, request: FinalApprovalRequest):
+    """Record an explicit final human decision without re-running development."""
+    session = sessions.get(session_id)
+    if not session or not session.project_setup_service:
+        return JSONResponse(content={"error": "unknown session"}, status_code=404)
+    try:
+        result = session.project_setup_service.decide_final_approval(
+            session.run_id, request.decision, request.approved_by, request.comment,
+        )
+    except Exception as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=409)
+    session.final_approval_result = result
+    session.workflow_status = "ready_for_git" if result.ready_for_git else result.status
+    return {"status": result.status, "ready_for_git": result.ready_for_git}
 
 
 @app.post("/api/workflow/{session_id}/reject")

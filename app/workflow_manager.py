@@ -43,7 +43,8 @@ class WorkflowManager:
                 "approved_by": None,
                 "approved_at": None,
                 "comment": None
-            }
+            },
+            "final_approvals": {},
         }
 
     def _merge_with_defaults(self, default, state):
@@ -146,3 +147,52 @@ class WorkflowManager:
             self.save(state)
 
             return state
+
+    def create_final_approval(self, run_id, development_status):
+        """Persist a pending final approval only for an accepted run."""
+        from app.final_approval import FinalApprovalError, result_from_record
+
+        if development_status != "accepted":
+            raise FinalApprovalError("Final approval requires an accepted development run")
+        with self._lock:
+            state = self.load()
+            approvals = state.setdefault("final_approvals", {})
+            record = approvals.get(run_id)
+            if record is None:
+                record = {
+                    "status": "pending",
+                    "development_status": "accepted",
+                    "approved_by": None,
+                    "approved_at": None,
+                    "comment": None,
+                }
+                approvals[run_id] = record
+                self.save(state)
+            return result_from_record(run_id, record)
+
+    def decide_final_approval(self, run_id, decision, approved_by=None, comment=None):
+        """Apply one explicit, fail-safe final human approval transition."""
+        from app.final_approval import FinalApprovalError, result_from_record
+
+        if decision not in {"approved", "rejected"}:
+            raise FinalApprovalError("Final approval decision must be approved or rejected")
+        with self._lock:
+            state = self.load()
+            record = state.get("final_approvals", {}).get(run_id)
+            if record is None or record.get("development_status") != "accepted":
+                raise FinalApprovalError("No accepted development run is awaiting final approval")
+            current = record.get("status")
+            if current == decision:
+                return result_from_record(run_id, record)
+            if current != "pending":
+                raise FinalApprovalError(
+                    f"Cannot change final approval from {current!r} to {decision!r}"
+                )
+            record.update({
+                "status": decision,
+                "approved_by": approved_by,
+                "approved_at": str(datetime.now()),
+                "comment": comment,
+            })
+            self.save(state)
+            return result_from_record(run_id, record)

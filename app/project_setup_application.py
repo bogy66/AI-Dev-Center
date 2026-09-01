@@ -12,6 +12,8 @@ from app.dev_workflow import (
     WorkflowResult,
 )
 from app.project_inspector import ProjectInspector
+from app.workflow_manager import WorkflowManager
+from app.final_approval import FinalApprovalResult
 
 
 class ProjectSetupApplicationService:
@@ -21,9 +23,11 @@ class ProjectSetupApplicationService:
         self,
         development_workflow: DevelopmentWorkflow,
         project_inspector: ProjectInspector | None = None,
+        workflow_manager: WorkflowManager | None = None,
     ) -> None:
         self._development_workflow = development_workflow
         self._project_inspector = project_inspector or ProjectInspector()
+        self._workflow_manager = workflow_manager or WorkflowManager()
 
     def build_request(
         self, project_id: str, project_path: str | Path
@@ -58,6 +62,7 @@ class ProjectSetupApplicationService:
         project_id: str,
         project_path: str | Path,
         task: str,
+        run_id: str | None = None,
     ) -> SetupDevelopmentTestingResult:
         """Execute approved setup, then delegate development/testing once."""
         if not isinstance(project_id, str) or not project_id.strip():
@@ -70,7 +75,29 @@ class ProjectSetupApplicationService:
             project_path=project_path,
             task=task,
         )
-        return self._development_workflow.execute_approved_and_run_development(
+        result = self._development_workflow.execute_approved_and_run_development(
             plan,
             request,
         )
+        approval = self._final_approval_for(
+            run_id or plan.id,
+            result.status,
+        )
+        from dataclasses import replace
+        return replace(result, final_approval_result=approval)
+
+    def decide_final_approval(
+        self,
+        run_id: str,
+        decision: str,
+        approved_by: str | None = None,
+        comment: str | None = None,
+    ) -> FinalApprovalResult:
+        return self._workflow_manager.decide_final_approval(
+            run_id, decision, approved_by, comment,
+        )
+
+    def _final_approval_for(self, run_id: str, development_status: str) -> FinalApprovalResult:
+        if development_status != "accepted":
+            return FinalApprovalResult(run_id, "not_applicable", False, False)
+        return self._workflow_manager.create_final_approval(run_id, development_status)

@@ -43,6 +43,7 @@ class SetupDevelopmentTestingResult:
 
     setup_execution_results: tuple[ExecutionResult, ...]
     controlled_rework_result: ControlledReworkResult
+    final_approval_result: object | None = None
 
     @property
     def development_testing_result(self) -> DevelopmentTestingResult:

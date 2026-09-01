@@ -25,7 +25,9 @@ def _components():
     service.execute_approved_setup_and_development.return_value = SimpleNamespace(
         status="accepted",
         setup_execution_results=("done",),
+        final_approval_result=SimpleNamespace(status="pending", ready_for_git=False),
     )
+    service.decide_final_approval.return_value = SimpleNamespace(status="approved", ready_for_git=True)
     store = MagicMock()
     approval = MagicMock()
     approval.approve.return_value = SimpleNamespace(id="plan-1", status="approved")
@@ -69,12 +71,22 @@ def test_canonical_approval_and_execution_are_separate_http_steps():
     execution = client.post(f"/api/workflow/{session_id}/execute")
 
     assert execution.status_code == 200
-    assert execution.json()["status"] == "accepted"
+    assert execution.json()["status"] == "pending"
+    assert execution.json()["development_status"] == "accepted"
     components.service.execute_approved_setup_and_development.assert_called_once_with(
         approved_plan,
         "test-proj",
         "/tmp/test-proj",
         "Testing",
+        session_id,
+    )
+    final_approval = client.post(
+        f"/api/workflow/{session_id}/final-approval",
+        json={"decision": "approved", "approved_by": "Udo"},
+    )
+    assert final_approval.json() == {"status": "approved", "ready_for_git": True}
+    components.service.decide_final_approval.assert_called_once_with(
+        session_id, "approved", "Udo", None,
     )
 
 
