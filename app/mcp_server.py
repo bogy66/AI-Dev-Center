@@ -63,6 +63,10 @@ class MCPServer:
         self, requirements: Any, preflight_result: Any, project_id: str
     ) -> Any:
         """Create and persist a setup plan for the supplied requirements."""
+        if self._planner is None:
+            raise RuntimeError(
+                "create_setup_plan is deprecated; use canonical plan_project_setup"
+            )
         plan = self._planner.plan(requirements, preflight_result, project_id)
         return self._plan_store.save(plan)
 
@@ -135,7 +139,10 @@ class MCPServer:
             ),
             ToolDefinition(
                 name="create_setup_plan",
-                description="Create and persist a setup plan.",
+                description=(
+                    "Deprecated compatibility tool; use plan_project_setup "
+                    "for canonical Council-based planning."
+                ),
                 input_schema={
                     "type": "object",
                     "properties": {

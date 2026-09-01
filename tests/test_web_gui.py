@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
@@ -43,16 +43,7 @@ def _set_override(llm=None, mcp=None):
     components.approval = MagicMock()
     components.development_workflow = MagicMock()
     app.dependency_overrides[get_web_setup_components] = lambda: components
-    return llm, mcp
-
-
-def _make_workflow_result(**kwargs):
-    result = MagicMock()
-    result.plan_id = kwargs.get("plan_id", "plan-123")
-    result.approval_required = kwargs.get("approval_required", False)
-    result.approval_status = kwargs.get("approval_status", "completed")
-    result.error_message = kwargs.get("error_message", None)
-    return result
+    return components
 
 
 # ---------------------------------------------------------------------------
@@ -179,10 +170,8 @@ def test_full_layout_does_not_introduce_third_column(client):
 # ---------------------------------------------------------------------------
 # API compatibility tests (still valid)
 # ---------------------------------------------------------------------------
-@patch("app.web_api.AgentSetupWorkflow")
-def test_start_endpoint_with_new_project(mock_workflow_cls, client):
-    _set_override()
-    mock_workflow_cls.return_value.start_setup_workflow.return_value = _make_workflow_result(approval_required=True)
+def test_start_endpoint_with_new_project(client):
+    components = _set_override()
 
     resp = client.post(
         "/api/workflow/start",
@@ -197,12 +186,18 @@ def test_start_endpoint_with_new_project(mock_workflow_cls, client):
     data = resp.json()
     assert "session_id" in data
     assert data["session_id"] in sessions
+    assert data["plan_id"] == "plan-123"
+    assert data["status"] == "pending_approval"
+    components.service.plan_project_setup.assert_called_once_with(
+        "testproj", "/tmp/testproj"
+    )
+    components.plan_store.save.assert_called_once_with(
+        components.service.plan_project_setup.return_value.setup_plan
+    )
 
 
-@patch("app.web_api.AgentSetupWorkflow")
-def test_state_response_fields(mock_workflow_cls, client):
+def test_state_response_fields(client):
     _set_override()
-    mock_workflow_cls.return_value.start_setup_workflow.return_value = _make_workflow_result()
 
     start_resp = client.post(
         "/api/workflow/start",
@@ -223,12 +218,23 @@ def test_state_response_fields(mock_workflow_cls, client):
         "workflow_status", "blocked", "trace", "timeline", "transparency",
     ):
         assert key in st
+    assert st["session_id"] == sid
+    assert st["run_id"] == "proj"
+    assert st["project_id"] == "proj"
+    assert st["project_path"] == "/tmp/proj"
+    assert st["task_description"] == "task"
+    assert st["plan_id"] == "plan-123"
+    assert st["approval_required"] is True
+    assert st["approval_status"] == "pending_approval"
+    assert st["workflow_status"] == "pending_approval"
+    assert st["blocked"] is False
+    assert isinstance(st["trace"], list)
+    assert isinstance(st["timeline"], list)
+    assert isinstance(st["transparency"], dict)
 
 
-@patch("app.web_api.AgentSetupWorkflow")
-def test_trace_export_endpoint(mock_workflow_cls, client):
+def test_trace_export_endpoint(client):
     _set_override()
-    mock_workflow_cls.return_value.start_setup_workflow.return_value = _make_workflow_result(approval_required=True)
 
     start_resp = client.post(
         "/api/workflow/start",
@@ -245,6 +251,11 @@ def test_trace_export_endpoint(mock_workflow_cls, client):
     data = export_resp.json()
     assert "events" in data
     assert "run_id" in data
+    assert data["run_id"] == sid
+    assert isinstance(data["events"], list)
+    assert [event["event"] for event in data["events"]] == [
+        "workflow_started", "plan_created", "approval_required",
+    ]
 
 
 def test_get_workflow_components_uses_provider_factory():

@@ -390,7 +390,6 @@ class TestMCPCompositionRoot:
         workflow = Mock()
         server = Mock()
         scanner = Mock()
-        planner = Mock()
         plan_store = Mock()
 
         load_config = Mock(return_value=config)
@@ -403,7 +402,6 @@ class TestMCPCompositionRoot:
         workflow_factory = Mock(return_value=workflow)
         server_factory = Mock(return_value=server)
         scanner_factory = Mock(return_value=scanner)
-        planner_factory = Mock(return_value=planner)
         plan_store_factory = Mock(return_value=plan_store)
 
         monkeypatch.setattr(transport, "load_ai_config", load_config)
@@ -416,7 +414,6 @@ class TestMCPCompositionRoot:
         monkeypatch.setattr(transport, "DevelopmentWorkflow", workflow_factory)
         monkeypatch.setattr(transport, "MCPServer", server_factory)
         monkeypatch.setattr(transport, "ProjectScanner", scanner_factory)
-        monkeypatch.setattr(transport, "SetupPlanner", planner_factory)
         monkeypatch.setattr(transport, "WorkflowPlanStore", plan_store_factory)
 
         assert transport._create_mcp_server() is server
@@ -441,6 +438,7 @@ class TestMCPCompositionRoot:
         server_kwargs = server_factory.call_args.kwargs
         assert server_kwargs["discovery"] is discovery
         assert server_kwargs["development_workflow"] is workflow
+        assert server_kwargs["planner"] is None
 
 class TestEntryPoint:
     def test_entry_point_processes_initialize_and_tools_list(self):
@@ -472,7 +470,6 @@ class TestEntryPoint:
              patch("app.mcp_transport.AIRequirementDiscovery") as mock_discovery_cls, \
              patch("app.mcp_transport.RequirementPreflight") as mock_preflight_cls, \
              patch("app.mcp_transport.RequirementValidator") as mock_validator_cls, \
-             patch("app.mcp_transport.SetupPlanner") as mock_planner_cls, \
              patch("app.mcp_transport.WorkflowPlanStore") as mock_store_cls, \
              patch("app.mcp_transport.SetupApproval") as mock_approval_cls, \
              patch("app.mcp_transport.PythonPackageExecutor") as mock_executor_cls, \
@@ -489,7 +486,6 @@ class TestEntryPoint:
             mock_discovery_cls.return_value = Mock()
             mock_preflight_cls.return_value = Mock()
             mock_validator_cls.return_value = Mock()
-            mock_planner_cls.return_value = Mock()
             mock_store_cls.return_value = Mock()
             mock_approval_cls.return_value = Mock()
             mock_executor_cls.return_value = Mock()

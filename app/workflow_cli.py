@@ -13,7 +13,6 @@ from app.local_secret_store import LocalSecretStore
 from app.project_files import MAX_FILE_SIZE, read_project_files
 from app.requirement_preflight import RequirementPreflight
 from app.requirement_validator import RequirementValidator
-from app.setup_planner import SetupPlanner
 from app.toolchain_materializer import ToolchainMaterializer
 from app.workflow_plan_store import WorkflowPlanStore
 
@@ -41,7 +40,6 @@ def build_workflow(config):
         discovery=discovery,
         validator=RequirementValidator,
         preflight=RequirementPreflight,
-        planner=SetupPlanner(),
         council=council,
         materializer=ToolchainMaterializer(),
     )

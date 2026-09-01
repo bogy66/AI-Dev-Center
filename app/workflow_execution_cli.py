@@ -12,7 +12,6 @@ from app.python_package_executor import PythonPackageExecutor
 from app.requirement_preflight import RequirementPreflight
 from app.requirement_validator import RequirementValidator
 from app.setup_approval import SetupApproval
-from app.setup_planner import SetupPlanner
 from app.workflow_plan_store import WorkflowPlanStore
 
 
@@ -33,7 +32,6 @@ def build_workflow() -> DevelopmentWorkflow:
         discovery=discovery,
         validator=RequirementValidator,
         preflight=RequirementPreflight,
-        planner=SetupPlanner(),
         executor=executor,
     )
 

@@ -1,70 +1,20 @@
+"""Compatibility HTTP adapter routed exclusively to the canonical workflow."""
 from pathlib import Path
+from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from app.agent_executor import AgentExecutor
-from app.agent_manager import AgentManager
-from app.agent_orchestrator import AgentOrchestrator
-from app.approval_manager import ApprovalManager
-from app.git_manager import GitManager
+from app.canonical_composition import build_canonical_components
 from app.workflow_manager import WorkflowManager
-from app.workflow_publisher import WorkflowPublisher
 
 
-app = FastAPI(
-    title="AI Dev Center"
-)
+app = FastAPI(title="AI Dev Center")
 
 
-# Technical workflow failure statuses that should return HTTP 500
-TECHNICAL_FAILURE_STATUSES = {
-    "development_failed",
-    "tester_failed",
-    "review_failed",
-    "rework_failed",
-}
-
-
-class WorkflowFailureException(HTTPException):
-    """Custom exception that returns workflow state as response body."""
-    def __init__(self, workflow_state):
-        super().__init__(status_code=500, detail=workflow_state)
-        self.workflow_state = workflow_state
-
-
-@app.exception_handler(WorkflowFailureException)
-async def workflow_failure_exception_handler(request, exc: WorkflowFailureException):
-    return JSONResponse(
-        status_code=500,
-        content=exc.workflow_state
-    )
-
-
-# Gemeinsamer Workflow-State
-workflow_manager = WorkflowManager()
-
-
-# Orchestrator
-orchestrator = AgentOrchestrator(
-    AgentManager(),
-    AgentExecutor(),
-    workflow_manager
-)
-
-
-# Approval
-approval_manager = ApprovalManager(
-    storage=workflow_manager.storage
-)
-
-
-# Publisher
-workflow_publisher = WorkflowPublisher(
-    workflow_manager,
-    GitManager()
-)
+def get_canonical_components():
+    return build_canonical_components()
 
 
 class Task(BaseModel):
@@ -81,90 +31,67 @@ class PublishRequest(BaseModel):
     project: str
 
 
+def _deprecated(action):
+    return JSONResponse(status_code=409, content={
+        "status": "deprecated_unsafe_contract",
+        "error": f"{action} requires the canonical run/plan-specific approval endpoint",
+    })
+
+
 @app.get("/approval")
 def get_approval_status():
-    return approval_manager.get_status()
+    return _deprecated("approval status")
 
 
 @app.post("/approval/approve")
 def approve_approval(request: ApprovalRequest):
-    approval_manager.approve(
-        approved_by=request.approved_by,
-        comment=request.comment
-    )
-
-    return approval_manager.get_status()
+    return _deprecated("setup approval")
 
 
 @app.post("/approval/reject")
 def reject_approval(request: ApprovalRequest):
-    approval_manager.reject(
-        approved_by=request.approved_by,
-        comment=request.comment
-    )
-
-    return approval_manager.get_status()
+    return _deprecated("setup rejection")
 
 
 @app.get("/workflow")
 def get_workflow_status():
-    # Neue Instanz pro Request, damit Tests WorkflowManager patchen können.
     return WorkflowManager().load()
 
 
 @app.post("/workflow/run")
 def run_workflow(task: Task):
-    result = orchestrator.run_workflow(
-        task.project,
-        task.task
+    project_path = Path(task.project).expanduser().resolve(strict=False)
+    components = get_canonical_components()
+    run_id = str(uuid4())
+    result = components.service.plan_project_setup(
+        project_path.name, project_path, run_id=run_id,
     )
-    
-    status = result.get("status", "")
-    if status in TECHNICAL_FAILURE_STATUSES:
-        raise WorkflowFailureException(result)
-    
-    return result
+    components.plan_store.save(result.setup_plan)
+    return {
+        "status": result.setup_plan.status, "project_id": project_path.name,
+        "plan_id": result.setup_plan.id, "run_id": run_id,
+    }
 
 
 @app.post("/workflow/rework")
 def rework_workflow(request: PublishRequest):
-    result = orchestrator.rework_workflow(
-        request.project
-    )
-    
-    status = result.get("status", "")
-    if status in TECHNICAL_FAILURE_STATUSES:
-        raise WorkflowFailureException(result)
-    
-    return result
+    return _deprecated("free-standing rework")
 
 
 @app.post("/workflow/publish")
 def publish_workflow(request: PublishRequest):
-    return workflow_publisher.publish(
-        request.project
-    )
+    return _deprecated("publish")
 
 
 @app.get("/gui", response_class=HTMLResponse)
 def gui():
-    return Path(
-        "app/gui/index.html"
-    ).read_text(
-        encoding="utf-8"
-    )
+    return Path("app/gui/index.html").read_text(encoding="utf-8")
 
 
 @app.post("/run")
 def run(task: Task):
-    return orchestrator.run(
-        task.project,
-        task.task
-    )
+    return run_workflow(task)
 
 
 def home():
-    return {
-        "name": "AI Dev Center",
-        "status": "running"
-    }
+    return {"name": "AI Dev Center", "status": "running"}

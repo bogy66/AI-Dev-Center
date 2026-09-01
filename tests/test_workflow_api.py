@@ -1,289 +1,56 @@
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
-from fastapi.testclient import TestClient
+import pytest
 
-from app.api import app
-
-
-client = TestClient(app)
+from app.api import PublishRequest, Task, get_workflow_status, publish_workflow
+from app.api import rework_workflow, run, run_workflow
 
 
-@patch("app.api.workflow_publisher")
-def test_publish_approved_workflow(mock_publisher):
-
-    mock_publisher.publish.return_value = {
-        "status": "completed",
-        "user_approval": {
-            "status": "approved"
-        }
+def test_run_workflow_uses_canonical_application_service(tmp_path):
+    plan = SimpleNamespace(status="pending_approval", id="plan-1")
+    result = SimpleNamespace(setup_plan=plan)
+    components = SimpleNamespace(
+        service=Mock(plan_project_setup=Mock(return_value=result)),
+        plan_store=Mock(),
+    )
+    with patch("app.api.get_canonical_components", return_value=components):
+        response = run_workflow(Task(project=str(tmp_path), task="build it"))
+    assert response == {
+        "status": "pending_approval", "project_id": tmp_path.name,
+        "plan_id": "plan-1", "run_id": response["run_id"],
     }
+    call = components.service.plan_project_setup.call_args
+    assert call.args == (tmp_path.name, tmp_path.resolve())
+    assert call.kwargs == {"run_id": response["run_id"]}
+    components.plan_store.save.assert_called_once_with(plan)
 
-    response = client.post(
-        "/workflow/publish",
-        json={
-            "project": "mock_project"
-        }
+
+def test_run_alias_uses_same_canonical_adapter(tmp_path):
+    plan = SimpleNamespace(status="pending_approval", id="plan-2")
+    components = SimpleNamespace(
+        service=Mock(plan_project_setup=Mock(
+            return_value=SimpleNamespace(setup_plan=plan)
+        )),
+        plan_store=Mock(),
     )
+    with patch("app.api.get_canonical_components", return_value=components):
+        response = run(Task(project=str(tmp_path), task="build it"))
+    assert response["plan_id"] == "plan-2"
 
-    assert response.status_code == 200
-    assert response.json()["status"] == "completed"
-
-    mock_publisher.publish.assert_called_once_with(
-        "mock_project"
-    )
-
-
-@patch("app.api.workflow_publisher")
-def test_publish_failed_workflow(mock_publisher):
-
-    mock_publisher.publish.return_value = {
-        "status": "approval_waiting",
-        "user_approval": {
-            "status": "approved"
-        }
-    }
-
-    response = client.post(
-        "/workflow/publish",
-        json={
-            "project": "mock_project"
-        }
-    )
-
-    assert response.status_code == 200
-    assert response.json()["status"] == "approval_waiting"
-
-    mock_publisher.publish.assert_called_once_with(
-        "mock_project"
-    )
 
 @patch("app.api.WorkflowManager")
 def test_get_workflow_status(mock_workflow_manager):
-
     mock_workflow_manager.return_value.load.return_value = {
-        "status": "approval_waiting",
-        "task": "mock_task",
-        "user_approval": {
-            "status": "approved"
-        }
+        "status": "approval_waiting", "task": "mock_task"
     }
-
-    response = client.get("/workflow")
-
-    assert response.status_code == 200
-    assert response.json()["status"] == "approval_waiting"
-    assert response.json()["task"] == "mock_task"
-
-@patch("app.api.orchestrator")
-def test_run_workflow(mock_orchestrator):
-
-    mock_orchestrator.run_workflow.return_value = {
-        "status": "approval_waiting",
-        "task": "mock_task",
-        "user_approval": {
-            "status": "waiting"
-        }
-    }
-
-    response = client.post(
-        "/workflow/run",
-        json={
-            "project": "mock_project",
-            "task": "mock_task"
-        }
-    )
-
-    assert response.status_code == 200
-    assert response.json()["status"] == "approval_waiting"
-
-    mock_orchestrator.run_workflow.assert_called_once_with(
-        "mock_project",
-        "mock_task"
-    )
+    response = get_workflow_status()
+    assert response["status"] == "approval_waiting"
+    assert response["task"] == "mock_task"
 
 
-@patch("app.api.orchestrator")
-def test_rework_workflow_does_not_save_non_rejected_state(mock_orchestrator):
-    """
-    Regression test for F3: rework_workflow should not save the state
-    if user_approval.status is not "rejected".
-
-    Previously, the state was saved before checking if it was rejected,
-    causing unnecessary persistence and potential data loss.
-    """
-    # Simulate a workflow in approval_waiting status (not rejected)
-    mock_orchestrator.rework_workflow.return_value = {
-        "status": "approval_waiting",
-        "task": "mock_task",
-        "user_approval": {
-            "status": "approved"
-        }
-    }
-
-    response = client.post(
-        "/workflow/rework",
-        json={
-            "project": "mock_project"
-        }
-    )
-
-    assert response.status_code == 200
-    assert response.json()["status"] == "approval_waiting"
-    assert response.json()["user_approval"]["status"] == "approved"
-
-    # Verify that rework_workflow was called (but the state was not saved
-    # because it wasn't rejected)
-    mock_orchestrator.rework_workflow.assert_called_once_with("mock_project")
-
-
-@patch("app.api.orchestrator")
-def test_run_workflow_returns_200_for_approval_waiting(mock_orchestrator):
-    mock_orchestrator.run_workflow.return_value = {
-        "status": "approval_waiting",
-        "task": "mock_task",
-        "user_approval": {
-            "status": "waiting"
-        }
-    }
-
-    response = client.post(
-        "/workflow/run",
-        json={
-            "project": "mock_project",
-            "task": "mock_task"
-        }
-    )
-
-    assert response.status_code == 200
-    assert response.json()["status"] == "approval_waiting"
-
-
-@patch("app.api.orchestrator")
-def test_run_workflow_returns_200_for_changes_required(mock_orchestrator):
-    mock_orchestrator.run_workflow.return_value = {
-        "status": "changes_required",
-        "task": "mock_task",
-        "reviewer": {
-            "status": "changes_required",
-            "result": "Review failed"
-        }
-    }
-
-    response = client.post(
-        "/workflow/run",
-        json={
-            "project": "mock_project",
-            "task": "mock_task"
-        }
-    )
-
-    assert response.status_code == 200
-    assert response.json()["status"] == "changes_required"
-
-
-@patch("app.api.orchestrator")
-def test_run_workflow_returns_200_for_development_no_changes(mock_orchestrator):
-    mock_orchestrator.run_workflow.return_value = {
-        "status": "development_no_changes",
-        "task": "mock_task"
-    }
-
-    response = client.post(
-        "/workflow/run",
-        json={
-            "project": "mock_project",
-            "task": "mock_task"
-        }
-    )
-
-    assert response.status_code == 200
-    assert response.json()["status"] == "development_no_changes"
-
-
-@patch("app.api.orchestrator")
-def test_run_workflow_returns_500_for_development_failed(mock_orchestrator):
-    mock_orchestrator.run_workflow.return_value = {
-        "status": "development_failed",
-        "task": "mock_task",
-        "developer": {
-            "error": "Git commit failed"
-        }
-    }
-
-    response = client.post(
-        "/workflow/run",
-        json={
-            "project": "mock_project",
-            "task": "mock_task"
-        }
-    )
-
-    assert response.status_code == 500
-    assert response.json()["status"] == "development_failed"
-
-
-@patch("app.api.orchestrator")
-def test_run_workflow_returns_500_for_tester_failed(mock_orchestrator):
-    mock_orchestrator.run_workflow.return_value = {
-        "status": "tester_failed",
-        "task": "mock_task",
-        "tester": {
-            "status": "failed",
-            "result": "Tests failed"
-        }
-    }
-
-    response = client.post(
-        "/workflow/run",
-        json={
-            "project": "mock_project",
-            "task": "mock_task"
-        }
-    )
-
-    assert response.status_code == 500
-    assert response.json()["status"] == "tester_failed"
-
-
-@patch("app.api.orchestrator")
-def test_run_workflow_returns_500_for_review_failed(mock_orchestrator):
-    mock_orchestrator.run_workflow.return_value = {
-        "status": "review_failed",
-        "task": "mock_task",
-        "reviewer": {
-            "status": "changes_required",
-            "result": "Review failed"
-        }
-    }
-
-    response = client.post(
-        "/workflow/run",
-        json={
-            "project": "mock_project",
-            "task": "mock_task"
-        }
-    )
-
-    assert response.status_code == 500
-    assert response.json()["status"] == "review_failed"
-
-
-@patch("app.api.orchestrator")
-def test_rework_workflow_returns_500_for_development_failed(mock_orchestrator):
-    mock_orchestrator.rework_workflow.return_value = {
-        "status": "rework_failed",
-        "task": "mock_task",
-        "developer": {
-            "error": "Git commit failed"
-        }
-    }
-
-    response = client.post(
-        "/workflow/rework",
-        json={
-            "project": "mock_project"
-        }
-    )
-
-    assert response.status_code == 500
-    assert response.json()["status"] == "rework_failed"
+@pytest.mark.parametrize("action", [rework_workflow, publish_workflow])
+def test_unsafe_legacy_workflow_actions_are_deterministically_deprecated(action):
+    response = action(PublishRequest(project="project"))
+    assert response.status_code == 409
+    assert b'deprecated_unsafe_contract' in response.body

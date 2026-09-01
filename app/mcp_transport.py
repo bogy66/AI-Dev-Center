@@ -27,7 +27,6 @@ from app.engineering_council import EngineeringCouncil
 from app.llm_provider_factory import create_llm_provider
 from app.local_secret_store import LocalSecretStore
 from app.requirement_preflight import RequirementPreflight
-from app.setup_planner import SetupPlanner
 from app.workflow_plan_store import WorkflowPlanStore
 from app.setup_approval import SetupApproval
 from app.dev_workflow import DevelopmentWorkflow, WorkflowExecutionError
@@ -307,7 +306,6 @@ def _create_mcp_server() -> MCPServer:
         discovery=discovery,
         validator=RequirementValidator,
         preflight=RequirementPreflight,
-        planner=SetupPlanner(),
         executor=executor,
         council=council,
         materializer=ToolchainMaterializer(),
@@ -317,7 +315,7 @@ def _create_mcp_server() -> MCPServer:
         project_scanner=ProjectScanner(),
         discovery=discovery,
         preflight=RequirementPreflight,
-        planner=SetupPlanner(),
+        planner=None,
         plan_store=WorkflowPlanStore(),
         approval=SetupApproval,
         development_workflow=workflow,

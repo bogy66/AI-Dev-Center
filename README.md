@@ -2,7 +2,7 @@
 
 AI-Dev-Center unterstützt die kontrollierte Entwicklung neuer und bestehender Software-, Firmware- und Hardwareprojekte – von der Projektanalyse und Anforderungsklärung über technische Entscheidungen, Setup und Implementierung bis zu Tests, Review, Freigabe und sicherer Versionsverwaltung. Dazu gehören Greenfield-Entwicklung, bestehende Git/GitHub-Repositories, Multi-Language- und Multi-Toolchain-Projekte sowie ESPHome-, Embedded- und Mikrocontroller-Projekte. Bei bestehenden Projekten respektiert AI-Dev-Center deren Architektur, Konventionen, Frameworks, Build-Systeme, Tests und Toolchains, statt sie in eine bevorzugte Zielarchitektur zu zwingen.
 
-Ein Engineering Council bewertet mehrere Lösungsvarianten, bevor der ausgewählte Vorschlag in einen kontrollierten `SetupPlan` materialisiert wird. Planung installiert nichts: Änderungen brauchen zuerst eine explizite menschliche Freigabe und werden anschließend in einem separaten Schritt ausgeführt. Web, CLI, MCP und Agenten sind Integrationsadapter über einem kanonischen Application-Workflow. Hardware-nahe Unterstützung hebt keine Sicherheitsgrenze auf: Flash, OTA, Geräteaktivierung, Deployment und andere physische Eingriffe bleiben hinter den dafür vorgesehenen Human Approvals und sind nicht Teil des Controlled Git Stage.
+Ein Engineering Council bewertet mehrere Lösungsvarianten, bevor der ausgewählte Vorschlag in einen kontrollierten `SetupPlan` materialisiert wird. Planung installiert nichts: Änderungen brauchen zuerst eine explizite menschliche Freigabe und werden anschließend in einem separaten Schritt ausgeführt. Web, API, CLI und MCP sind Integrationsadapter über demselben kanonischen Application-Workflow; sie stellen keine konkurrierenden Business-Workflows dar. Verbliebene Legacy-Klassen dienen ausschließlich Test- und Kompatibilitätszwecken und sind nicht mehr aus diesen produktiven Adaptern erreichbar. Hardware-nahe Unterstützung hebt keine Sicherheitsgrenze auf: Flash, OTA, Geräteaktivierung, Deployment und andere physische Eingriffe bleiben hinter den dafür vorgesehenen Human Approvals und sind nicht Teil des Controlled Git Stage.
 
 Nach dem kontrollierten Setup kann die Development Stage strukturierte Entwicklungsänderungen erzeugen. Der Developer Agent liefert dabei deklarative Changes statt Shell-Aktionen; ausschließlich ein separater File Applier setzt validierte Änderungen innerhalb des Projekt-Roots um.
 
@@ -30,7 +30,7 @@ User Input → Adapter → Application Service → Project Inspection → Common
 → ToolchainMaterializer → SetupPlan → Human Approval → Execution
 ```
 
-Der Council empfiehlt, der Materializer erzeugt den Plan, und nur die getrennte Execution nach Approval kann Installationen ausführen. Legacy-Agentpfade bleiben für Kompatibilität erhalten, sind aber nicht die Zielarchitektur.
+Der Council empfiehlt, der Materializer erzeugt den Plan, und nur die getrennte Execution nach Approval kann Installationen ausführen. Die drei Grenzen Setup Approval, Final Approval und Publish Approval bleiben voneinander unabhängig. Legacy-Agentklassen bleiben für Tests und Kompatibilität erhalten, sind jedoch kein produktiver alternativer Orchestrierungspfad.
 
 ## Web lokal starten
 

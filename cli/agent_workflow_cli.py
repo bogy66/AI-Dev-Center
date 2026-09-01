@@ -1,50 +1,36 @@
 from __future__ import annotations
 import argparse
-import sys
-from pathlib import Path
 
-from app.agent_setup_workflow import AgentSetupWorkflow
-from app.openrouter_llm_provider import OpenRouterLLMProvider
-from app.mcp_server import MCPServer
+from app.canonical_composition import build_canonical_components
 
 
-def _build_workflow() -> AgentSetupWorkflow:
-    llm = OpenRouterLLMProvider()
-    mcp = MCPServer()
-    return AgentSetupWorkflow(llm, mcp)
+def _build_workflow():
+    return build_canonical_components()
 
 
 def start_command(args: argparse.Namespace) -> int:
-    workflow = _build_workflow()
-    result = workflow.start_setup_workflow(args.project_id, args.project_path)
-    if result.approval_required:
-        print(f"pending approval: project={result.project_id}, plan={result.plan_id}")
-        print(f"approval_status={result.approval_status}")
-        return 0
-    if result.error_message:
-        print(f"error: {result.error_message}", file=sys.stderr)
-        return 1
-    print(f"unexpected result: {result.agent_status}")
-    return 1
+    components = _build_workflow()
+    result = components.service.plan_project_setup(args.project_id, args.project_path)
+    components.plan_store.save(result.setup_plan)
+    print(f"pending approval: project={args.project_id}, plan={result.setup_plan.id}")
+    print(f"approval_status={result.setup_plan.status}")
+    return 0
 
 
 def approve_command(args: argparse.Namespace) -> int:
-    workflow = _build_workflow()
-    result = workflow.approve_and_execute(args.project_id, args.plan_id)
-    if result.workflow_status == "completed":
-        print(f"completed: project={result.project_id}, plan={result.plan_id}")
-        return 0
-    if result.error_message:
-        print(f"error: {result.error_message}", file=sys.stderr)
-        return 1
-    print(f"unexpected result: {result.workflow_status}")
-    return 1
+    components = _build_workflow()
+    plan = components.plan_store.load(args.project_id, args.plan_id)
+    approved = components.approval.approve(plan)
+    components.plan_store.save(approved)
+    print(f"approved: project={args.project_id}, plan={args.plan_id}")
+    print("execution requires the canonical run-specific execution adapter")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="agent-workflow-cli",
-        description="Run the LLM agent setup workflow through MCP tools.",
+        description="Compatibility CLI routed to the canonical setup workflow.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -53,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     start.add_argument("project_path")
     start.set_defaults(func=start_command)
 
-    approve = sub.add_parser("approve", help="Approve and execute a pending plan")
+    approve = sub.add_parser("approve", help="Approve a pending plan without implicit execution")
     approve.add_argument("project_id")
     approve.add_argument("plan_id")
     approve.set_defaults(func=approve_command)

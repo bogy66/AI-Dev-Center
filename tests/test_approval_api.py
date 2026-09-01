@@ -1,29 +1,18 @@
 import pytest
-from fastapi.testclient import TestClient
-from app.api import app
+
+from app.api import ApprovalRequest, approve_approval, get_approval_status
+from app.api import reject_approval
 
 
-client = TestClient(app)
+def test_legacy_approval_status_contract_is_deprecated():
+    response = get_approval_status()
+    assert response.status_code == 409
+    assert b'deprecated_unsafe_contract' in response.body
 
 
-def test_get_approval_status():
-    response = client.get("/approval")
-    assert response.status_code == 200
-    assert "status" in response.json()
-
-
-
-def test_approve_approval():
-    response = client.post("/approval/approve", json={"approved_by": "Udo", "comment": "Looks good"})
-    assert response.status_code == 200
-    assert response.json()["status"] == "approved"
-    assert response.json()["approved_by"] == "Udo"
-    assert response.json()["comment"] == "Looks good"
-
-
-def test_reject_approval():
-    response = client.post("/approval/reject", json={"approved_by": "Udo", "comment": "Needs changes"})
-    assert response.status_code == 200
-    assert response.json()["status"] == "rejected"
-    assert response.json()["approved_by"] == "Udo"
-    assert response.json()["comment"] == "Needs changes"
+@pytest.mark.parametrize("action", [approve_approval, reject_approval])
+def test_legacy_approval_mutations_cannot_bypass_plan_specific_approval(action):
+    payload = ApprovalRequest(approved_by="Udo", comment="reviewed")
+    response = action(payload)
+    assert response.status_code == 409
+    assert b'run/plan-specific' in response.body

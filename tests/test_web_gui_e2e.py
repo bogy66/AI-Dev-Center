@@ -90,20 +90,21 @@ def test_canonical_approval_and_execution_are_separate_http_steps():
     )
 
 
-@pytest.mark.parametrize("council", [None, SimpleNamespace(enabled=False)])
-def test_composition_blocks_invalid_council_before_secrets(monkeypatch, council):
-    config = SimpleNamespace(council=council)
-    secret_store = MagicMock()
-    provider = MagicMock()
-    council_factory = MagicMock()
-    monkeypatch.setattr(web_api, "load_ai_config", lambda _: config)
-    monkeypatch.setattr(web_api, "LocalSecretStore", secret_store)
-    monkeypatch.setattr(web_api, "create_llm_provider", provider)
-    monkeypatch.setattr(web_api, "EngineeringCouncil", council_factory)
+def test_web_composition_delegates_to_shared_canonical_root(monkeypatch):
+    components = SimpleNamespace(
+        service=object(),
+        plan_store=object(),
+        approval=object(),
+        development_workflow=object(),
+    )
+    builder = MagicMock(return_value=components)
+    monkeypatch.setattr(web_api, "build_canonical_components", builder)
 
-    with pytest.raises(web_api.WorkflowExecutionError):
-        web_api.get_web_setup_components()
+    result = web_api.get_web_setup_components()
 
-    secret_store.assert_not_called()
-    provider.assert_not_called()
-    council_factory.assert_not_called()
+    builder.assert_called_once_with()
+    assert isinstance(result, web_api.WebSetupComponents)
+    assert result.service is components.service
+    assert result.plan_store is components.plan_store
+    assert result.approval is components.approval
+    assert result.development_workflow is components.development_workflow

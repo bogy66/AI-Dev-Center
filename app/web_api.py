@@ -10,41 +10,14 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from app.agent_setup_workflow import AgentSetupWorkflow, AgentSetupWorkflowResult
-from app.agent_executor import AgentExecutor
-from app.ai_config import load_ai_config
-from app.ai_requirement_discovery import AIRequirementDiscovery
 from app.dev_workflow import DevelopmentWorkflow, WorkflowExecutionError
-from app.development_stage import DeveloperAgent, DevelopmentStage
-from app.development_testing_stage import DevelopmentTestingStage
-from app.developer_file_applier import DeveloperFileApplier
-from app.engineering_council import EngineeringCouncil
 from app.diagnostic_trace import DiagnosticTraceRecorder, TraceEvent, TraceLevel
-from app.llm_provider_factory import create_llm_provider
-from app.local_secret_store import LocalSecretStore
-from app.project_inspector import ProjectInspector
-from app.project_test_runner import ProjectTestRunner
 from app.project_setup_application import ProjectSetupApplicationService
 from app.canonical_execution import (
     ConcurrentExecutionError, ExecutionReentryError, RecoveryRequiredError,
 )
-from app.mcp_server import MCPServer
-from app.python_package_executor import PythonPackageExecutor
-from app.requirement_preflight import RequirementPreflight
-from app.requirement_validator import RequirementValidator
-from app.setup_approval import SetupApproval
-from app.setup_planner import SetupPlanner
-from app.toolchain_materializer import ToolchainMaterializer
-from app.test_change_generator import TestChangeGenerator
-from app.testing_stage import DiagnosisReviewer, TestingStage
 from app.workflow_plan_store import WorkflowPlanStore
-from app.project_scanner import ProjectScanner
-
-# Import the shared file reading helper.  This keeps the web component
-# aligned with the existing CLI/domain behaviour instead of duplicating
-# the same logic in a new place.
-from app.workflow_cli import read_project_files
-
+from app.canonical_composition import build_canonical_components
 
 app = FastAPI(title="AI Dev Center Web GUI")
 app.mount("/static", StaticFiles(directory="web"), name="static")
@@ -62,7 +35,7 @@ class TracingMCPServerWrapper:
     tool_completed, or tool_failed.
     """
 
-    def __init__(self, real_mcp: MCPServer, recorder: DiagnosticTraceRecorder):
+    def __init__(self, real_mcp: object, recorder: DiagnosticTraceRecorder):
         self._real = real_mcp
         self._recorder = recorder
 
@@ -136,7 +109,7 @@ class Session:
         self.trace_level = trace_level
         self.recorder = recorder
         self.mcp_wrapper: Optional[TracingMCPServerWrapper] = None
-        self.workflow: Optional[AgentSetupWorkflow] = None
+        self.workflow: Optional[object] = None
         self.development_workflow: Optional[DevelopmentWorkflow] = None
         self.project_setup_service: Optional[ProjectSetupApplicationService] = None
         self.plan_store: Optional[WorkflowPlanStore] = None
@@ -160,37 +133,6 @@ sessions: Dict[str, Session] = {}
 # ---------------------------------------------------------------------------
 #  Component construction
 # ---------------------------------------------------------------------------
-def build_mcp_server(config, llm_provider) -> MCPServer:
-    """Create a fully wired MCPServer, matching the application's normal
-    dependency graph instead of relying on a zero-argument constructor."""
-    discovery = AIRequirementDiscovery(
-        llm_provider=llm_provider,
-        ai_model=config.model,
-    )
-
-    development_workflow = DevelopmentWorkflow(
-        discovery=discovery,
-        validator=RequirementValidator,
-        preflight=RequirementPreflight,
-        planner=SetupPlanner(),
-        executor=PythonPackageExecutor(),
-    )
-
-    project_scanner = ProjectScanner()
-    plan_store = WorkflowPlanStore(".workflow-plans")
-    approval = SetupApproval
-
-    return MCPServer(
-        project_scanner=project_scanner,
-        discovery=discovery,
-        preflight=RequirementPreflight,
-        planner=SetupPlanner(),
-        plan_store=plan_store,
-        approval=approval,
-        development_workflow=development_workflow,
-    )
-
-
 class WebSetupComponents:
     """Canonical planning dependencies for the web adapter."""
 
@@ -203,51 +145,17 @@ class WebSetupComponents:
 
 def get_web_setup_components() -> WebSetupComponents:
     """Build the canonical setup path without creating legacy agents."""
-    config = load_ai_config("config/ai-dev-center.yml")
-    council_config = config.council
-    if council_config is None or not council_config.enabled:
-        raise WorkflowExecutionError(
-            "Engineering Council configuration must be enabled."
-        )
-
-    secret_resolver = LocalSecretStore()
-    llm_provider = create_llm_provider(config, secret_resolver)
-    discovery = AIRequirementDiscovery(llm_provider=llm_provider, ai_model=config.model)
-    council = EngineeringCouncil(
-        council_config=council_config,
-        secret_resolver=secret_resolver,
-    )
-    agent_executor = AgentExecutor(model=config.model)
-    development_testing_stage = DevelopmentTestingStage(
-        DevelopmentStage(DeveloperAgent(agent_executor)),
-        TestChangeGenerator(agent_executor),
-        DeveloperFileApplier,
-        ProjectTestRunner(),
-        TestingStage(DiagnosisReviewer(agent_executor)),
-    )
-    workflow = DevelopmentWorkflow(
-        discovery=discovery,
-        validator=RequirementValidator,
-        preflight=RequirementPreflight,
-        executor=PythonPackageExecutor(),
-        council=council,
-        materializer=ToolchainMaterializer(),
-        development_testing_stage=development_testing_stage,
-    )
+    components = build_canonical_components()
     return WebSetupComponents(
-        ProjectSetupApplicationService(workflow, ProjectInspector()),
-        WorkflowPlanStore(".workflow-plans"),
-        SetupApproval,
-        workflow,
+        components.service, components.plan_store, components.approval,
+        components.development_workflow,
     )
 
 
 # Legacy dependency retained for the old agent-backed compatibility path.
 def get_workflow_components():
-    config = load_ai_config("config/ai-dev-center.yml")
-    secret_resolver = LocalSecretStore()
-    llm_provider = create_llm_provider(config, secret_resolver)
-    return llm_provider, build_mcp_server(config, llm_provider)
+    """Deprecated compatibility hook; returns the canonical composition."""
+    return build_canonical_components()
 
 
 # ---------------------------------------------------------------------------

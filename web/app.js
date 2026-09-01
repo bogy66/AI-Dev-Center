@@ -639,7 +639,7 @@ const helpSlides = [
     {
         title: 'The Goal',
         html: () => `
-            <p>AI Dev Center supports the controlled development of new and existing software, firmware and hardware projects.</p>
+            <p>AI Dev Center provides a controlled canonical development workflow reached through different communication adapters.</p>
             <p>It spans project analysis and requirements clarification, technical decisions, setup and implementation, testing, review, approval and safe version control while keeping the human in control.</p>
             <div class="flow-row">
                 <span class="flow-step">Task</span>
@@ -679,8 +679,8 @@ const helpSlides = [
         title: 'What is AI Dev Center?',
         html: () => `
             <p>AI Dev Center is not intended to be just one chatbot producing code.</p>
-            <p>It is an orchestrated development workspace in which specialized AI roles contribute to a common project workflow.</p>
-            <p>Greenfield projects and existing systems are equal use cases, including software, firmware, embedded, hardware-adjacent, ESPHome and microcontroller development as well as combined multi-language and multi-toolchain projects.</p>
+            <p>It is an orchestrated development workspace in which specialized AI roles contribute to one common canonical project workflow.</p>
+            <p>Web, API, CLI and MCP are adapters to that workflow, not separate business pipelines. Legacy compatibility classes may remain without being productive alternatives.</p>
             <p>For an existing project, its architecture, conventions, frameworks, build systems, tests and toolchains remain authoritative; AI Dev Center does not force it into a preferred architecture.</p>
             <p>The user interacts primarily through Chat.</p>
             <p>The system handles:</p>
@@ -700,7 +700,7 @@ const helpSlides = [
             <p>A successful local commit only creates ready for publish and a separate pending Publish Approval. After explicit publish approval, the Controlled Publish Stage pushes the exact persisted run commit to an existing configured Git remote using an explicit branch ref. Missing remotes, detached HEAD, unrelated later commits, authentication failures and non-fast-forward pushes stop fail-safe. It never force-pushes or repairs history through merge or rebase. Publish means Git remote push here—not release, pull request, deployment, hardware flash, OTA, package publish or general CI/CD automation.</p>
             <p>The Central Diagnostic Trace provides a persistent run-specific timeline across workflow phases, approvals, controlled Git and controlled publish. Stable sequences and UTC timestamps make pending, failed, rework, approved, committed and published outcomes explainable after a restart. It stores only allowlisted, redacted diagnostic metadata and cannot replace Workflow State or grant an approval. It is not presented as enterprise SIEM, event sourcing, a cryptographic audit chain or distributed tracing.</p>
             <p>Project-level execution ownership prevents concurrent canonical mutations of the same workspace. A persistent execution lifecycle makes interrupted work visible and stops unsafe automatic repetition after a crash. Recovery remains deliberately bounded: it is not distributed consensus, an exactly-once LLM guarantee or a transactional rollback system.</p>
-            <p>Hardware support does not authorize physical actions: flashing, OTA, device activation and other hardware interventions remain behind their dedicated human-approval boundaries.</p>
+            <p>Multi-toolchain automation, ESPHome integration, flashing, OTA and other physical hardware actions are outside the current productive scope.</p>
             <p>Human control remains central.</p>
         `
     },
@@ -722,7 +722,7 @@ const helpSlides = [
                 <span class="flow-arrow">↓</span>
                 <span class="flow-step">Result</span>
             </div>
-            <p>Approval can be required before execution where the workflow demands it.</p>
+            <p>Setup Approval is required before setup execution. Final Approval and Publish Approval remain separate later decisions.</p>
             <p><strong>Chat</strong> = user interaction<br><strong>Trace</strong> = technical observability</p>
         `
     },
@@ -742,18 +742,18 @@ const helpSlides = [
     {
         title: 'Technical Architecture',
         html: () => `
-            <div class="arch-layer">Web GUI</div>
+            <div class="arch-layer">Web / API / CLI / MCP adapters</div>
             <div class="flow-arrow">↓</div>
-            <div class="arch-layer">Workflow / Agent orchestration</div>
+            <div class="arch-layer">Canonical Application Service</div>
             <div class="flow-arrow">↓</div>
-            <div class="arch-layer">LLM Provider</div>
+            <div class="arch-layer">Inspection / Requirements / Council / SetupPlan</div>
             <div class="flow-arrow">↓</div>
-            <div class="arch-layer">MCP tools</div>
+            <div class="arch-layer">Approvals / Development / Testing / Review</div>
             <div class="flow-arrow">↓</div>
-            <div class="arch-layer">Project / execution</div>
+            <div class="arch-layer">Controlled Git / Controlled Publish</div>
             <div class="flow-arrow">↓</div>
             <div class="arch-layer">State + Trace</div>
-            <p>Known project concepts include Web GUI, workflow orchestration, AgentLLM, MCP server/tools, LLM provider, project state, diagnostic trace, approval and configuration.</p>
+            <p>Setup Approval, Final Approval and Publish Approval are separate boundaries. State owns decisions; Trace observes them.</p>
         `
     },
     {
@@ -806,7 +806,7 @@ const helpSlides = [
                 <span class="flow-arrow">↓</span>
                 <span class="flow-step">Plan</span>
                 <span class="flow-arrow">↓</span>
-                <span class="flow-step">Approval when required</span>
+                <span class="flow-step">Setup Approval</span>
                 <span class="flow-arrow">↓</span>
                 <span class="flow-step">Implement</span>
                 <span class="flow-arrow">↓</span>
@@ -814,7 +814,7 @@ const helpSlides = [
                 <span class="flow-arrow">↓</span>
                 <span class="flow-step">Review</span>
                 <span class="flow-arrow">↓</span>
-                <span class="flow-step">Complete</span>
+                <span class="flow-step">Final Approval → Controlled Git → Publish Approval</span>
             </div>
             <p>Corrections, questions and additional instructions happen through Chat.</p>
             <p>Use cases: understand an existing project, add a feature, fix a problem, refactor, create a project, add tests, review, debug the workflow.</p>

@@ -112,18 +112,18 @@
             <div id="help-overview-content" class="help-section-content">
                 <div class="help-content">
                     <h3>What is AI Dev Center?</h3>
-                    <p>AI Dev Center supports the controlled development of new and existing software, firmware and hardware projects—from project analysis and requirements clarification through technical decisions, setup and implementation to testing, review, approval and safe version control.</p>
-                    <p>Greenfield work, existing Git/GitHub repositories, multi-language and multi-toolchain projects, ESPHome, embedded and microcontroller projects are equal use cases. Existing architecture, conventions, frameworks, build systems, tests and toolchains are recognized and respected.</p>
-                    <p>Hardware support never bypasses human control: flashing, OTA, device activation, deployment and other physical actions remain behind their required approval boundaries.</p>
+                    <p>AI Dev Center provides a controlled canonical workflow for project inspection, requirements, setup planning, implementation, testing, review, approval and safe version control.</p>
+                    <p>Web, API, CLI and MCP are communication adapters into that same business workflow. Compatibility classes may remain in the codebase, but they are not alternative productive orchestration paths.</p>
+                    <p>Current execution support is deliberately bounded. Multi-toolchain automation, ESPHome integration, flashing, OTA, device activation and other physical hardware actions are not presented as productive capabilities.</p>
 
                     <h3>Typical workflow</h3>
-                    <p>The system orchestrates a complete development process:</p>
+                    <p>The canonical process keeps planning, execution and human trust boundaries explicit:</p>
                     <ul>
-                        <li>Project Manager coordinates the overall task and workflow.</li>
-                        <li>Architect analyzes project structure and requirements.</li>
-                        <li>Developer implements the planned changes.</li>
-                        <li>Tester runs verification and tests.</li>
-                        <li>Reviewer reviews the result for defects and quality.</li>
+                        <li>Inspect the project, discover and validate requirements, and run preflight checks.</li>
+                        <li>Let the Engineering Council evaluate options and materialize a SetupPlan.</li>
+                        <li>Require explicit Setup Approval before setup execution.</li>
+                        <li>Apply structured development and test changes, run real tests, and review the result.</li>
+                        <li>Allow at most one controlled rework before Final Approval.</li>
                     </ul>
                     <p>After an accepted result, a separate final human approval can mark the run as ready for Git. A further explicit Controlled Git Stage may then create a local commit from validated run-specific whole-file provenance only.</p>
                     <p>That local commit only makes the run ready for publish and creates a separate pending Publish Approval. After explicit publish approval, a separate Controlled Publish Stage can push the exact run commit to an existing configured Git remote and explicit branch ref.</p>
@@ -154,9 +154,7 @@
                         <li>Fix a problem</li>
                         <li>Refactor code</li>
                         <li>Create a new project</li>
-                        <li>Develop firmware, embedded and hardware-adjacent systems</li>
-                        <li>Work with ESPHome, microcontrollers and combined software/firmware/hardware projects</li>
-                        <li>Respect existing Git repositories, languages, build systems and toolchains</li>
+                        <li>Respect existing project files and Git safety boundaries</li>
                         <li>Add tests</li>
                         <li>Review changes</li>
                         <li>Debug the workflow</li>
