@@ -639,8 +639,8 @@ const helpSlides = [
     {
         title: 'The Goal',
         html: () => `
-            <p>AI Dev Center is an AI-powered development workspace designed to work like a team of specialized development agents.</p>
-            <p>It takes a development task, understands the existing project, plans changes, implements them, tests the result and reviews the outcome while keeping the human in control.</p>
+            <p>AI Dev Center supports the controlled development of new and existing software, firmware and hardware projects.</p>
+            <p>It spans project analysis and requirements clarification, technical decisions, setup and implementation, testing, review, approval and safe version control while keeping the human in control.</p>
             <div class="flow-row">
                 <span class="flow-step">Task</span>
                 <span class="flow-arrow">→</span>
@@ -680,6 +680,8 @@ const helpSlides = [
         html: () => `
             <p>AI Dev Center is not intended to be just one chatbot producing code.</p>
             <p>It is an orchestrated development workspace in which specialized AI roles contribute to a common project workflow.</p>
+            <p>Greenfield projects and existing systems are equal use cases, including software, firmware, embedded, hardware-adjacent, ESPHome and microcontroller development as well as combined multi-language and multi-toolchain projects.</p>
+            <p>For an existing project, its architecture, conventions, frameworks, build systems, tests and toolchains remain authoritative; AI Dev Center does not force it into a preferred architecture.</p>
             <p>The user interacts primarily through Chat.</p>
             <p>The system handles:</p>
             <ul>
@@ -693,8 +695,9 @@ const helpSlides = [
             </ul>
             <p>The Development Stage has a controlled boundary: the Developer produces structured changes, while the File Applier alone writes validated files inside the project root. It does not use arbitrary shell commands; testing, review and Git remain later stages.</p>
             <p>The canonical Development-Testing flow connects structured development changes, structured test changes, controlled application, real test execution and diagnosis in that order. The TestChangeGenerator produces test changes without writing files, while the Git-free ProjectTestRunner runs only an allowed test action. It never accepts arbitrary LLM-generated shell commands; the Git-based legacy TestBench is not this canonical core path.</p>
-            <p>For each controlled run, AI Dev Center records which declared files were changed, their original and resulting hashes, and whether they were already modified or staged in Git. This provenance protects existing user changes and supports later review; it does not commit, push, or automatically select individual Git hunks.</p>
-            <p>Setup approval and final approval are separate safety boundaries. After an approved setup has executed successfully, the canonical flow can continue through development, structured test changes, controlled application, real tests and diagnosis. A structured rework request may trigger exactly one controlled rework cycle; another rework-required result ends the run. A final accepted result waits for explicit human final approval: approved means only ready for Git, while rejected stops the run. No tests or review are repeated by approval, and there is no Git or publish step here.</p>
+            <p>For each controlled run, AI Dev Center records which declared files were changed, their original and resulting hashes, and whether they were already modified or staged in Git. This provenance protects existing user changes. Preexisting or mixed provenance, foreign staged content, and a final hash mismatch block automatic whole-file staging.</p>
+            <p>Setup approval and final approval are separate safety boundaries. After an approved setup has executed successfully, the canonical flow can continue through development, structured test changes, controlled application, real tests and diagnosis. A structured rework request may trigger exactly one controlled rework cycle; another rework-required result ends the run. A final accepted result waits for explicit human final approval. Its approved result means ready for Git; a further explicit Controlled Git Stage may then create a controlled local commit containing only validated run paths. It does not push, publish, deploy, or automatically select Git hunks.</p>
+            <p>Hardware support does not authorize physical actions: flashing, OTA, device activation and other hardware interventions remain behind their dedicated human-approval boundaries.</p>
             <p>Human control remains central.</p>
         `
     },

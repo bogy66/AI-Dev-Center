@@ -46,6 +46,7 @@ class WorkflowManager:
             },
             "final_approvals": {},
             "change_provenance": {},
+            "git_commit_results": {},
         }
 
     def _merge_with_defaults(self, default, state):
@@ -213,3 +214,11 @@ class WorkflowManager:
                 raise ValueError("Provenance baseline is missing")
             entry["events"].append(event)
             self.save(state)
+
+    def git_stage_transaction(self):
+        """Expose the canonical state lock for one application-level Git transaction."""
+        return self._lock
+
+    def persist_git_commit_result(self, state, run_id, result):
+        state.setdefault("git_commit_results", {})[run_id] = result
+        self.save(state)

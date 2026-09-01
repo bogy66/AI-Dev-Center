@@ -112,8 +112,9 @@
             <div id="help-overview-content" class="help-section-content">
                 <div class="help-content">
                     <h3>What is AI Dev Center?</h3>
-                    <p>AI Dev Center is an AI-powered development workspace designed to act like a team of specialized development agents.</p>
-                    <p>Its purpose is to take a development task, understand the existing project, plan changes, implement them, test the result and review the outcome while keeping the human in control.</p>
+                    <p>AI Dev Center supports the controlled development of new and existing software, firmware and hardware projects—from project analysis and requirements clarification through technical decisions, setup and implementation to testing, review, approval and safe version control.</p>
+                    <p>Greenfield work, existing Git/GitHub repositories, multi-language and multi-toolchain projects, ESPHome, embedded and microcontroller projects are equal use cases. Existing architecture, conventions, frameworks, build systems, tests and toolchains are recognized and respected.</p>
+                    <p>Hardware support never bypasses human control: flashing, OTA, device activation, deployment and other physical actions remain behind their required approval boundaries.</p>
 
                     <h3>Typical workflow</h3>
                     <p>The system orchestrates a complete development process:</p>
@@ -124,6 +125,8 @@
                         <li>Tester runs verification and tests.</li>
                         <li>Reviewer reviews the result for defects and quality.</li>
                     </ul>
+                    <p>After an accepted result, a separate final human approval can mark the run as ready for Git. A further explicit Controlled Git Stage may then create a local commit from validated run-specific whole-file provenance only.</p>
+                    <p>Preexisting or mixed changes, foreign staged content, and a final hash mismatch block the commit. This step does not push, publish, deploy, or automatically select hunks.</p>
 
                     <h3>The AI team</h3>
                     <ul>
@@ -142,6 +145,9 @@
                         <li>Fix a problem</li>
                         <li>Refactor code</li>
                         <li>Create a new project</li>
+                        <li>Develop firmware, embedded and hardware-adjacent systems</li>
+                        <li>Work with ESPHome, microcontrollers and combined software/firmware/hardware projects</li>
+                        <li>Respect existing Git repositories, languages, build systems and toolchains</li>
                         <li>Add tests</li>
                         <li>Review changes</li>
                         <li>Debug the workflow</li>

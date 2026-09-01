@@ -15,6 +15,7 @@ from app.project_inspector import ProjectInspector
 from app.workflow_manager import WorkflowManager
 from app.final_approval import FinalApprovalResult
 from app.change_provenance import RunChangeProvenance
+from app.controlled_git_stage import ControlledGitStage, GitCommitRequest, GitCommitResult
 
 
 class ProjectSetupApplicationService:
@@ -25,10 +26,12 @@ class ProjectSetupApplicationService:
         development_workflow: DevelopmentWorkflow,
         project_inspector: ProjectInspector | None = None,
         workflow_manager: WorkflowManager | None = None,
+        controlled_git_stage: ControlledGitStage | None = None,
     ) -> None:
         self._development_workflow = development_workflow
         self._project_inspector = project_inspector or ProjectInspector()
         self._workflow_manager = workflow_manager or WorkflowManager()
+        self._controlled_git_stage = controlled_git_stage or ControlledGitStage()
 
     def build_request(
         self, project_id: str, project_path: str | Path
@@ -99,6 +102,32 @@ class ProjectSetupApplicationService:
         return self._workflow_manager.decide_final_approval(
             run_id, decision, approved_by, comment,
         )
+
+    def commit_approved_run(
+        self, run_id: str, project_root: str | Path, commit_message: str,
+    ) -> GitCommitResult:
+        """Run the explicit post-approval local Git stage exactly once."""
+        with self._workflow_manager.git_stage_transaction():
+            state = self._workflow_manager.load()
+            persisted = state.get("git_commit_results", {}).get(run_id)
+            if persisted and persisted.get("status") in {"committed", "nothing_to_commit"}:
+                return GitCommitResult.from_record(persisted)
+            approval = state.get("final_approvals", {}).get(run_id, {})
+            request = GitCommitRequest(
+                run_id=run_id,
+                project_root=project_root,
+                commit_message=commit_message,
+                development_status=approval.get("development_status", "missing"),
+                final_approval_status=approval.get("status", "missing"),
+                ready_for_git=approval.get("status") == "approved",
+                provenance=state.get("change_provenance", {}).get(run_id, {}),
+                all_provenance=state.get("change_provenance", {}),
+            )
+            result = self._controlled_git_stage.run(request)
+            self._workflow_manager.persist_git_commit_result(
+                state, run_id, result.to_record(),
+            )
+            return result
 
     def _final_approval_for(self, run_id: str, development_status: str) -> FinalApprovalResult:
         if development_status != "accepted":
