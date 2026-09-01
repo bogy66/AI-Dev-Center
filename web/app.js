@@ -691,6 +691,7 @@ const helpSlides = [
                 <li>review</li>
                 <li>traceability</li>
             </ul>
+            <p>The Development Stage has a controlled boundary: the Developer produces structured changes, while the File Applier alone writes validated files inside the project root. It does not use arbitrary shell commands; testing, review and Git remain later stages.</p>
             <p>Human control remains central.</p>
         `
     },
