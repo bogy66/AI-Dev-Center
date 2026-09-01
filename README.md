@@ -6,6 +6,8 @@ Nach dem kontrollierten Setup kann die Development Stage strukturierte Entwicklu
 
 Teständerungen und Testausführung bleiben ebenfalls getrennt: Ein Generator liefert strukturierte Test-Changes, während ein Git-freier, allowlist-basierter Runner nur die vorgesehene Testaktion ausführt. AI-Dev-Center führt dabei keine beliebigen LLM-generierten Shell-Kommandos aus.
 
+Reale Testergebnisse haben Vorrang vor KI-Diagnosen: Fehlgeschlagene oder abgelaufene Tests erzeugen strukturiertes Rework und können nicht künstlich freigegeben werden. Ein automatischer Rework-Loop, Git und Publish gehören nicht zu diesem Stage.
+
 ## Kanonischer Setup-Flow
 
 ```text
