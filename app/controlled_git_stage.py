@@ -28,6 +28,7 @@ class GitCommitResult:
     commit_hash: str | None = None
     blockers: tuple[str, ...] = ()
     error: str | None = None
+    ready_for_publish: bool = False
 
     def to_record(self) -> dict:
         record = asdict(self)
@@ -45,6 +46,7 @@ class GitCommitResult:
             commit_hash=record.get("commit_hash"),
             blockers=tuple(record.get("blockers", ())),
             error=record.get("error"),
+            ready_for_publish=record.get("ready_for_publish", record.get("status") == "committed"),
         )
 
 
@@ -103,7 +105,7 @@ class ControlledGitStage:
             return self._failed(request, ("created commit hash could not be read",), commit_hash.stderr.strip())
         return GitCommitResult(
             request.run_id, "committed", request.commit_message, paths,
-            commit_hash.stdout.strip(),
+            commit_hash.stdout.strip(), ready_for_publish=True,
         )
 
     @staticmethod

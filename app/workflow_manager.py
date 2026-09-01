@@ -47,6 +47,8 @@ class WorkflowManager:
             "final_approvals": {},
             "change_provenance": {},
             "git_commit_results": {},
+            "publish_approvals": {},
+            "publish_results": {},
         }
 
     def _merge_with_defaults(self, default, state):
@@ -221,4 +223,59 @@ class WorkflowManager:
 
     def persist_git_commit_result(self, state, run_id, result):
         state.setdefault("git_commit_results", {})[run_id] = result
+        self.save(state)
+
+    def create_publish_approval(self, run_id):
+        """Create pending approval only from this run's committed Git result."""
+        from app.publish_approval import PublishApprovalError, result_from_record
+
+        with self._lock:
+            state = self.load()
+            commit = state.get("git_commit_results", {}).get(run_id)
+            if not commit or commit.get("status") != "committed" or not commit.get("commit_hash"):
+                raise PublishApprovalError("Publish approval requires a committed run")
+            approvals = state.setdefault("publish_approvals", {})
+            record = approvals.get(run_id)
+            if record is None:
+                record = {
+                    "status": "pending",
+                    "ready_for_publish": True,
+                    "approved_by": None,
+                    "approved_at": None,
+                    "comment": None,
+                }
+                approvals[run_id] = record
+                self.save(state)
+            return result_from_record(run_id, record)
+
+    def decide_publish_approval(self, run_id, decision, approved_by=None, comment=None):
+        """Apply one explicit, terminal publish approval decision."""
+        from app.publish_approval import PublishApprovalError, result_from_record
+
+        if decision not in {"approved", "rejected"}:
+            raise PublishApprovalError("Publish approval decision must be approved or rejected")
+        with self._lock:
+            state = self.load()
+            record = state.get("publish_approvals", {}).get(run_id)
+            commit = state.get("git_commit_results", {}).get(run_id)
+            if record is None or not commit or commit.get("status") != "committed":
+                raise PublishApprovalError("No committed run is awaiting publish approval")
+            current = record.get("status")
+            if current == decision:
+                return result_from_record(run_id, record)
+            if current != "pending":
+                raise PublishApprovalError(
+                    f"Cannot change publish approval from {current!r} to {decision!r}"
+                )
+            record.update({
+                "status": decision,
+                "approved_by": approved_by,
+                "approved_at": str(datetime.now()),
+                "comment": comment,
+            })
+            self.save(state)
+            return result_from_record(run_id, record)
+
+    def persist_publish_result(self, state, run_id, result):
+        state.setdefault("publish_results", {})[run_id] = result
         self.save(state)

@@ -146,6 +146,8 @@ def test_success_is_persisted_and_second_call_does_not_commit_again(tmp_path):
     assert _git(tmp_path, "rev-list", "--count", "HEAD").stdout == count
     state = WorkflowManager(manager.storage).load()
     assert state["git_commit_results"]["run-1"]["commit_hash"] == first.commit_hash
+    assert state["git_commit_results"]["run-1"]["ready_for_publish"] is True
+    assert state["publish_approvals"]["run-1"]["status"] == "pending"
     assert state["user_approval"]["status"] == "approved"
     assert state["final_approvals"]["run-1"]["status"] == "approved"
     assert state["change_provenance"]["run-1"]

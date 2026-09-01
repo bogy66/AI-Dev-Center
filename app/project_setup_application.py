@@ -16,6 +16,8 @@ from app.workflow_manager import WorkflowManager
 from app.final_approval import FinalApprovalResult
 from app.change_provenance import RunChangeProvenance
 from app.controlled_git_stage import ControlledGitStage, GitCommitRequest, GitCommitResult
+from app.controlled_publish_stage import ControlledPublishStage, PublishRequest, PublishResult
+from app.publish_approval import PublishApprovalResult
 
 
 class ProjectSetupApplicationService:
@@ -27,11 +29,13 @@ class ProjectSetupApplicationService:
         project_inspector: ProjectInspector | None = None,
         workflow_manager: WorkflowManager | None = None,
         controlled_git_stage: ControlledGitStage | None = None,
+        controlled_publish_stage: ControlledPublishStage | None = None,
     ) -> None:
         self._development_workflow = development_workflow
         self._project_inspector = project_inspector or ProjectInspector()
         self._workflow_manager = workflow_manager or WorkflowManager()
         self._controlled_git_stage = controlled_git_stage or ControlledGitStage()
+        self._controlled_publish_stage = controlled_publish_stage or ControlledPublishStage()
 
     def build_request(
         self, project_id: str, project_path: str | Path
@@ -125,6 +129,46 @@ class ProjectSetupApplicationService:
             )
             result = self._controlled_git_stage.run(request)
             self._workflow_manager.persist_git_commit_result(
+                state, run_id, result.to_record(),
+            )
+            if result.status == "committed":
+                self._workflow_manager.create_publish_approval(run_id)
+            return result
+
+    def decide_publish_approval(
+        self, run_id: str, decision: str, approved_by: str | None = None,
+        comment: str | None = None,
+    ) -> PublishApprovalResult:
+        return self._workflow_manager.decide_publish_approval(
+            run_id, decision, approved_by, comment,
+        )
+
+    def publish_approved_run(
+        self, run_id: str, project_root: str | Path, remote: str,
+    ) -> PublishResult:
+        """Run the explicit post-publish-approval remote stage exactly once."""
+        with self._workflow_manager.git_stage_transaction():
+            state = self._workflow_manager.load()
+            persisted = state.get("publish_results", {}).get(run_id)
+            if persisted and persisted.get("status") in {"published", "already_published"}:
+                return PublishResult.from_record(persisted, status="already_published")
+            commit = state.get("git_commit_results", {}).get(run_id, {})
+            approval = state.get("publish_approvals", {}).get(run_id, {})
+            request = PublishRequest(
+                run_id=run_id,
+                project_root=project_root,
+                remote=remote,
+                git_commit_status=commit.get("status", "missing"),
+                local_commit_hash=commit.get("commit_hash"),
+                ready_for_publish=(
+                    commit.get("status") == "committed"
+                    and bool(commit.get("commit_hash"))
+                    and approval.get("ready_for_publish") is True
+                ),
+                publish_approval_status=approval.get("status", "missing"),
+            )
+            result = self._controlled_publish_stage.run(request)
+            self._workflow_manager.persist_publish_result(
                 state, run_id, result.to_record(),
             )
             return result
