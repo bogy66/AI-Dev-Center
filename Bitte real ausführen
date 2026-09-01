@@ -1,2 +1,0 @@
-python -m pytest tests/test_workflow_concurrency.py -q
-python -m pytest -q

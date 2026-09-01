@@ -1,3 +1,0 @@
-python -m pytest -q
-...
-63 passed

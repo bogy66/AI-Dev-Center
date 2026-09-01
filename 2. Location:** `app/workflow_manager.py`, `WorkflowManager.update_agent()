@@ -1,5 +1,0 @@
-if commit:
-    state[agent]["commit"] = commit
-
-if result:
-    state[agent]["result"] = result

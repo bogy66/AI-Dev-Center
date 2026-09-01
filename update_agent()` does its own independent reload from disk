@@ -1,4 +1,0 @@
-def update_agent(self, agent, status, commit=None, result=None):
-    state = self.load()
-    state[agent]["status"] = status
-    ...
