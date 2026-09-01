@@ -10,48 +10,12 @@ from app.dev_workflow import DevelopmentWorkflow, WorkflowExecutionError
 from app.engineering_council import EngineeringCouncil
 from app.llm_provider_factory import create_llm_provider
 from app.local_secret_store import LocalSecretStore
+from app.project_files import MAX_FILE_SIZE, read_project_files
 from app.requirement_preflight import RequirementPreflight
 from app.requirement_validator import RequirementValidator
 from app.setup_planner import SetupPlanner
 from app.toolchain_materializer import ToolchainMaterializer
 from app.workflow_plan_store import WorkflowPlanStore
-
-
-MAX_FILE_SIZE = 1_000_000
-
-
-def read_project_files(project_path: Path) -> tuple[list[dict], list[str]]:
-    files: list[dict] = []
-    warnings: list[str] = []
-
-    for path in sorted(project_path.rglob("*")):
-        if not path.is_file():
-            continue
-
-        try:
-            size = path.stat().st_size
-        except OSError:
-            warnings.append(f"Skipping unreadable file: {path}")
-            continue
-
-        if size > MAX_FILE_SIZE:
-            warnings.append(f"Skipping large file: {path}")
-            continue
-
-        try:
-            content = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            warnings.append(f"Skipping binary/unreadable file: {path}")
-            continue
-
-        files.append(
-            {
-                "path": str(path.relative_to(project_path)),
-                "content": content,
-            }
-        )
-
-    return files, warnings
 
 
 def build_workflow(config):
