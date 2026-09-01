@@ -4,6 +4,8 @@ AI-Dev-Center analysiert Softwareprojekte und leitet daraus nachvollziehbare tec
 
 Nach dem kontrollierten Setup kann die Development Stage strukturierte Entwicklungsänderungen erzeugen. Der Developer Agent liefert dabei deklarative Changes statt Shell-Aktionen; ausschließlich ein separater File Applier setzt validierte Änderungen innerhalb des Projekt-Roots um.
 
+Teständerungen und Testausführung bleiben ebenfalls getrennt: Ein Generator liefert strukturierte Test-Changes, während ein Git-freier, allowlist-basierter Runner nur die vorgesehene Testaktion ausführt. AI-Dev-Center führt dabei keine beliebigen LLM-generierten Shell-Kommandos aus.
+
 ## Kanonischer Setup-Flow
 
 ```text
