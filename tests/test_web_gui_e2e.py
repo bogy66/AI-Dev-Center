@@ -22,11 +22,14 @@ def _components():
     plan = SimpleNamespace(id="plan-1", status="pending_approval")
     service = MagicMock()
     service.plan_project_setup.return_value = SimpleNamespace(setup_plan=plan)
+    service.execute_approved_setup_and_development.return_value = SimpleNamespace(
+        status="accepted",
+        setup_execution_results=("done",),
+    )
     store = MagicMock()
     approval = MagicMock()
     approval.approve.return_value = SimpleNamespace(id="plan-1", status="approved")
     workflow = MagicMock()
-    workflow.execute_approved.return_value = ("done",)
     return SimpleNamespace(service=service, plan_store=store, approval=approval, development_workflow=workflow)
 
 
@@ -46,7 +49,7 @@ def test_web_planning_uses_canonical_service_without_agent_or_execution():
     components.service.plan_project_setup.assert_called_once_with("test-proj", "/tmp/test-proj")
     components.plan_store.save.assert_called_once()
     components.approval.approve.assert_not_called()
-    components.development_workflow.execute_approved.assert_not_called()
+    components.service.execute_approved_setup_and_development.assert_not_called()
 
 
 def test_canonical_approval_and_execution_are_separate_http_steps():
@@ -61,12 +64,18 @@ def test_canonical_approval_and_execution_are_separate_http_steps():
     approval = client.post(f"/api/workflow/{session_id}/approval")
 
     assert approval.json() == {"plan_id": "plan-1", "status": "approved"}
-    components.development_workflow.execute_approved.assert_not_called()
+    components.service.execute_approved_setup_and_development.assert_not_called()
 
     execution = client.post(f"/api/workflow/{session_id}/execute")
 
     assert execution.status_code == 200
-    components.development_workflow.execute_approved.assert_called_once_with(approved_plan)
+    assert execution.json()["status"] == "accepted"
+    components.service.execute_approved_setup_and_development.assert_called_once_with(
+        approved_plan,
+        "test-proj",
+        "/tmp/test-proj",
+        "Testing",
+    )
 
 
 @pytest.mark.parametrize("council", [None, SimpleNamespace(enabled=False)])

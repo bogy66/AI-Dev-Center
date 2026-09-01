@@ -5,7 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.common_request import CommonRequest, RequestIntent
-from app.dev_workflow import DevelopmentWorkflow, WorkflowResult
+from app.development_stage import DevelopmentRequest
+from app.dev_workflow import (
+    DevelopmentWorkflow,
+    SetupDevelopmentTestingResult,
+    WorkflowResult,
+)
 from app.project_inspector import ProjectInspector
 
 
@@ -45,4 +50,27 @@ class ProjectSetupApplicationService:
         return self._development_workflow.run(
             request.project_info,
             request.project_id,
+        )
+
+    def execute_approved_setup_and_development(
+        self,
+        plan,
+        project_id: str,
+        project_path: str | Path,
+        task: str,
+    ) -> SetupDevelopmentTestingResult:
+        """Execute approved setup, then delegate development/testing once."""
+        if not isinstance(project_id, str) or not project_id.strip():
+            raise ValueError("project_id must be a non-empty string")
+        if not isinstance(task, str) or not task.strip():
+            raise ValueError("task must be a non-empty string")
+
+        request = DevelopmentRequest(
+            project_id=project_id,
+            project_path=project_path,
+            task=task,
+        )
+        return self._development_workflow.execute_approved_and_run_development(
+            plan,
+            request,
         )

@@ -12,14 +12,19 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.agent_setup_workflow import AgentSetupWorkflow, AgentSetupWorkflowResult
+from app.agent_executor import AgentExecutor
 from app.ai_config import load_ai_config
 from app.ai_requirement_discovery import AIRequirementDiscovery
 from app.dev_workflow import DevelopmentWorkflow, WorkflowExecutionError
+from app.development_stage import DeveloperAgent, DevelopmentStage
+from app.development_testing_stage import DevelopmentTestingStage
+from app.developer_file_applier import DeveloperFileApplier
 from app.engineering_council import EngineeringCouncil
 from app.diagnostic_trace import DiagnosticTraceRecorder, TraceEvent, TraceLevel
 from app.llm_provider_factory import create_llm_provider
 from app.local_secret_store import LocalSecretStore
 from app.project_inspector import ProjectInspector
+from app.project_test_runner import ProjectTestRunner
 from app.project_setup_application import ProjectSetupApplicationService
 from app.mcp_server import MCPServer
 from app.python_package_executor import PythonPackageExecutor
@@ -28,6 +33,8 @@ from app.requirement_validator import RequirementValidator
 from app.setup_approval import SetupApproval
 from app.setup_planner import SetupPlanner
 from app.toolchain_materializer import ToolchainMaterializer
+from app.test_change_generator import TestChangeGenerator
+from app.testing_stage import DiagnosisReviewer, TestingStage
 from app.workflow_plan_store import WorkflowPlanStore
 from app.project_scanner import ProjectScanner
 
@@ -129,6 +136,7 @@ class Session:
         self.mcp_wrapper: Optional[TracingMCPServerWrapper] = None
         self.workflow: Optional[AgentSetupWorkflow] = None
         self.development_workflow: Optional[DevelopmentWorkflow] = None
+        self.project_setup_service: Optional[ProjectSetupApplicationService] = None
         self.plan_store: Optional[WorkflowPlanStore] = None
         self.approval = None
         self.plan_id: Optional[str] = None
@@ -206,6 +214,14 @@ def get_web_setup_components() -> WebSetupComponents:
         council_config=council_config,
         secret_resolver=secret_resolver,
     )
+    agent_executor = AgentExecutor(model=config.model)
+    development_testing_stage = DevelopmentTestingStage(
+        DevelopmentStage(DeveloperAgent(agent_executor)),
+        TestChangeGenerator(agent_executor),
+        DeveloperFileApplier,
+        ProjectTestRunner(),
+        TestingStage(DiagnosisReviewer(agent_executor)),
+    )
     workflow = DevelopmentWorkflow(
         discovery=discovery,
         validator=RequirementValidator,
@@ -213,6 +229,7 @@ def get_web_setup_components() -> WebSetupComponents:
         executor=PythonPackageExecutor(),
         council=council,
         materializer=ToolchainMaterializer(),
+        development_testing_stage=development_testing_stage,
     )
     return WebSetupComponents(
         ProjectSetupApplicationService(workflow, ProjectInspector()),
@@ -447,6 +464,7 @@ async def start_workflow(
         )
 
     session.development_workflow = components.development_workflow
+    session.project_setup_service = components.service
     session.plan_store = components.plan_store
     session.approval = components.approval
     session.plan_id = plan.id
@@ -598,16 +616,21 @@ async def execute_canonical_workflow(session_id: str):
     session = sessions.get(session_id)
     if not session:
         return JSONResponse(content={"error": "unknown session"}, status_code=404)
-    if not session.plan_store or not session.development_workflow or not session.plan_id:
+    if not session.plan_store or not session.project_setup_service or not session.plan_id:
         return JSONResponse(content={"error": "no canonical plan to execute"}, status_code=400)
     try:
         plan = session.plan_store.load(session.project_id, session.plan_id)
-        results = session.development_workflow.execute_approved(plan)
+        result = session.project_setup_service.execute_approved_setup_and_development(
+            plan,
+            session.project_id,
+            session.project_path,
+            session.task_description,
+        )
     except Exception as exc:
         return JSONResponse(content={"error": str(exc)}, status_code=409)
 
-    session.workflow_status = "completed"
-    return {"plan_id": plan.id, "status": "completed", "results": results}
+    session.workflow_status = result.status
+    return {"plan_id": plan.id, "status": result.status, "results": result.setup_execution_results}
 
 
 @app.post("/api/workflow/{session_id}/reject")

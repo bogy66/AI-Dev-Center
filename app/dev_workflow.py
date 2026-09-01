@@ -18,6 +18,7 @@ from app.requirement_validator import RequirementValidator
 from app.setup_executor import ExecutionResult, SetupExecutor
 from app.setup_planner import SetupPlanner
 from app.toolchain_materializer import ToolchainMaterializer
+from app.development_testing_stage import DevelopmentTestingResult, DevelopmentTestingStage
 
 
 class WorkflowExecutionError(Exception):
@@ -35,6 +36,18 @@ class WorkflowResult:
     setup_plan: SetupPlan
 
 
+@dataclass(frozen=True)
+class SetupDevelopmentTestingResult:
+    """Results of approved setup execution followed by canonical testing."""
+
+    setup_execution_results: tuple[ExecutionResult, ...]
+    development_testing_result: DevelopmentTestingResult
+
+    @property
+    def status(self) -> str:
+        return self.development_testing_result.status
+
+
 class DevelopmentWorkflow:
     """Run canonical planning and, separately, approved execution."""
 
@@ -47,6 +60,7 @@ class DevelopmentWorkflow:
         executor: SetupExecutor | None = None,
         council: EngineeringCouncil | None = None,
         materializer: ToolchainMaterializer | None = None,
+        development_testing_stage: DevelopmentTestingStage | None = None,
     ) -> None:
         self._discovery = discovery
         self._validator = validator
@@ -59,6 +73,7 @@ class DevelopmentWorkflow:
         self._executor = executor
         self._council = council
         self._materializer = materializer
+        self._development_testing_stage = development_testing_stage
 
     def run(self, project_info: object, project_id: str) -> WorkflowResult:
         """Run discovery through Council-based planning only.
@@ -191,4 +206,30 @@ class DevelopmentWorkflow:
         return tuple(
             self._executor.execute(step)
             for step in plan.steps
+        )
+
+    def execute_approved_and_run_development(
+        self,
+        plan: SetupPlan,
+        development_request: object,
+    ) -> SetupDevelopmentTestingResult:
+        """Run development/testing only after successful approved setup."""
+
+        if self._development_testing_stage is None:
+            raise WorkflowExecutionError(
+                "No DevelopmentTestingStage has been configured."
+            )
+
+        setup_execution_results = self.execute_approved(plan)
+        if not all(result.success for result in setup_execution_results):
+            raise WorkflowExecutionError(
+                "Setup execution did not complete successfully."
+            )
+
+        development_testing_result = self._development_testing_stage.run(
+            development_request,
+        )
+        return SetupDevelopmentTestingResult(
+            setup_execution_results=setup_execution_results,
+            development_testing_result=development_testing_result,
         )
