@@ -8,6 +8,8 @@ Teständerungen und Testausführung bleiben ebenfalls getrennt: Ein Generator li
 
 Nach erfolgreich ausgeführtem und zuvor freigegebenem Setup kann der kanonische Ablauf diese Stufen verbinden: strukturierte Entwicklungsänderungen, strukturierte Teständerungen, kontrolliertes Anwenden, reale Tests und Diagnosis/Review. Reale Testergebnisse haben Vorrang vor KI-Diagnosen: Bei einem strukturierten `rework_required` darf genau ein kontrollierter, erneut real getesteter Rework-Durchlauf folgen; ein weiteres `rework_required` beendet den Lauf. Ein finales `accepted` wartet anschließend auf eine davon getrennte menschliche Final Approval; erst deren ausdrückliches `approved` bedeutet `ready_for_git`. Ein unbegrenzter Auto-Retry, Git und Publish gehören nicht zu diesem Stage. Bestehende Projekte bleiben bei ihren Konventionen, während weitere kontrollierte Toolchain-Runner eine spätere Erweiterung ermöglichen.
 
+Für jede kontrolliert angewendete Datei hält AI-Dev-Center run-spezifische Change-Provenance fest: ursprünglicher Zustand, resultierender Hash, Phase und vorhandener Git-Zustand. Dadurch bleiben bereits vorhandene Benutzeränderungen und Index-Inhalte erkennbar und für spätere kontrollierte Git-Entscheidungen geschützt. Ein Git-Commit, Push, automatische Hunk-Auswahl oder Publish ist damit noch nicht implementiert.
+
 ## Kanonischer Setup-Flow
 
 ```text

@@ -45,6 +45,7 @@ class WorkflowManager:
                 "comment": None
             },
             "final_approvals": {},
+            "change_provenance": {},
         }
 
     def _merge_with_defaults(self, default, state):
@@ -196,3 +197,19 @@ class WorkflowManager:
             })
             self.save(state)
             return result_from_record(run_id, record)
+
+    def capture_provenance_baseline(self, run_id, project_root, path, phase, baseline):
+        with self._lock:
+            state = self.load()
+            entries = state.setdefault("change_provenance", {}).setdefault(run_id, {})
+            entries.setdefault(path, {"project_root": project_root, "baseline": {**baseline, "phase": phase}, "events": []})
+            self.save(state)
+
+    def record_provenance_event(self, run_id, path, event):
+        with self._lock:
+            state = self.load()
+            entry = state.setdefault("change_provenance", {}).setdefault(run_id, {}).get(path)
+            if entry is None:
+                raise ValueError("Provenance baseline is missing")
+            entry["events"].append(event)
+            self.save(state)

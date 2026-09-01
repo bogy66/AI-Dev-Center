@@ -32,6 +32,12 @@ class ReworkDevelopmentRequest:
             f"Diagnostics: {self.rework_request.diagnostics}"
         )
 
+    @property
+    def run_id(self): return self.original_request.run_id
+
+    @property
+    def provenance_recorder(self): return self.original_request.provenance_recorder
+
 
 @dataclass(frozen=True)
 class ControlledReworkResult:

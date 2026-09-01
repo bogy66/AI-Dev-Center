@@ -14,6 +14,7 @@ from app.dev_workflow import (
 from app.project_inspector import ProjectInspector
 from app.workflow_manager import WorkflowManager
 from app.final_approval import FinalApprovalResult
+from app.change_provenance import RunChangeProvenance
 
 
 class ProjectSetupApplicationService:
@@ -74,6 +75,8 @@ class ProjectSetupApplicationService:
             project_id=project_id,
             project_path=project_path,
             task=task,
+            run_id=run_id or plan.id,
+            provenance_recorder=RunChangeProvenance(self._workflow_manager, run_id or plan.id, project_path),
         )
         result = self._development_workflow.execute_approved_and_run_development(
             plan,

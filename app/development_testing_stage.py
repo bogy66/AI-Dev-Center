@@ -29,7 +29,9 @@ class DevelopmentTestingStage:
     def run(self, request):
         development_result = self._development_stage.run(request)
         test_changes = self._test_change_generator.generate(request)
-        apply_result = self._file_applier_factory(request.project_path).apply(test_changes)
+        applier = self._file_applier_factory(request.project_path)
+        phase = "rework_test" if getattr(request, "rework_request", None) else "test"
+        apply_result = request.provenance_recorder.apply(applier, test_changes, phase) if getattr(request, "provenance_recorder", None) else applier.apply(test_changes)
         test_result = self._project_test_runner.run(TestExecutionRequest(request.project_path))
         stage_result = self._testing_stage.run(development_result, test_result)
         return DevelopmentTestingResult(development_result, test_changes, apply_result, test_result, stage_result)

@@ -12,6 +12,8 @@ class DevelopmentRequest:
     project_id: str
     project_path: str | Path
     task: str
+    run_id: str | None = None
+    provenance_recorder: object | None = None
 
 
 @dataclass(frozen=True)
@@ -38,6 +40,8 @@ class DevelopmentStage:
 
     def run(self, request: DevelopmentRequest) -> DevelopmentResult:
         changes = self._developer_agent.generate_changes(request)
-        result = self._file_applier_factory(request.project_path).apply(changes)
+        applier = self._file_applier_factory(request.project_path)
+        phase = "rework_development" if getattr(request, "rework_request", None) else "development"
+        result = request.provenance_recorder.apply(applier, changes, phase) if request.provenance_recorder else applier.apply(changes)
         status = "success" if result["applied"] and not result["skipped"] else "apply_failed"
         return DevelopmentResult(status, changes, result)
