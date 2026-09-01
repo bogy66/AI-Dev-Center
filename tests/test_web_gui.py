@@ -1,12 +1,13 @@
 import json
 from datetime import datetime
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
 from app.diagnostic_trace import DiagnosticTraceRecorder, TraceEvent, TraceLevel
-from app.web_api import app, sessions, get_workflow_components, TracingMCPServerWrapper
+from app.web_api import app, sessions, get_workflow_components, get_web_setup_components, TracingMCPServerWrapper
 
 
 @pytest.fixture(autouse=True)
@@ -34,6 +35,14 @@ def _mock_components(llm=None, mcp=None):
 def _set_override(llm=None, mcp=None):
     llm, mcp = _mock_components(llm, mcp)
     app.dependency_overrides[get_workflow_components] = lambda: (llm, mcp)
+    plan = MagicMock(id="plan-123", status="pending_approval")
+    result = MagicMock(setup_plan=plan)
+    components = MagicMock()
+    components.service.plan_project_setup.return_value = result
+    components.plan_store = MagicMock()
+    components.approval = MagicMock()
+    components.development_workflow = MagicMock()
+    app.dependency_overrides[get_web_setup_components] = lambda: components
     return llm, mcp
 
 
@@ -243,6 +252,22 @@ def test_get_workflow_components_uses_provider_factory():
     # The actual factory is mocked in other tests; here we just ensure the
     # function is imported and callable.
     assert callable(get_workflow_components)
+
+
+def test_browser_uses_separate_canonical_approval_and_execution_routes():
+    script = Path("web/app.js").read_text(encoding="utf-8")
+
+    assert "handleApproval('approval')" in script
+    assert "action === 'approval' ? 'approval' : 'reject'" in script
+    assert "${currentSessionId}/execute" in script
+    assert "Approval granted. Executing" not in script
+
+
+def test_readme_documents_port_8010():
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "--port 8010" in readme
+    assert "127.0.0.1:8010" in readme
 
 
 # ---------------------------------------------------------------------------

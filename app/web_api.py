@@ -14,16 +14,20 @@ from pydantic import BaseModel
 from app.agent_setup_workflow import AgentSetupWorkflow, AgentSetupWorkflowResult
 from app.ai_config import load_ai_config
 from app.ai_requirement_discovery import AIRequirementDiscovery
-from app.dev_workflow import DevelopmentWorkflow
+from app.dev_workflow import DevelopmentWorkflow, WorkflowExecutionError
+from app.engineering_council import EngineeringCouncil
 from app.diagnostic_trace import DiagnosticTraceRecorder, TraceEvent, TraceLevel
 from app.llm_provider_factory import create_llm_provider
 from app.local_secret_store import LocalSecretStore
+from app.project_inspector import ProjectInspector
+from app.project_setup_application import ProjectSetupApplicationService
 from app.mcp_server import MCPServer
 from app.python_package_executor import PythonPackageExecutor
 from app.requirement_preflight import RequirementPreflight
 from app.requirement_validator import RequirementValidator
 from app.setup_approval import SetupApproval
 from app.setup_planner import SetupPlanner
+from app.toolchain_materializer import ToolchainMaterializer
 from app.workflow_plan_store import WorkflowPlanStore
 from app.project_scanner import ProjectScanner
 
@@ -124,6 +128,9 @@ class Session:
         self.recorder = recorder
         self.mcp_wrapper: Optional[TracingMCPServerWrapper] = None
         self.workflow: Optional[AgentSetupWorkflow] = None
+        self.development_workflow: Optional[DevelopmentWorkflow] = None
+        self.plan_store: Optional[WorkflowPlanStore] = None
+        self.approval = None
         self.plan_id: Optional[str] = None
         self.approval_status: Optional[str] = None
         self.approval_required: bool = False
@@ -173,15 +180,54 @@ def build_mcp_server(config, llm_provider) -> MCPServer:
     )
 
 
+class WebSetupComponents:
+    """Canonical planning dependencies for the web adapter."""
+
+    def __init__(self, service, plan_store, approval, development_workflow):
+        self.service = service
+        self.plan_store = plan_store
+        self.approval = approval
+        self.development_workflow = development_workflow
+
+
+def get_web_setup_components() -> WebSetupComponents:
+    """Build the canonical setup path without creating legacy agents."""
+    config = load_ai_config("config/ai-dev-center.yml")
+    council_config = config.council
+    if council_config is None or not council_config.enabled:
+        raise WorkflowExecutionError(
+            "Engineering Council configuration must be enabled."
+        )
+
+    secret_resolver = LocalSecretStore()
+    llm_provider = create_llm_provider(config, secret_resolver)
+    discovery = AIRequirementDiscovery(llm_provider=llm_provider, ai_model=config.model)
+    council = EngineeringCouncil(
+        council_config=council_config,
+        secret_resolver=secret_resolver,
+    )
+    workflow = DevelopmentWorkflow(
+        discovery=discovery,
+        validator=RequirementValidator,
+        preflight=RequirementPreflight,
+        executor=PythonPackageExecutor(),
+        council=council,
+        materializer=ToolchainMaterializer(),
+    )
+    return WebSetupComponents(
+        ProjectSetupApplicationService(workflow, ProjectInspector()),
+        WorkflowPlanStore(".workflow-plans"),
+        SetupApproval,
+        workflow,
+    )
+
+
+# Legacy dependency retained for the old agent-backed compatibility path.
 def get_workflow_components():
-    """Load centralized AI configuration and build both LLM provider and
-    properly wired MCPServer.  This mirrors the existing CLI application
-    construction path."""
     config = load_ai_config("config/ai-dev-center.yml")
     secret_resolver = LocalSecretStore()
     llm_provider = create_llm_provider(config, secret_resolver)
-    mcp_server = build_mcp_server(config, llm_provider)
-    return llm_provider, mcp_server
+    return llm_provider, build_mcp_server(config, llm_provider)
 
 
 # ---------------------------------------------------------------------------
@@ -344,9 +390,8 @@ async def root():
 @app.post("/api/workflow/start")
 async def start_workflow(
     req: StartRequest,
-    components: tuple = Depends(get_workflow_components),
+    components: WebSetupComponents = Depends(get_web_setup_components),
 ):
-    llm_provider, mcp_server = components
     project_id = req.project_name
     project_path = req.project_directory
     task_description = req.task_description
@@ -376,15 +421,14 @@ async def start_workflow(
         },
     )
 
-    wrapper = TracingMCPServerWrapper(mcp_server, recorder)
-    session.mcp_wrapper = wrapper
-    workflow = AgentSetupWorkflow(llm_provider, wrapper)
-    session.workflow = workflow
-
     try:
-        result: AgentSetupWorkflowResult = workflow.start_setup_workflow(
-            project_id, project_path
-        )
+        result = components.service.plan_project_setup(project_id, project_path)
+        plan = result.setup_plan
+        components.plan_store.save(plan)
+    except (ValueError, FileNotFoundError, NotADirectoryError) as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=400)
+    except WorkflowExecutionError as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=409)
     except Exception as exc:
         session.error_message = str(exc)
         session.blocked = True
@@ -392,62 +436,44 @@ async def start_workflow(
             level=TraceLevel.ERROR,
             component="Workflow",
             event="exception",
-            action="start_setup_workflow",
+            action="plan_project_setup",
             status="failed",
             result_summary=str(exc),
         )
         sessions[session_id := str(uuid.uuid4())] = session
         return JSONResponse(
             content={"session_id": session_id, "blocked": True, "error": str(exc)},
-            status_code=200,
+            status_code=500,
         )
 
-    session.plan_id = result.plan_id
-    session.approval_required = bool(result.approval_required)
-    session.approval_status = getattr(result, "approval_status", "pending")
-    session.error_message = result.error_message
-    session.workflow_status = result.workflow_status
+    session.development_workflow = components.development_workflow
+    session.plan_store = components.plan_store
+    session.approval = components.approval
+    session.plan_id = plan.id
+    session.approval_required = True
+    session.approval_status = plan.status
+    session.workflow_status = plan.status
 
     recorder.record(
         level=TraceLevel.INFO,
-        component="Agent",
+        component="Workflow",
         event="plan_created",
         action="create_plan",
         status="success",
-        result_summary=f"Plan {result.plan_id}",
+        result_summary=f"Plan {plan.id}",
     )
 
-    if result.error_message:
-        session.blocked = True
-        recorder.record(
-            level=TraceLevel.ERROR,
-            component="Workflow",
-            event="workflow_state_changed",
-            action="blocked",
-            status="failed",
-            result_summary=result.error_message,
-        )
-    elif result.approval_required:
-        recorder.record(
-            level=TraceLevel.INFO,
-            component="Agent",
-            event="approval_required",
-            action="request_approval",
-            status="pending",
-            result_summary=f"Project {project_id}, Plan {result.plan_id}",
-        )
-    else:
-        session.workflow_status = "completed"
-        recorder.record(
-            level=TraceLevel.INFO,
-            component="Workflow",
-            event="workflow_state_changed",
-            action="complete",
-            status="completed",
-        )
+    recorder.record(
+        level=TraceLevel.INFO,
+        component="Workflow",
+        event="approval_required",
+        action="request_approval",
+        status="pending",
+        result_summary=f"Project {project_id}, Plan {plan.id}",
+    )
 
     sessions[session_id := run_id] = session
-    return {"session_id": session_id, "plan_id": result.plan_id}
+    return {"session_id": session_id, "plan_id": plan.id, "status": plan.status}
 
 
 @app.get("/api/state/{session_id}")
@@ -543,6 +569,45 @@ async def approve_workflow(session_id: str):
     )
 
     return {"workflow_status": session.workflow_status}
+
+
+@app.post("/api/workflow/{session_id}/approval")
+async def approve_canonical_workflow(session_id: str):
+    """Approve a canonical plan without starting execution."""
+    session = sessions.get(session_id)
+    if not session:
+        return JSONResponse(content={"error": "unknown session"}, status_code=404)
+    if not session.plan_store or not session.approval or not session.plan_id:
+        return JSONResponse(content={"error": "no canonical plan to approve"}, status_code=400)
+    try:
+        plan = session.plan_store.load(session.project_id, session.plan_id)
+        approved_plan = session.approval.approve(plan)
+        session.plan_store.save(approved_plan)
+    except Exception as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=409)
+
+    session.approval_status = approved_plan.status
+    session.approval_required = False
+    session.workflow_status = approved_plan.status
+    return {"plan_id": approved_plan.id, "status": approved_plan.status}
+
+
+@app.post("/api/workflow/{session_id}/execute")
+async def execute_canonical_workflow(session_id: str):
+    """Execute only a separately approved canonical plan."""
+    session = sessions.get(session_id)
+    if not session:
+        return JSONResponse(content={"error": "unknown session"}, status_code=404)
+    if not session.plan_store or not session.development_workflow or not session.plan_id:
+        return JSONResponse(content={"error": "no canonical plan to execute"}, status_code=400)
+    try:
+        plan = session.plan_store.load(session.project_id, session.plan_id)
+        results = session.development_workflow.execute_approved(plan)
+    except Exception as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=409)
+
+    session.workflow_status = "completed"
+    return {"plan_id": plan.id, "status": "completed", "results": results}
 
 
 @app.post("/api/workflow/{session_id}/reject")

@@ -281,7 +281,7 @@ function renderApprovalAction() {
     const approveBtn = document.createElement('button');
     approveBtn.className = 'approve-btn';
     approveBtn.textContent = 'Approve';
-    approveBtn.addEventListener('click', () => handleApproval('approve'));
+    approveBtn.addEventListener('click', () => handleApproval('approval'));
 
     const rejectBtn = document.createElement('button');
     rejectBtn.className = 'reject-btn';
@@ -307,19 +307,48 @@ function removeApprovalAction() {
 async function handleApproval(action) {
     if (!currentSessionId) return;
 
-    const endpoint = action === 'approve' ? 'approve' : 'reject';
+    const endpoint = action === 'approval' ? 'approval' : 'reject';
     setLiveStatus(`Processing ${action}...`);
     try {
         await fetchJson(`/api/workflow/${currentSessionId}/${endpoint}`, {
             method: 'POST',
         });
-        setLiveStatus(action === 'approve' ? 'Approval granted. Executing...' : 'Approval rejected.');
-        addMessage('assistant', action === 'approve' ? 'Approval granted. Executing...' : 'Approval rejected.');
-        removeApprovalAction();
+        setLiveStatus(action === 'approval' ? 'Approval granted. Execute setup when ready.' : 'Approval rejected.');
+        addMessage('assistant', action === 'approval' ? 'Approval granted. Execute setup when ready.' : 'Approval rejected.');
+        if (action === 'approval') {
+            renderExecutionAction();
+        } else {
+            removeApprovalAction();
+        }
         startPolling(currentSessionId);
     } catch (err) {
         console.error(err);
         setLiveStatus(`Approval error: ${err.message}`);
+    }
+}
+
+function renderExecutionAction() {
+    const container = document.getElementById('approval-action-container');
+    container.innerHTML = '';
+    const executeBtn = document.createElement('button');
+    executeBtn.className = 'approve-btn';
+    executeBtn.textContent = 'Execute approved setup';
+    executeBtn.addEventListener('click', handleExecution);
+    container.appendChild(executeBtn);
+}
+
+async function handleExecution() {
+    if (!currentSessionId) return;
+    setLiveStatus('Executing approved setup...');
+    try {
+        await fetchJson(`/api/workflow/${currentSessionId}/execute`, { method: 'POST' });
+        setLiveStatus('Setup execution completed.');
+        addMessage('assistant', 'Setup execution completed.');
+        removeApprovalAction();
+        startPolling(currentSessionId);
+    } catch (err) {
+        console.error(err);
+        setLiveStatus(`Execution error: ${err.message}`);
     }
 }
 
