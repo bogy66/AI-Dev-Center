@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import subprocess
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import asdict
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -18,6 +20,7 @@ from app.canonical_execution import (
 )
 from app.workflow_plan_store import WorkflowPlanStore
 from app.canonical_composition import build_canonical_components
+from app.ai_config import load_ai_config, update_web_config
 
 app = FastAPI(title="AI Dev Center Web GUI")
 app.mount("/static", StaticFiles(directory="web"), name="static")
@@ -128,6 +131,8 @@ class Session:
 
 
 sessions: Dict[str, Session] = {}
+_planning_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="web-planning")
+planning_tasks: Dict[str, Future] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -310,6 +315,91 @@ class OpenProjectRequest(BaseModel):
     project_path: str
 
 
+class ValidateProjectRequest(BaseModel):
+    project_path: str
+
+
+class WebConfigUpdate(BaseModel):
+    model: str | None = None
+    endpoint: str | None = None
+    timeout_seconds: float | None = None
+    secret_reference: str | None = None
+    discovery_enabled: bool | None = None
+    require_json: bool | None = None
+    max_requirements: int | None = None
+
+    class Config:
+        extra = "forbid"
+
+
+def get_web_config_path() -> Path:
+    return Path("config/ai-dev-center.yml")
+
+
+def _web_config_response(config):
+    council = None
+    if config.council is not None:
+        council = {
+            "enabled": config.council.enabled,
+            "max_variants_per_agent": config.council.max_variants_per_agent,
+            "roles": {
+                name: asdict(getattr(config.council, name))
+                for name in (
+                    "environment_architect", "toolchain_integrator",
+                    "risk_assessor", "chairman",
+                )
+            },
+            "read_only": True,
+        }
+    return {
+        "version": config.version,
+        "ai": {
+            "provider": config.provider, "model": config.model,
+            "endpoint": config.endpoint,
+            "authentication": {
+                "type": config.authentication.type,
+                "secret_reference": config.authentication.secret,
+            },
+            "timeout_seconds": config.timeout_seconds,
+            "discovery": asdict(config.discovery),
+            "council": council,
+        },
+        "writable_fields": [
+            "model", "endpoint", "timeout_seconds", "secret_reference",
+            "discovery_enabled", "require_json", "max_requirements",
+        ],
+    }
+
+
+class LocalDirectorySelector:
+    """Select a server-local directory using one fixed desktop command."""
+
+    def select(self) -> str | None:
+        result = subprocess.run(
+            ["zenity", "--file-selection", "--directory", "--title=Select project directory"],
+            check=False, capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode != 0:
+            return None
+        return result.stdout.strip() or None
+
+
+def get_directory_selector():
+    return LocalDirectorySelector()
+
+
+def _resolved_existing_directory(raw_path: str) -> Path:
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        raise ValueError("Project directory is required.")
+    try:
+        path = Path(raw_path).expanduser().resolve(strict=True)
+    except (FileNotFoundError, OSError, RuntimeError) as error:
+        raise FileNotFoundError("Project directory does not exist.") from error
+    if not path.is_dir():
+        raise NotADirectoryError("Project path is not a directory.")
+    return path
+
+
 class FinalApprovalRequest(BaseModel):
     decision: str
     approved_by: str | None = None
@@ -319,6 +409,38 @@ class FinalApprovalRequest(BaseModel):
 @app.get("/")
 async def root():
     return FileResponse("web/index.html")
+
+
+@app.get("/api/config")
+async def get_web_config(config_path: Path = Depends(get_web_config_path)):
+    try:
+        return _web_config_response(load_ai_config(config_path))
+    except ValueError:
+        return JSONResponse(
+            content={"error": "Productive configuration is unavailable."},
+            status_code=500,
+        )
+
+
+@app.patch("/api/config")
+async def patch_web_config(
+    request: WebConfigUpdate,
+    config_path: Path = Depends(get_web_config_path),
+):
+    updates = {
+        key: value for key, value in request.dict(exclude_unset=True).items()
+        if value is not None
+    }
+    try:
+        config = update_web_config(config_path, updates)
+    except ValueError as error:
+        return JSONResponse(content={"error": str(error)}, status_code=400)
+    except OSError:
+        return JSONResponse(
+            content={"error": "Productive configuration could not be saved."},
+            status_code=500,
+        )
+    return _web_config_response(config)
 
 
 @app.post("/api/workflow/start")
@@ -352,65 +474,91 @@ async def start_workflow(
         status="started",
         arguments={
             "project_id": project_id,
-            "project_path": project_path,
-            "task_description": task_description,
         },
     )
 
     try:
-        result = components.service.plan_project_setup(project_id, project_path)
-        plan = result.setup_plan
-        components.plan_store.save(plan)
+        project_path = str(_resolved_existing_directory(project_path))
+        session.project_path = project_path
     except (ValueError, FileNotFoundError, NotADirectoryError) as exc:
-        return JSONResponse(content={"error": str(exc)}, status_code=400)
-    except WorkflowExecutionError as exc:
-        return JSONResponse(content={"error": str(exc)}, status_code=409)
-    except Exception as exc:
-        session.error_message = str(exc)
+        safe_error = str(exc) if isinstance(
+            exc, (FileNotFoundError, NotADirectoryError)
+        ) else "Project or planning request was rejected."
+        status_code = 400
+        session.error_message = safe_error
         session.blocked = True
+        session.workflow_status = "failed"
         recorder.record(
-            level=TraceLevel.ERROR,
-            component="Workflow",
-            event="exception",
-            action="plan_project_setup",
-            status="failed",
-            result_summary=str(exc),
+            level=TraceLevel.ERROR, component="Workflow",
+            event="workflow_start_failed", action="validate_project",
+            status="failed", result_summary=safe_error,
         )
         sessions[session_id] = session
-        return JSONResponse(
-            content={"session_id": session_id, "blocked": True, "error": str(exc)},
-            status_code=500,
-        )
+        return JSONResponse(content={
+            "session_id": session_id, "blocked": True,
+            "status": "failed", "error": safe_error,
+        }, status_code=status_code)
+
+    existing = sessions.get(session_id)
+    if existing is not None and existing.workflow_status in {"planning", "running"}:
+        return JSONResponse(content={
+            "session_id": session_id, "status": existing.workflow_status,
+            "error": "This project already has an active Web workflow session.",
+        }, status_code=409)
 
     session.development_workflow = components.development_workflow
     session.project_setup_service = components.service
     session.plan_store = components.plan_store
     session.approval = components.approval
-    session.plan_id = plan.id
-    session.approval_required = True
-    session.approval_status = plan.status
-    session.workflow_status = plan.status
-
-    recorder.record(
-        level=TraceLevel.INFO,
-        component="Workflow",
-        event="plan_created",
-        action="create_plan",
-        status="success",
-        result_summary=f"Plan {plan.id}",
-    )
-
-    recorder.record(
-        level=TraceLevel.INFO,
-        component="Workflow",
-        event="approval_required",
-        action="request_approval",
-        status="pending",
-        result_summary=f"Project {project_id}, Plan {plan.id}",
-    )
-
+    session.workflow_status = "planning"
     sessions[session_id] = session
-    return {"session_id": session_id, "plan_id": plan.id, "status": plan.status}
+    task = _planning_executor.submit(_run_initial_planning, session, components)
+    planning_tasks[session_id] = task
+    task.add_done_callback(lambda _task, sid=session_id: planning_tasks.pop(sid, None))
+    return JSONResponse(content={
+        "session_id": session_id, "status": "planning",
+    }, status_code=202)
+
+
+def _run_initial_planning(session: Session, components: WebSetupComponents):
+    try:
+        result = components.service.plan_project_setup(
+            session.project_id, session.project_path,
+        )
+        plan = result.setup_plan
+        components.plan_store.save(plan)
+    except (ValueError, FileNotFoundError, NotADirectoryError):
+        safe_error = "Project or planning request was rejected."
+    except WorkflowExecutionError:
+        safe_error = "The central workflow rejected the planning request."
+    except Exception:
+        safe_error = "The central workflow could not start."
+    else:
+        session.plan_id = plan.id
+        session.approval_required = True
+        session.approval_status = plan.status
+        session.workflow_status = plan.status
+        session.recorder.record(
+            level=TraceLevel.INFO, component="Workflow", event="plan_created",
+            action="create_plan", status="success",
+            result_summary=f"Plan {plan.id}",
+        )
+        session.recorder.record(
+            level=TraceLevel.INFO, component="Workflow", event="approval_required",
+            action="request_approval", status="pending",
+            result_summary=f"Project {session.project_id}, Plan {plan.id}",
+        )
+        return
+
+    if safe_error:
+        session.error_message = safe_error
+        session.blocked = True
+        session.workflow_status = "failed"
+        session.recorder.record(
+            level=TraceLevel.ERROR, component="Workflow",
+            event="workflow_start_failed", action="plan_project_setup",
+            status="failed", result_summary=safe_error,
+        )
 
 
 @app.get("/api/state/{session_id}")
@@ -420,6 +568,40 @@ async def get_state(session_id: str):
         return JSONResponse(content={"error": "unknown session"}, status_code=404)
 
     trace = _serialize_trace(session.trace_events)
+    central_trace = []
+    current_activity = None
+    if session.project_setup_service is not None:
+        try:
+            central_events = session.project_setup_service.get_diagnostic_trace(
+                session.run_id
+            )
+            central_trace = [
+                {
+                    "timestamp": event.timestamp,
+                    "run_id": session.run_id,
+                    "level": "ERROR" if event.status in {"failed", "blocked"} else "INFO",
+                    "component": "Workflow",
+                    "event": event.event_type,
+                    "action": event.phase,
+                    "status": event.status,
+                    "result_summary": event.summary,
+                    "metadata": {"source": event.source, **event.details},
+                }
+                for event in central_events
+            ]
+            if central_events:
+                latest = central_events[-1]
+                current_activity = {
+                    "stage": latest.phase,
+                    "actor": latest.details.get("actor", ""),
+                    "runtime_state": latest.details.get(
+                        "runtime_state", latest.status
+                    ),
+                    "summary": latest.summary,
+                }
+        except Exception:
+            central_trace = []
+            current_activity = None
     timeline = _compute_timeline(session.trace_events, session)
     info = _current_state_info(session)
 
@@ -437,6 +619,8 @@ async def get_state(session_id: str):
         "blocked": session.blocked,
         "error_message": session.error_message,
         "trace": trace,
+        "central_trace": central_trace,
+        "current_activity": current_activity,
         "timeline": timeline,
         "transparency": info,
     }
@@ -649,33 +833,52 @@ async def get_central_diagnostic_trace(session_id: str):
 @app.post("/api/project/open")
 async def open_project_directory(req: OpenProjectRequest):
     """Open the provided project directory using the Linux file manager."""
-    raw_path = req.project_path
-    if not isinstance(raw_path, str) or not raw_path.strip():
+    try:
+        path = _resolved_existing_directory(req.project_path)
+    except (ValueError, FileNotFoundError, NotADirectoryError) as error:
         return JSONResponse(
-            content={"error": "project_path must be a non-empty string"},
-            status_code=400,
-        )
-
-    path = Path(raw_path).expanduser()
-    if not path.exists():
-        return JSONResponse(
-            content={"error": "project path does not exist"},
-            status_code=400,
-        )
-    if not path.is_dir():
-        return JSONResponse(
-            content={"error": "project path is not a directory"},
+            content={"error": str(error)},
             status_code=400,
         )
 
     try:
         # Use xdg-open to open the directory in the Linux file manager.
         # Never use shell=True.
-        subprocess.run(["xdg-open", str(path)], check=False)
-    except Exception as exc:
+        subprocess.run(["xdg-open", "--", str(path)], check=False)
+    except Exception:
         return JSONResponse(
-            content={"error": f"failed to open project directory: {exc}"},
+            content={"error": "Failed to open the project directory."},
             status_code=500,
         )
 
     return {"status": "opened", "project_path": str(path)}
+
+
+@app.post("/api/project/validate")
+async def validate_project_directory(req: ValidateProjectRequest):
+    try:
+        path = _resolved_existing_directory(req.project_path)
+    except (ValueError, FileNotFoundError, NotADirectoryError) as error:
+        return JSONResponse(
+            content={"valid": False, "error": str(error)}, status_code=400,
+        )
+    return {"valid": True, "project_path": str(path), "intent": "existing"}
+
+
+@app.post("/api/project/select-directory")
+async def select_project_directory(
+    selector: LocalDirectorySelector = Depends(get_directory_selector),
+):
+    try:
+        selected = selector.select()
+        if selected is None:
+            return JSONResponse(content={"status": "cancelled"}, status_code=409)
+        path = _resolved_existing_directory(selected)
+    except (ValueError, FileNotFoundError, NotADirectoryError) as error:
+        return JSONResponse(content={"error": str(error)}, status_code=400)
+    except (OSError, subprocess.SubprocessError):
+        return JSONResponse(
+            content={"error": "Server-side directory selection is unavailable."},
+            status_code=503,
+        )
+    return {"status": "selected", "project_path": str(path)}

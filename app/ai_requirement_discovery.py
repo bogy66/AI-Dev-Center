@@ -1,6 +1,7 @@
 import json
+import re
 import uuid
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 from app.requirement_model import (
     Requirement,
     RequirementEvidence,
@@ -15,6 +16,21 @@ class LLMProvider(Protocol):
 
     def complete(self, prompt: str) -> str:
         ...
+
+
+class StructuredResponseLLMProvider(Protocol):
+    """Optional provider capability for requesting a JSON response."""
+
+    def complete_structured(self, prompt: str) -> str:
+        ...
+
+
+class InvalidDiscoveryJSONError(ValueError):
+    pass
+
+
+class InvalidDiscoveryResponseStructureError(ValueError):
+    pass
 
 
 # Confidence mapping from symbolic to numeric values.
@@ -66,9 +82,31 @@ Return ONLY valid JSON, no additional commentary.
         self,
         llm_provider: LLMProvider | None = None,
         ai_model: str | None = None,
+        require_json: bool = True,
     ) -> None:
         self._provider = llm_provider
         self._ai_model = ai_model
+        self._require_json = require_json
+        self._activity_callback: Callable[..., None] | None = None
+
+    def set_activity_callback(self, callback: Callable[..., None] | None) -> None:
+        self._activity_callback = callback
+
+    def _activity(self, state: str, error_category: str | None = None) -> None:
+        if self._activity_callback is None:
+            return
+        details = {
+            "actor": "Requirement discovery provider",
+            "runtime_state": state,
+            "model": self._ai_model or "",
+            "provider": type(self._provider).__name__ if self._provider else "",
+        }
+        if error_category:
+            details["error_category"] = error_category
+        try:
+            self._activity_callback(**details)
+        except Exception:
+            pass
 
     def _build_prompt(self, project_info: dict[str, Any]) -> str:
         serialized = json.dumps(project_info, indent=2, default=str)
@@ -124,10 +162,22 @@ Return ONLY valid JSON, no additional commentary.
 
     def _parse_response(self, response_text: str) -> list[dict[str, Any]]:
         """Extract requirements JSON list from provider response."""
+        if not isinstance(response_text, str):
+            raise InvalidDiscoveryResponseStructureError(
+                "LLM response content must be text."
+            )
+        fenced = re.fullmatch(
+            r"\s*```json\s*\n?(.*?)\n?```\s*",
+            response_text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        normalized = fenced.group(1).strip() if fenced else response_text
         try:
-            parsed = json.loads(response_text)
+            parsed = json.loads(normalized)
         except json.JSONDecodeError:
-            raise ValueError("LLM response is not valid JSON.") from None
+            raise InvalidDiscoveryJSONError(
+                "LLM response is not valid JSON."
+            ) from None
 
         if isinstance(parsed, dict):
             list_candidates = parsed.get("requirements")
@@ -138,10 +188,14 @@ Return ONLY valid JSON, no additional commentary.
                 if "name" in parsed:
                     parsed = [parsed]
                 else:
-                    raise ValueError("LLM response does not contain a 'requirements' key or a valid structure.")
+                    raise InvalidDiscoveryResponseStructureError(
+                        "LLM response does not contain a 'requirements' key or a valid structure."
+                    )
 
         if not isinstance(parsed, list):
-            raise ValueError("LLM response top-level structure is not a JSON array.")
+            raise InvalidDiscoveryResponseStructureError(
+                "LLM response top-level structure is not a JSON array."
+            )
 
         return parsed
 
@@ -167,20 +221,39 @@ Return ONLY valid JSON, no additional commentary.
         prompt = self._build_prompt(project_info)
 
         if self._provider is None:
+            self._activity("failed", "ProviderUnavailable")
             fallback_used = True
             warnings.append("No LLM provider configured. Discovery returned no requirements.")
         else:
             try:
-                raw_response = self._provider.complete(prompt)
+                self._activity("preparing")
+                self._activity("thinking")
+                structured_completion = getattr(
+                    self._provider, "complete_structured", None
+                )
+                if self._require_json and callable(structured_completion):
+                    raw_response = structured_completion(prompt)
+                else:
+                    raw_response = self._provider.complete(prompt)
             except Exception as exc:
+                self._activity("failed", "provider_failure")
                 fallback_used = True
-                warnings.append(f"LLM provider raised an exception: {exc}")
+                warnings.append(
+                    f"LLM provider raised an exception: {type(exc).__name__}"
+                )
                 raw_response = None
 
             if raw_response is not None:
                 try:
+                    self._activity("reviewing")
                     data = self._parse_response(raw_response)
-                except Exception as exc:
+                except InvalidDiscoveryJSONError as exc:
+                    self._activity("failed", "invalid_json")
+                    fallback_used = True
+                    warnings.append(f"Failed to parse LLM response: {exc}")
+                    data = []
+                except InvalidDiscoveryResponseStructureError as exc:
+                    self._activity("failed", "invalid_response_structure")
                     fallback_used = True
                     warnings.append(f"Failed to parse LLM response: {exc}")
                     data = []
@@ -194,6 +267,8 @@ Return ONLY valid JSON, no additional commentary.
                         warnings.append(f"Could not build requirement from item: {exc}")
                         continue
                     requirements.append(req)
+                if not fallback_used:
+                    self._activity("completed")
 
         project_id = project_info.get("project_id", "") or "unknown"
         return DiscoveryResult(

@@ -482,6 +482,22 @@ class TestDevelopmentWorkflow:
 
         council.evaluate.assert_not_called()
 
+    def test_incomplete_council_result_blocks_before_materialization(self):
+        discovery, validator, preflight, planner, council, materializer, *_ = _make_components()
+        council.evaluate.return_value = CouncilResult(
+            id="council-incomplete", project_id="proj-1",
+            council_complete=False, agent_errors=("A2 unavailable",),
+        )
+        workflow = DevelopmentWorkflow(
+            discovery, validator, preflight, planner,
+            council=council, materializer=materializer,
+        )
+
+        with pytest.raises(WorkflowExecutionError, match="Council result is incomplete"):
+            workflow.run({"name": "test"}, "proj-1")
+
+        materializer.materialize.assert_not_called()
+
 
     def test_intermediate_objects_are_not_mutated(self):
         (

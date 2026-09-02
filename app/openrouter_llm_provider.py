@@ -54,6 +54,13 @@ class OpenRouterLLMProvider:
 
     def complete(self, prompt: str) -> str:
         """Send a completion request to OpenRouter and return the response text."""
+        return self._complete(prompt, structured_json=False)
+
+    def complete_structured(self, prompt: str) -> str:
+        """Request a provider-enforced JSON object response."""
+        return self._complete(prompt, structured_json=True)
+
+    def _complete(self, prompt: str, *, structured_json: bool) -> str:
         url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {self._api_key}",
@@ -63,6 +70,8 @@ class OpenRouterLLMProvider:
             "model": self._model,
             "messages": [{"role": "user", "content": prompt}],
         }
+        if structured_json:
+            payload["response_format"] = {"type": "json_object"}
         try:
             response = self._session.post(
                 url,

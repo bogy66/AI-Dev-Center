@@ -8,15 +8,15 @@
 </head>
 <body>
 <div id="app-container">
-    <!-- LEFT COLUMN: Branding, New Project, Recents, Setup, Help -->
+    <!-- LEFT COLUMN: Branding, Existing Projects, Recents, Setup, Help -->
     <aside id="recents-panel">
         <div class="brand">
             <span class="brand-mark">AI</span>
             <span class="brand-title">AI Dev Center</span>
         </div>
-        <button id="new-project-btn" class="sidebar-button">+ New Project</button>
+        <button id="new-project-btn" class="sidebar-button">+ Open Existing Project</button>
         <div class="panel-header">
-            <h2>Recents</h2>
+            <h2>Projects</h2>
         </div>
         <ul id="recents-list"></ul>
         <div class="sidebar-spacer"></div>
@@ -111,11 +111,25 @@
 
             <div id="help-overview-content" class="help-section-content">
                 <div class="help-content">
-                    <h3>What is AI Dev Center?</h3>
-                    <p>AI Dev Center provides a controlled central workflow for project inspection, requirements, setup planning, implementation, testing, review, approval and safe version control.</p>
-                    <p>Web, API, CLI, MCP and Signal are communication adapters into that same central business workflow. Signal chats and projects have a strict 1:1 persisted relationship: each chat belongs to exactly one project and each project has exactly one active Signal chat. Normal message text cannot select or change the binding; rebinding is an explicit administrative action, and an unbound chat cannot start project work. A binding preserves correlation but stores no chat history as Project Definitions / Memory and grants no Human Approval authority. Compatibility classes may remain in the codebase, but they are not alternative productive orchestration paths.</p>
-                    <p>Every existing project is first inspected read-only: languages, frameworks, package and build systems, test systems, firmware indicators and CI hints are detected deterministically from repository evidence. Existing architecture, conventions and toolchains are respected — the inspection never executes project code, builds or installs dependencies. Sensitive files like .env, private keys and credential manifests are never read or forwarded to LLM providers. Mixed repositories are recognised as separate project areas.</p>
-                    <p>Project Definitions / Memory stores explicit structured durable decisions, rules, terminology and intended state, never raw chat history. Project Intelligence remains observed reality, Project Definitions remain intentional policy, and config.yml remains the owner of its declarative technical fields. The central Project Context preserves all three typed sources and exposes bounded structured conflicts instead of silently overwriting them. Superseded and revoked definitions remain historical and definitions never grant approval or execution authority.</p>
+                    <h3>Start here</h3>
+                    <p>AI Dev Center helps you understand and change a project with an AI team while keeping important actions under your control. It connects analysis, technical planning, development, verification, review and safe delivery in one central workflow instead of leaving you with isolated code suggestions.</p>
+                    <h3>How to use it</h3>
+                    <ol>
+                        <li>Choose an existing project from Projects or add its complete local root.</li>
+                        <li>Describe the outcome you want in Chat.</li>
+                        <li>Watch the current work and any problems in Diagnostic Trace.</li>
+                        <li>Review each approval request before setup, capability use, final acceptance or publishing.</li>
+                    </ol>
+                    <p><strong>Projects</strong> is your local list of project roots. The Web GUI currently opens existing projects; safe Web creation of a new greenfield directory is a product goal, not an implemented button.</p>
+                    <p><strong>Diagnostic Trace</strong> is the live progress and problem view. It shows which stage the central workflow reached without revealing API keys, passwords or secret contents.</p>
+                    <p><strong>Human Approval</strong> means the AI can propose a controlled next step, but approval remains a separate decision. Approving one boundary never approves setup, capabilities, Git, publish or hardware actions at another boundary.</p>
+                    <h3>What the AI does</h3>
+                    <p>It first observes the existing project without executing it, preserves its architecture and conventions, clarifies requirements, asks an Engineering Council to compare approaches, and prepares structured work for development and verification. Missing tools are reported rather than silently installed.</p>
+                    <h3>Other frontends and project knowledge</h3>
+                    <p>Web, Signal, API, CLI and MCP are frontends to the same central workflow. Signal transport deployment is not bundled yet. Active Signal chats and projects have a strict 1:1 binding, and chat text cannot switch projects or grant approval.</p>
+                    <p>Project Intelligence records observed reality. Project Definitions / Memory stores explicit durable decisions and intended rules—not raw chat history. Technical configuration remains in config.yml. Conflicts are shown instead of silently merged.</p>
+                    <h3>Technical and safety details</h3>
+                    <p>The productive Web GUI validates a complete server-local project root and uploads no files. Software, firmware, embedded and hardware-near projects are in scope, but physical hardware actions require their own appropriate approval and are not automatically available.</p>
                     <p>Generalized Verification creates a typed, area-aware VerificationPlan from Project Intelligence. For recognised firmware/embedded areas, controlled hardware-free steps are available: ESPHome config validation and compile; PlatformIO build and native hardware-free tests; CMake configure and build. No runner performs flash, upload, OTA, serial monitor or device provisioning. PlatformIO extra_scripts and comparable build-code trust boundaries are detected and reported as unsupported rather than executed automatically. When secure automatic verification is impossible the system reports clearly instead of silently passing.</p>
                     <p>A tool_unavailable result remains a structured setup need in the central workflow and never installs anything automatically. Only a command-free SetupPlan materialized from Project Intelligence and the Chairman Council result, followed by separate Setup Human Approval, may invoke a registered structured installer. Availability is checked before and after setup, and only the persisted original VerificationPlan may be retried through the existing Verification architecture. Installation success never grants capability authority.</p>
                     <p>Docker is the intended runtime. The core container runs non‑root, without privileged mode and without Docker‑socket or device mounts. The central approval-aware capability registry binds capability and executable identity, allowed operation type, approval provenance, normalized project scope and active registration status. Future toolchain names can be registered without extending a fixed list; today's global registrations are compatibility defaults only. Dynamic registrations are always project-bound, while the same capability may be approved independently for multiple projects. Dynamic registrations follow Project Intelligence → Engineering Council → Chairman approval → Human Approval → controlled capability registration → controlled execution. Registration cannot authorize arbitrary shell commands, argv policies, images, mounts, devices, host access or automatic installation. Denied-argument checks, timeout and output limits remain enforced, and missing tools remain tool_unavailable.</p>
@@ -123,7 +137,7 @@
                     <p>Current execution support is deliberately bounded. Hardware flashing, OTA, device activation and other physical hardware actions are not presented as productive capabilities and will require their own separate human approval boundary.</p>
 
                     <h3>Typical workflow</h3>
-                    <p>The canonical process keeps planning, execution and human trust boundaries explicit:</p>
+                    <p>The central process keeps planning, execution and human trust boundaries explicit:</p>
                     <ul>
                         <li>Inspect the project, discover and validate requirements, and run preflight checks.</li>
                         <li>Let the Engineering Council evaluate options and materialize a SetupPlan.</li>
@@ -136,11 +150,11 @@
                     <p>Preexisting or mixed changes, foreign staged content, a final hash mismatch, missing remotes, detached HEAD, unrelated later commits and non-fast-forward pushes are fail-safe blockers. There is no force push or automatic merge/rebase repair. Publish means Git remote push here—not release automation, deployment, hardware flashing or OTA.</p>
 
                     <h3>Central Diagnostic Trace</h3>
-                    <p>Each canonical run has a persistent, ordered diagnostic timeline showing reached phases, structured results, separate approval boundaries, blockers and Git/publish outcomes such as pending, failed, rework_required, approved, committed and published.</p>
+                    <p>Each central run has a persistent, ordered diagnostic timeline showing reached phases, structured results, separate approval boundaries, blockers and Git/publish outcomes such as pending, failed, rework_required, approved, committed and published.</p>
                     <p>Workflow State remains authoritative for decisions, while logging remains intended for developer logs. The Diagnostic Trace observes both but cannot approve setup, Git or publish. Its details are allowlisted and redacted: secrets, raw environments, request headers and full file contents are not stored.</p>
 
                     <h3>Safe execution and recovery</h3>
-                    <p>Only one mutating canonical run can own a project path at a time. Concurrent setup, development, test application, rework, Git or publish requests for the same project are rejected, while read-only planning remains separate.</p>
+                    <p>Only one mutating central run can own a project path at a time. Concurrent setup, development, test application, rework, Git or publish requests for the same project are rejected, while read-only planning remains separate.</p>
                     <p>If a process stops after mutation began but before a terminal result was saved, the persisted run becomes recovery required. AI Dev Center does not automatically repeat uncertain setup, LLM or file changes. Human approval boundaries remain separate and are never inferred from recovery state.</p>
 
                     <h3>The AI team</h3>
@@ -159,7 +173,7 @@
                         <li>Add a feature</li>
                         <li>Fix a problem</li>
                         <li>Refactor code</li>
-                        <li>Create a new project</li>
+                        <li>Open and work with an existing project root</li>
                         <li>Respect existing project files and Git safety boundaries</li>
                         <li>Add tests</li>
                         <li>Review changes</li>
@@ -177,7 +191,7 @@
                 <div id="help-deck" class="pitch-deck"></div>
                 <div class="pitch-nav">
                     <button id="help-prev-btn" class="back-button">Previous</button>
-                    <span id="help-page-indicator">1 / 10</span>
+                    <span id="help-page-indicator">1 / 15</span>
                     <button id="help-next-btn" class="back-button">Next</button>
                 </div>
             </div>
@@ -234,6 +248,12 @@
                     </fieldset>
 
                     <fieldset>
+                        <legend>Engineering Council (read-only)</legend>
+                        <p class="field-note">These productive role assignments come from config.yml. Edit that file deliberately to change Council composition.</p>
+                        <div id="setup-council-roles"></div>
+                    </fieldset>
+
+                    <fieldset>
                         <legend>Discovery</legend>
 
                         <div class="form-field inline-toggle">
@@ -254,7 +274,7 @@
 
                     <div class="form-actions">
                         <button type="submit" class="primary-button" id="setup-save-btn">Save</button>
-                        <span id="setup-message" class="setup-message">Saving configuration is not yet supported through the web interface.</span>
+                        <span id="setup-message" class="setup-message">Supported fields are validated and saved to config.yml. Council assignments remain read-only here.</span>
                     </div>
                 </form>
             </div>
@@ -262,41 +282,33 @@
     </main>
 </div>
 
-<!-- New Project Modal -->
+<!-- Existing Project Modal -->
 <div id="new-project-modal" class="modal hidden">
     <div class="modal-overlay"></div>
     <div class="modal-content">
-        <h2>New Project</h2>
+        <h2>Open Existing Project</h2>
         <div class="form-field">
             <label for="project-name-input">Project Name</label>
             <input type="text" id="project-name-input" autocomplete="off" placeholder="my-project">
         </div>
         <div class="form-field">
-            <label for="project-dir-input">Project Directory</label>
+            <label for="project-dir-input">Existing Project Root</label>
             <div class="dir-row">
                 <input type="text" id="project-dir-input" autocomplete="off" placeholder="/path/to/project">
                 <button id="choose-directory-btn" class="secondary-button">Choose</button>
             </div>
-            <input type="file" id="project-directory-picker" webkitdirectory directory multiple hidden>
-        </div>
-        <div class="form-field">
-            <label>
-                <input type="checkbox" id="create-github-repo-checkbox">
-                Create GitHub repository
-            </label>
+            <small>The directory must already exist. This does not create a new project.</small>
         </div>
         <div class="form-field">
             <label for="new-project-trace-level">Trace Level</label>
             <select id="new-project-trace-level">
                 <option value="INFO" selected>INFO</option>
                 <option value="DEBUG">DEBUG</option>
-                <option value="VERBOSE">VERBOSE</option>
-                <option value="VERY_VERBOSE">VERY_VERBOSE</option>
             </select>
         </div>
         <div class="modal-actions">
             <button id="cancel-project-btn" class="secondary-button">Cancel</button>
-            <button id="create-project-btn" class="primary-button">Create</button>
+            <button id="create-project-btn" class="primary-button">Add Existing Project</button>
         </div>
     </div>
 </div>

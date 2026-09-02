@@ -597,3 +597,94 @@ class TestAIRequirementDiscoveryLLMJson:
         assert result.fallback_used is False
         assert result.requirements == ()
         assert result.warnings == ()
+
+
+class TestStructuredDiscoveryResponses:
+    class StructuredFake:
+        def __init__(self, response):
+            self.response = response
+            self.ordinary_calls = 0
+            self.structured_calls = 0
+
+        def complete(self, _prompt):
+            self.ordinary_calls += 1
+            return self.response
+
+        def complete_structured(self, _prompt):
+            self.structured_calls += 1
+            return self.response
+
+    @staticmethod
+    def requirement(name="tool"):
+        return {"name": name, "type": "executable", "purpose": "test"}
+
+    def test_require_json_true_uses_structured_provider_capability(self):
+        provider = self.StructuredFake('{"requirements": []}')
+        result = AIRequirementDiscovery(
+            llm_provider=provider, require_json=True,
+        ).discover({})
+
+        assert result.fallback_used is False
+        assert provider.structured_calls == 1
+        assert provider.ordinary_calls == 0
+
+    def test_require_json_false_preserves_ordinary_completion(self):
+        provider = self.StructuredFake('{"requirements": []}')
+        AIRequirementDiscovery(
+            llm_provider=provider, require_json=False,
+        ).discover({})
+
+        assert provider.ordinary_calls == 1
+        assert provider.structured_calls == 0
+
+    @pytest.mark.parametrize("payload", [
+        lambda item: json.dumps([item]),
+        lambda item: json.dumps({"requirements": [item]}),
+        lambda item: json.dumps(item),
+        lambda item: f"```json\n{json.dumps({'requirements': [item]})}\n```",
+    ])
+    def test_supported_json_shapes_and_json_fence(self, payload):
+        provider = self.StructuredFake(payload(self.requirement()))
+        result = AIRequirementDiscovery(llm_provider=provider).discover({})
+
+        assert result.fallback_used is False
+        assert [requirement.name for requirement in result.requirements] == ["tool"]
+
+    @pytest.mark.parametrize("response", [
+        'Here is the result: {"requirements": []}',
+        '```json\n{"requirements": [}\n```',
+    ])
+    def test_prose_and_malformed_json_remain_controlled_failures(self, response):
+        provider = self.StructuredFake(response)
+        activity = []
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        discovery.set_activity_callback(lambda **details: activity.append(details))
+
+        result = discovery.discover({})
+
+        assert result.fallback_used is True
+        assert result.requirements == ()
+        assert activity[-1]["runtime_state"] == "failed"
+        assert activity[-1]["error_category"] == "invalid_json"
+        assert response not in str(activity)
+
+    def test_invalid_response_structure_has_safe_distinct_category(self):
+        provider = self.StructuredFake('{"unexpected": []}')
+        activity = []
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        discovery.set_activity_callback(lambda **details: activity.append(details))
+
+        result = discovery.discover({})
+
+        assert result.fallback_used is True
+        assert activity[-1]["error_category"] == "invalid_response_structure"
+
+    def test_legacy_deterministic_provider_needs_no_structured_method(self):
+        provider = TestAIRequirementDiscovery.FakeLLM('{"requirements": []}')
+
+        result = AIRequirementDiscovery(
+            llm_provider=provider, require_json=True,
+        ).discover({})
+
+        assert result.fallback_used is False
+        assert provider.called_with is not None

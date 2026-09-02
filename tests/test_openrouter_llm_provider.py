@@ -53,6 +53,23 @@ class TestOpenRouterLLMProvider:
         payload = call_args[1]["json"]
         assert payload["model"] == OpenRouterLLMProvider.DEFAULT_MODEL
         assert payload["messages"] == [{"role": "user", "content": "prompt"}]
+        assert "response_format" not in payload
+
+    def test_structured_completion_requests_json_object_response(self):
+        mock_session = MagicMock()
+        mock_response = MagicMock()
+        mock_response.ok = True
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": '{"requirements": []}'}}]
+        }
+        mock_session.post.return_value = mock_response
+        provider = OpenRouterLLMProvider(api_key="key", session=mock_session)
+
+        result = provider.complete_structured("prompt")
+
+        assert result == '{"requirements": []}'
+        payload = mock_session.post.call_args.kwargs["json"]
+        assert payload["response_format"] == {"type": "json_object"}
 
     def test_http_error(self):
         mock_session = MagicMock()

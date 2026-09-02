@@ -51,6 +51,7 @@ def build_canonical_components(config_path="config/ai-dev-center.yml"):
     discovery = AIRequirementDiscovery(
         llm_provider=provider,
         ai_model=config.model,
+        require_json=config.discovery.require_json,
     )
     council = EngineeringCouncil(
         council_config=council_config,

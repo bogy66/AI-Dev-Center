@@ -91,6 +91,26 @@ def test_secret_redaction_and_detail_allowlist_protect_persisted_jsonl(tmp_path)
     assert "[REDACTED]" in raw
 
 
+def test_safe_runtime_activity_metadata_excludes_prompt_and_reasoning(tmp_path):
+    trace, path = _trace(tmp_path)
+    trace.record(
+        "run", "engineering_council", "started", "started",
+        "Agent A2 thinking",
+        details={
+            "actor": "Agent A2", "actor_role": "toolchain_integrator",
+            "runtime_state": "thinking", "council_phase": "phase1",
+            "provider": "deterministic", "model": "test-model",
+            "prompt": "must not persist", "reasoning": "must not persist",
+        },
+    )
+
+    event = trace.get_trace("run")[0]
+    assert event.details["actor"] == "Agent A2"
+    assert event.details["runtime_state"] == "thinking"
+    assert "prompt" not in event.details and "reasoning" not in event.details
+    assert "must not persist" not in path.read_text(encoding="utf-8")
+
+
 def test_invalid_contract_and_persistence_failure_are_explicit(tmp_path):
     trace, _ = _trace(tmp_path)
     with pytest.raises(ValueError, match="phase"):

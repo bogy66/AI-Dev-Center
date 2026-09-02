@@ -13,13 +13,14 @@ CouncilInput provided by the caller.
 from __future__ import annotations
 
 import json
+import threading
 import uuid
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from typing import Any, Callable
 
 from app.ai_config import CouncilAgentConfig, CouncilConfig
 from app.ai_requirement_discovery import LLMProvider
@@ -83,6 +84,7 @@ _AGENT_ID_TO_CONFIG_KEY = {
 }
 
 _MAX_RETRIES = 1  # 1 initial try + 1 retry = 2 total
+_TIMEOUT_GRACE_SECONDS = 15
 
 
 @dataclass
@@ -93,6 +95,7 @@ class _AgentTask:
     prompt: str
     phase: str
     started_at: datetime
+    activity_closed: threading.Event = field(default_factory=threading.Event)
 
 
 @dataclass
@@ -133,6 +136,29 @@ class EngineeringCouncil:
         self._trace_dir = trace_dir
         self._call_records: list[AgentCallRecord] = []
         self._run_id: str = ""
+        self._activity_callback: Callable[..., None] | None = None
+
+    def set_activity_callback(self, callback: Callable[..., None] | None) -> None:
+        """Project safe Council runtime activity into the central trace."""
+        self._activity_callback = callback
+
+    def _activity(self, task: _AgentTask, state: str, *, force: bool = False) -> None:
+        if task.activity_closed.is_set() and not force:
+            return
+        if self._activity_callback is None:
+            return
+        try:
+            self._activity_callback(
+                actor=f"Agent {task.agent_id}" if task.agent_id != "C" else "Chairman",
+                actor_role=task.role,
+                runtime_state=state,
+                council_phase=task.phase,
+                provider=task.config.provider,
+                model=task.config.model,
+            )
+        except Exception:
+            # Observability must never change Council decisions or execution.
+            logger.debug("Central Council activity recording failed", exc_info=True)
 
     # ------------------------------------------------------------------
     # Public API
@@ -462,7 +488,7 @@ class EngineeringCouncil:
             phase="phase3", started_at=datetime.now(),
         )
 
-        result = self._run_single_agent(task)
+        result = self._execute_parallel([task], "phase3")[0]
 
         if not result.success or not result.parsed:
             raise CouncilChairmanError(
@@ -551,23 +577,32 @@ class EngineeringCouncil:
     # ------------------------------------------------------------------
 
     def _execute_parallel(self, tasks: list[_AgentTask], phase: str) -> list[_AgentResult]:
-        results: list[_AgentResult] = []
-
-        with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
+        results_by_agent: dict[str, _AgentResult] = {}
+        executor = ThreadPoolExecutor(max_workers=len(tasks))
+        try:
+            for task in tasks:
+                self._activity(task, "waiting")
             futures = {executor.submit(self._run_single_agent, t): t for t in tasks}
+            deadlines = {
+                future: time.monotonic()
+                + task.config.timeout_seconds
+                + _TIMEOUT_GRACE_SECONDS
+                for future, task in futures.items()
+            }
+            pending = set(futures)
 
-            for future in as_completed(futures):
-                task = futures[future]
-                try:
-                    result = future.result(timeout=task.config.timeout_seconds + 15)
-                    results.append(result)
-                except Exception as exc:
-                    logger.warning(f"Council agent {task.agent_id} failed: {exc}")
-                    results.append(_AgentResult(
-                        agent_id=task.agent_id,
-                        success=False,
-                        error=str(exc),
-                    ))
+            while pending:
+                now = time.monotonic()
+                expired = {future for future in pending if deadlines[future] <= now}
+                for future in expired:
+                    task = futures[future]
+                    task.activity_closed.set()
+                    self._activity(task, "failed", force=True)
+                    future.cancel()
+                    error = "provider call exceeded its configured deadline"
+                    results_by_agent[task.agent_id] = _AgentResult(
+                        agent_id=task.agent_id, success=False, error=error,
+                    )
                     self._call_records.append(AgentCallRecord(
                         agent_id=task.agent_id,
                         role=task.role,
@@ -576,30 +611,77 @@ class EngineeringCouncil:
                         temperature=task.config.temperature,
                         phase=phase,
                         started_at=task.started_at,
-                        duration_ms=0,
+                        duration_ms=(task.config.timeout_seconds + _TIMEOUT_GRACE_SECONDS) * 1000,
                         success=False,
-                        error=str(exc),
+                        error=error,
                     ))
+                pending.difference_update(expired)
+                if not pending:
+                    break
 
-        return results
+                next_deadline = min(deadlines[future] for future in pending)
+                completed, _ = wait(
+                    pending,
+                    timeout=max(0.0, next_deadline - time.monotonic()),
+                    return_when=FIRST_COMPLETED,
+                )
+                for future in completed:
+                    task = futures[future]
+                    pending.remove(future)
+                    try:
+                        results_by_agent[task.agent_id] = future.result()
+                    except Exception as exc:
+                        self._activity(task, "failed")
+                        logger.warning(f"Council agent {task.agent_id} failed: {exc}")
+                        results_by_agent[task.agent_id] = _AgentResult(
+                            agent_id=task.agent_id,
+                            success=False,
+                            error=str(exc),
+                        )
+                        self._call_records.append(AgentCallRecord(
+                            agent_id=task.agent_id,
+                            role=task.role,
+                            provider=task.config.provider,
+                            model=task.config.model,
+                            temperature=task.config.temperature,
+                            phase=phase,
+                            started_at=task.started_at,
+                            duration_ms=0,
+                            success=False,
+                            error=str(exc),
+                        ))
+        finally:
+            # A context manager or wait=True would block on a provider that
+            # violated its own HTTP timeout. Running calls cannot be killed by
+            # ThreadPoolExecutor; close their activity and return control.
+            executor.shutdown(wait=False, cancel_futures=True)
+
+        return [results_by_agent[task.agent_id] for task in tasks]
 
     # ------------------------------------------------------------------
     # Single agent call with retry
     # ------------------------------------------------------------------
 
     def _run_single_agent(self, task: _AgentTask) -> _AgentResult:
-        provider = create_council_provider(
-            task.config,
-            self._secret_resolver,
-            self._config.ollama_url,
-        )
+        self._activity(task, "preparing")
+        try:
+            provider = create_council_provider(
+                task.config,
+                self._secret_resolver,
+                self._config.ollama_url,
+            )
+        except Exception:
+            self._activity(task, "failed")
+            raise
 
         last_raw = ""
         for attempt in range(_MAX_RETRIES + 1):
             started = datetime.now()
             try:
+                self._activity(task, "thinking")
                 raw = provider.complete(task.prompt)
                 last_raw = raw
+                self._activity(task, "reviewing")
                 duration_ms = (datetime.now() - started).total_seconds() * 1000
                 parsed = self._parse_json_response(raw, task.agent_id)
 
@@ -617,12 +699,14 @@ class EngineeringCouncil:
                     structured_output_summary=str(list(parsed.keys()))[:500],
                 ))
 
-                return _AgentResult(
+                result = _AgentResult(
                     agent_id=task.agent_id,
                     success=True,
                     parsed=parsed,
                     raw_response=raw,
                 )
+                self._activity(task, "completed")
+                return result
 
             except AgentParseError:
                 duration_ms = (datetime.now() - started).total_seconds() * 1000
@@ -640,6 +724,7 @@ class EngineeringCouncil:
                     raw_response_snippet=last_raw[:500],
                 ))
                 if attempt >= _MAX_RETRIES:
+                    self._activity(task, "failed")
                     logger.warning(f"Agent {task.agent_id}: JSON parse failed after retry")
                     return _AgentResult(
                         agent_id=task.agent_id,
@@ -654,6 +739,7 @@ class EngineeringCouncil:
                 )
 
             except Exception as exc:
+                self._activity(task, "failed")
                 logger.warning(f"Agent {task.agent_id}: {exc}")
                 return _AgentResult(
                     agent_id=task.agent_id,

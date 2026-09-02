@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from app.ai_config import AIConfig, DiscoveryConfig, load_ai_config
+from app.ai_config import AIConfig, DiscoveryConfig, load_ai_config, update_web_config
 
 
 def _write_config(tmp_path: Path, content: str) -> Path:
@@ -161,3 +161,42 @@ ai:
     assert config.discovery.require_json is True
     assert config.discovery.max_requirements == 50
     assert config.timeout_seconds == 30.0
+
+
+def test_web_config_update_is_validated_and_persisted_atomically(tmp_path):
+    path = _write_config(tmp_path, _VALID_CONFIG)
+
+    updated = update_web_config(path, {
+        "model": "provider/model-v2",
+        "timeout_seconds": 45,
+        "max_requirements": 25,
+        "secret_reference": "replacement-reference",
+    })
+
+    assert updated.model == "provider/model-v2"
+    assert updated.timeout_seconds == 45
+    assert updated.discovery.max_requirements == 25
+    assert updated.authentication.secret == "replacement-reference"
+    assert load_ai_config(path) == updated
+
+
+def test_web_config_update_rejects_council_and_unknown_fields(tmp_path):
+    path = _write_config(tmp_path, _VALID_CONFIG)
+
+    with pytest.raises(ValueError, match="read-only or unsupported"):
+        update_web_config(path, {"council": {"enabled": False}})
+
+    assert load_ai_config(path).model == "deepseek/deepseek-v4-pro"
+
+
+@pytest.mark.parametrize("update", [
+    {"secret_reference": "actual secret value"},
+    {"endpoint": "https://user:password@example.invalid/api"},
+])
+def test_web_config_update_rejects_secret_bearing_values(tmp_path, update):
+    path = _write_config(tmp_path, _VALID_CONFIG)
+
+    with pytest.raises(ValueError):
+        update_web_config(path, update)
+
+    assert load_ai_config(path).endpoint == "https://openrouter.ai/api/v1"

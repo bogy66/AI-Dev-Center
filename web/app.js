@@ -1,72 +1,51 @@
 let currentSessionId = null;
 let currentProject = null;
-let recents = JSON.parse(localStorage.getItem('recents') || '[]');
-// Ensure existing projects without the field behave as false.
-recents.forEach(p => { if (p.create_github_repository === undefined) p.create_github_repository = false; });
+let recents;
+try {
+    const storedRecents = JSON.parse(localStorage.getItem('recents') || '[]');
+    recents = Array.isArray(storedRecents) ? storedRecents : [];
+} catch (_) {
+    recents = [];
+}
+recents.forEach(p => { p.path_status = 'checking'; });
 let pollingTimer = null;
 let approvalActionRendered = false;
 let currentHelpSlide = 0;
 let helpPitchDeckInitialized = false;
-const totalHelpSlides = 10;
+const totalHelpSlides = 15;
 
 // ---------- API helpers ----------
 async function fetchJson(url, options = {}) {
     const resp = await fetch(url, options);
-    if (!resp.ok) {
-        const text = await resp.text();
-        throw new Error(text || `HTTP ${resp.status}`);
+    let payload = null;
+    try {
+        payload = await resp.json();
+    } catch (_) {
+        payload = null;
     }
-    return resp.json();
+    if (!resp.ok) {
+        const error = new Error(payload?.error || `HTTP ${resp.status}`);
+        error.status = resp.status;
+        error.payload = payload;
+        throw error;
+    }
+    return payload;
 }
 
 function saveRecents() {
     localStorage.setItem('recents', JSON.stringify(recents));
 }
 
-function isLikelyProjectDirectory(path, projectName) {
-    if (!path || !projectName) return false;
-    const normalized = path.replace(/\/+$/, '');
-    const parts = normalized.split('/');
-    return parts[parts.length - 1] === projectName;
-}
-
-function resolveProjectDirectory(baseDir, projectName) {
-    const cleanBase = baseDir.replace(/\/+$/, '');
-    if (cleanBase.endsWith('/' + projectName)) {
-        return cleanBase;
-    }
-    return `${cleanBase}/${projectName}`;
+function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, character => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    })[character]);
 }
 
 function getProjectDirectory(project) {
     if (!project) return 'No project selected';
-
-    const name = project.project_name;
-
-    // Prefer an existing explicit project_path/project_directory
-    // only when it already appears to be the full project directory.
-    if (project.project_path && isLikelyProjectDirectory(project.project_path, name)) {
-        return project.project_path;
-    }
-
-    if (project.project_directory && isLikelyProjectDirectory(project.project_directory, name)) {
-        return project.project_directory;
-    }
-
-    // If only a workspace/base directory is stored, combine it with the project name.
-    // This handles the /home/udo/Testprojekt + _p1 -> /home/udo/Testprojekt/_p1 case.
-    if (project.project_path) {
-        return resolveProjectDirectory(project.project_path, name);
-    }
-
-    if (project.project_directory) {
-        return resolveProjectDirectory(project.project_directory, name);
-    }
-
-    if (project.workspace) {
-        return resolveProjectDirectory(project.workspace, name);
-    }
-
+    if (project.project_path) return project.project_path;
+    if (project.project_directory) return project.project_directory;
     return 'No project selected';
 }
 
@@ -79,11 +58,45 @@ function renderRecents() {
     list.innerHTML = '';
     recents.forEach((project, index) => {
         const li = document.createElement('li');
-        li.textContent = project.project_name;
+        const suffix = project.path_status === 'invalid' ? ' — invalid path' : '';
+        li.textContent = `${project.project_name}${suffix}`;
+        li.classList.toggle('invalid', project.path_status === 'invalid');
         li.classList.toggle('active', currentProject && currentProject.project_name === project.project_name);
         li.addEventListener('click', () => selectProject(index));
         list.appendChild(li);
     });
+}
+
+async function validateProjectPath(path) {
+    return fetchJson('/api/project/validate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({project_path: path}),
+    });
+}
+
+async function validateRecentProjects() {
+    await Promise.all(recents.map(async project => {
+        const path = getProjectDirectory(project);
+        try {
+            const result = await validateProjectPath(path);
+            project.project_path = result.project_path;
+            project.project_directory = result.project_path;
+            project.path_status = 'valid';
+        } catch (_) {
+            project.path_status = 'invalid';
+            project.session_id = null;
+        }
+    }));
+    saveRecents();
+    renderRecents();
+    if (currentProject) {
+        document.getElementById('project-path-display').textContent = getProjectPath();
+        if (currentProject.path_status === 'invalid') {
+            document.getElementById('global-status').textContent = 'Invalid project path';
+            setLiveStatus('This recent project path is stale or invalid.');
+        }
+    }
 }
 
 async function loadState() {
@@ -95,7 +108,7 @@ async function loadState() {
     } catch (error) {
         console.error("Failed to load state:", error);
 
-        if (String(error.message).includes('"error":"unknown session"')) {
+        if (error.status === 404 && error.payload?.error === 'unknown session') {
             currentSessionId = null;
 
             if (currentProject) {
@@ -116,14 +129,12 @@ async function loadState() {
 
 function selectProject(index) {
     currentProject = recents[index];
-    // Ensure backward compatibility for projects without the field.
-    if (currentProject.create_github_repository === undefined) {
-        currentProject.create_github_repository = false;
-    }
     currentSessionId = currentProject.session_id || null;
     document.getElementById('project-name-display').textContent = currentProject.project_name;
     document.getElementById('project-path-display').textContent = getProjectPath();
-    document.getElementById('global-status').textContent = currentSessionId ? 'Running' : 'Ready';
+    document.getElementById('global-status').textContent = currentProject.path_status === 'invalid'
+        ? 'Invalid project path'
+        : (currentSessionId ? 'Running' : 'Ready');
     updateSessionDisplay(currentSessionId);
     clearChat();
     if (currentSessionId) {
@@ -172,6 +183,43 @@ function updatePathDisplay() {
     document.getElementById('project-path-display').textContent = getProjectPath();
 }
 
+function formatTraceTime(timestamp) {
+    const parsed = new Date(timestamp);
+    if (Number.isNaN(parsed.getTime())) return String(timestamp || '');
+    return parsed.toLocaleTimeString([], {
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+    });
+}
+
+function formatActivity(activity) {
+    if (!activity) return '';
+    const stage = String(activity.stage || '')
+        .split('_').filter(Boolean)
+        .map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+    const actor = String(activity.actor || '');
+    const state = String(activity.runtime_state || '')
+        .replaceAll('_', ' ')
+        .replace(/^./, character => character.toUpperCase());
+    const subject = [stage, actor].filter(Boolean).join(' · ');
+    return subject && state ? `${subject} — ${state}…` : (subject || state);
+}
+
+function formatTraceLine(event) {
+    const meta = event.metadata || {};
+    const actor = String(meta.actor || meta.role || '').trim();
+    const runtimeState = String(meta.runtime_state || '').trim();
+    const timestamp = formatTraceTime(event.timestamp);
+
+    if (runtimeState) {
+        const activityActor = actor || String(event.component || 'Workflow');
+        return `[${timestamp}] ${activityActor} — ${runtimeState}`;
+    }
+
+    const rolePart = actor ? ` actor=${actor}` : '';
+    const toolPart = meta.tool_name ? ` tool=${meta.tool_name}` : '';
+    return `[${timestamp}] ${event.level} ${event.component}${rolePart}${toolPart} ${event.event} ${event.action} ${event.status}`;
+}
+
 function appendTrace(traceEvents) {
     const container = document.getElementById('trace-list-container');
     const filter = document.getElementById('trace-filter').value;
@@ -200,12 +248,7 @@ function appendTrace(traceEvents) {
         return eventRank >= threshold;
     });
 
-    container.innerHTML = filtered.map(e => {
-        const meta = e.metadata || {};
-        const rolePart = meta.role ? ` role=${meta.role}` : '';
-        const toolPart = meta.tool_name ? ` tool=${meta.tool_name}` : '';
-        return `[${e.timestamp}] ${e.level} ${e.component}${rolePart}${toolPart} ${e.event} ${e.action} ${e.status}`;
-    }).join('\n');
+    container.textContent = filtered.map(formatTraceLine).join('\n');
 }
 
 function startPolling(sessionId) {
@@ -231,6 +274,7 @@ function updateFromState(state) {
     const info = state.transparency || {};
     const action = info.current_mcp_tool || info.current_action || '';
     const backendRole = info.current_role;
+    const centralActivity = formatActivity(state.current_activity);
 
     let statusText;
     if (state.approval_required) {
@@ -248,7 +292,9 @@ function updateFromState(state) {
         stopPolling();
         removeApprovalAction();
     } else {
-        if (backendRole && action) {
+        if (centralActivity) {
+            statusText = centralActivity;
+        } else if (backendRole && action) {
             statusText = `${backendRole} · ${action}`;
         } else if (action) {
             statusText = action;
@@ -261,7 +307,9 @@ function updateFromState(state) {
     }
 
     setLiveStatus(statusText);
-    appendTrace(state.trace || []);
+    const liveTrace = [...(state.trace || []), ...(state.central_trace || [])]
+        .sort((left, right) => String(left.timestamp).localeCompare(String(right.timestamp)));
+    appendTrace(liveTrace);
     if (state.error_message) {
         setLiveStatus(`Error: ${state.error_message}`);
     }
@@ -508,33 +556,36 @@ function openModal() {
     document.getElementById('project-dir-input').value = '';
     document.getElementById('project-name-input').value = '';
     document.getElementById('new-project-trace-level').value = 'INFO';
-    document.getElementById('create-github-repo-checkbox').checked = false;
 }
 
 function closeModal() {
     document.getElementById('new-project-modal').classList.add('hidden');
 }
 
-function handleCreateProject() {
+async function handleCreateProject() {
     const name = document.getElementById('project-name-input').value.trim();
     const dir = document.getElementById('project-dir-input').value.trim();
     const traceLevel = document.getElementById('new-project-trace-level').value;
-    const createGithubRepo = document.getElementById('create-github-repo-checkbox').checked;
     if (!name || !dir) {
         alert('Project name and directory are required');
         return;
     }
 
-    // Resolve to the actual project directory.  If the user entered
-    // the workspace/base directory, combine it with the project name.
-    const projectDirectory = resolveProjectDirectory(dir, name);
+    let projectDirectory;
+    try {
+        const validation = await validateProjectPath(dir);
+        projectDirectory = validation.project_path;
+    } catch (error) {
+        setLiveStatus(`Invalid existing project: ${error.message}`);
+        return;
+    }
 
     const project = {
         project_name: name,
         project_directory: projectDirectory,
         project_path: projectDirectory,
         trace_level: traceLevel,
-        create_github_repository: createGithubRepo,
+        path_status: 'valid',
         session_id: null,
     };
     recents.push(project);
@@ -565,7 +616,26 @@ async function handleSend() {
     }
 
     if (!currentSessionId) {
+        if (currentProject.path_status === 'invalid') {
+            setLiveStatus('This recent project path is invalid. Select an existing project root.');
+            return;
+        }
         setLiveStatus('Starting workflow...');
+        try {
+            const validation = await validateProjectPath(getProjectDirectory(currentProject));
+            currentProject.project_path = validation.project_path;
+            currentProject.project_directory = validation.project_path;
+            currentProject.path_status = 'valid';
+            saveRecents();
+        } catch (error) {
+            currentProject.path_status = 'invalid';
+            currentProject.session_id = null;
+            saveRecents();
+            renderRecents();
+            document.getElementById('global-status').textContent = 'Invalid project path';
+            setLiveStatus(`Invalid existing project: ${error.message}`);
+            return;
+        }
         try {
             const resp = await fetchJson('/api/workflow/start', {
                 method: 'POST',
@@ -585,6 +655,14 @@ async function handleSend() {
             startPolling(currentSessionId);
         } catch (err) {
             console.error(err);
+            if (err.payload?.session_id) {
+                currentSessionId = err.payload.session_id;
+                currentProject.session_id = currentSessionId;
+                saveRecents();
+                updateSessionDisplay(currentSessionId);
+                document.getElementById('global-status').textContent = 'Failed';
+                await loadState();
+            }
             setLiveStatus(`Error: ${err.message}`);
         }
     } else {
@@ -615,31 +693,64 @@ async function handleOpenProjectPath() {
 }
 
 // ---------- Setup form handling ----------
-function populateSetupForm() {
-    // Values reflect the current local configuration (config/ai-dev-center.yml)
-    document.getElementById('setup-provider').value = 'openrouter';
-    document.getElementById('setup-model').value = 'deepseek/deepseek-v4-pro';
-    document.getElementById('setup-endpoint').value = 'https://openrouter.ai/api/v1';
-    document.getElementById('setup-auth-type').value = 'secret_reference';
-    document.getElementById('setup-secret-ref').value = 'openrouter-api';
-    document.getElementById('setup-timeout').value = '30';
-    document.getElementById('setup-discovery-enabled').checked = true;
-    document.getElementById('setup-require-json').checked = true;
-    document.getElementById('setup-max-requirements').value = '50';
+async function populateSetupForm() {
+    const msg = document.getElementById('setup-message');
+    msg.textContent = 'Loading productive configuration…';
+    try {
+        const config = await fetchJson('/api/config');
+        const ai = config.ai;
+        document.getElementById('setup-provider').value = ai.provider;
+        document.getElementById('setup-provider').disabled = true;
+        document.getElementById('setup-model').value = ai.model;
+        document.getElementById('setup-endpoint').value = ai.endpoint;
+        document.getElementById('setup-auth-type').value = ai.authentication.type;
+        document.getElementById('setup-auth-type').disabled = true;
+        document.getElementById('setup-secret-ref').value = ai.authentication.secret_reference;
+        document.getElementById('setup-timeout').value = ai.timeout_seconds;
+        document.getElementById('setup-discovery-enabled').checked = ai.discovery.enabled;
+        document.getElementById('setup-require-json').checked = ai.discovery.require_json;
+        document.getElementById('setup-max-requirements').value = ai.discovery.max_requirements;
+        const roles = ai.council?.roles || {};
+        document.getElementById('setup-council-roles').innerHTML = Object.values(roles)
+            .map(role => `<div class="form-field"><strong>${escapeHtml(role.role.replaceAll('_', ' '))}</strong><code>${escapeHtml(role.provider)} · ${escapeHtml(role.model)}</code><span class="field-note">timeout ${escapeHtml(role.timeout_seconds)}s · temperature ${escapeHtml(role.temperature)}</span></div>`)
+            .join('');
+        msg.textContent = 'Loaded from the productive config.yml. Council roles are read-only.';
+    } catch (error) {
+        msg.textContent = `Configuration error: ${error.message}`;
+    }
 }
 
-function handleSetupSave(event) {
+async function handleSetupSave(event) {
     event.preventDefault();
     const msg = document.getElementById('setup-message');
-    msg.textContent = 'Saving configuration is not yet supported through the web interface.';
+    msg.textContent = 'Validating configuration…';
+    const update = {
+        model: document.getElementById('setup-model').value.trim(),
+        endpoint: document.getElementById('setup-endpoint').value.trim(),
+        secret_reference: document.getElementById('setup-secret-ref').value.trim(),
+        timeout_seconds: Number(document.getElementById('setup-timeout').value),
+        discovery_enabled: document.getElementById('setup-discovery-enabled').checked,
+        require_json: document.getElementById('setup-require-json').checked,
+        max_requirements: Number(document.getElementById('setup-max-requirements').value),
+    };
+    try {
+        await fetchJson('/api/config', {
+            method: 'PATCH', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(update),
+        });
+        msg.textContent = 'Configuration saved. New sessions use the updated values.';
+        await populateSetupForm();
+    } catch (error) {
+        msg.textContent = `Configuration was not saved: ${error.message}`;
+    }
 }
 
 // ---------- Slide content ----------
-const helpSlides = [
+const legacyHelpSlides = [
     {
         title: 'The Goal',
         html: () => `
-            <p>AI Dev Center provides a controlled canonical development workflow reached through different communication adapters.</p>
+            <p>AI Dev Center provides a controlled central development workflow reached through different communication adapters.</p>
             <p>It spans project analysis and requirements clarification, technical decisions, setup and implementation, testing, review, approval and safe version control while keeping the human in control.</p>
             <div class="flow-row">
                 <span class="flow-step">Task</span>
@@ -679,7 +790,7 @@ const helpSlides = [
         title: 'What is AI Dev Center?',
         html: () => `
             <p>AI Dev Center is not intended to be just one chatbot producing code.</p>
-            <p>It is an orchestrated development workspace in which specialized AI roles contribute to one common canonical project workflow.</p>
+            <p>It is an orchestrated development workspace in which specialized AI roles contribute to one common central project workflow.</p>
             <p>Web, API, CLI, MCP and Signal are adapters to that central workflow, not separate business pipelines. Signal chats and projects have a strict 1:1 persisted relationship: each chat belongs to exactly one project and each project has exactly one active Signal chat. Normal message text cannot change the binding; rebinding is explicit, and an unbound chat cannot start work. Binding stores no chat history as Project Definitions / Memory and grants no Human Approval authority. Legacy compatibility classes may remain without being productive alternatives.</p>
             <p>For an existing project, its architecture, conventions, frameworks, build systems, tests and toolchains remain authoritative; AI Dev Center does not force it into a preferred architecture.</p>
             <p>The user interacts primarily through Chat.</p>
@@ -694,12 +805,12 @@ const helpSlides = [
                 <li>traceability</li>
             </ul>
             <p>The Development Stage has a controlled boundary: the Developer produces structured changes, while the File Applier alone writes validated files inside the project root. It does not use arbitrary shell commands; testing, review and Git remain later stages.</p>
-            <p>The canonical Development-Testing flow connects structured development changes, structured test changes, controlled application, real test execution and diagnosis in that order. The TestChangeGenerator produces test changes without writing files, while the Git-free ProjectTestRunner runs only an allowed test action. It never accepts arbitrary LLM-generated shell commands; the Git-based legacy TestBench is not this canonical core path.</p>
+            <p>The central Development-Testing flow connects structured development changes, structured test changes, controlled application, real test execution and diagnosis in that order. The TestChangeGenerator produces test changes without writing files, while the Git-free ProjectTestRunner runs only an allowed test action. It never accepts arbitrary LLM-generated shell commands; the Git-based legacy TestBench is not this central core path.</p>
             <p>For each controlled run, AI Dev Center records which declared files were changed, their original and resulting hashes, and whether they were already modified or staged in Git. This provenance protects existing user changes. Preexisting or mixed provenance, foreign staged content, and a final hash mismatch block automatic whole-file staging.</p>
-            <p>Setup approval, final approval and publish approval are separate safety boundaries. After an approved setup has executed successfully, the canonical flow can continue through development, structured test changes, controlled application, real tests and diagnosis. A structured rework request may trigger exactly one controlled rework cycle; another rework-required result ends the run. A final accepted result waits for explicit human final approval. Its approved result means ready for Git; a further explicit Controlled Git Stage may then create a controlled local commit containing only validated run paths.</p>
+            <p>Setup approval, final approval and publish approval are separate safety boundaries. After an approved setup has executed successfully, the central flow can continue through development, structured test changes, controlled application, real tests and diagnosis. A structured rework request may trigger exactly one controlled rework cycle; another rework-required result ends the run. A final accepted result waits for explicit human final approval. Its approved result means ready for Git; a further explicit Controlled Git Stage may then create a controlled local commit containing only validated run paths.</p>
             <p>A successful local commit only creates ready for publish and a separate pending Publish Approval. After explicit publish approval, the Controlled Publish Stage pushes the exact persisted run commit to an existing configured Git remote using an explicit branch ref. Missing remotes, detached HEAD, unrelated later commits, authentication failures and non-fast-forward pushes stop fail-safe. It never force-pushes or repairs history through merge or rebase. Publish means Git remote push here—not release, pull request, deployment, hardware flash, OTA, package publish or general CI/CD automation.</p>
-            <p>The Central Diagnostic Trace provides a persistent run-specific timeline across workflow phases, approvals, controlled Git and controlled publish. Stable sequences and UTC timestamps make pending, failed, rework, approved, committed and published outcomes explainable after a restart. It stores only allowlisted, redacted diagnostic metadata and cannot replace Workflow State or grant an approval. It is not presented as enterprise SIEM, event sourcing, a cryptographic audit chain or distributed tracing.</p>
-            <p>Project-level execution ownership prevents concurrent canonical mutations of the same workspace. A persistent execution lifecycle makes interrupted work visible and stops unsafe automatic repetition after a crash. Recovery remains deliberately bounded: it is not distributed consensus, an exactly-once LLM guarantee or a transactional rollback system.</p>
+            <p>The Central Diagnostic Trace provides a persistent run-specific timeline across workflow phases, approvals, controlled Git and controlled publish. During long-running provider and Engineering Council work it exposes safe role activity such as preparing, thinking, waiting, reviewing, completed and failed; thinking is only an activity label and never reveals private reasoning or prompts. The Web view derives current activity from this structured trace and renders full stored ISO timestamps as compact browser-local HH:MM:SS. An incomplete Council decision blocks centrally before materialization. The trace stores only allowlisted, redacted diagnostic metadata and cannot replace Workflow State or grant an approval.</p>
+            <p>Project-level execution ownership prevents concurrent central mutations of the same workspace. A persistent execution lifecycle makes interrupted work visible and stops unsafe automatic repetition after a crash. Recovery remains deliberately bounded: it is not distributed consensus, an exactly-once LLM guarantee or a transactional rollback system.</p>
             <p>Existing projects are first inspected read-only: languages, frameworks, package managers, build systems, test systems, firmware indicators, CI hints and project areas are detected deterministically from repository evidence without executing project code, builds or dependency installations. Sensitive files never reach downstream LLM providers. Existing architectures, conventions and toolchains are respected as project facts.</p>
             <p>Project Definitions / Memory stores explicit structured durable decisions, rules, terminology and intended state, never raw chat history. Project Intelligence remains observed reality, Project Definitions remain intentional policy, and config.yml remains the owner of its declarative technical fields. The central Project Context preserves all three typed sources and exposes bounded structured conflicts instead of silently overwriting them. Superseded and revoked definitions remain historical and definitions never grant approval or execution authority.</p>
             <p>From Project Intelligence, a typed VerificationPlan assigns each project area its own controlled runner and working directory. Firmware/embedded verification provides hardware-free ESPHome validate/compile, PlatformIO builds and native tests, and CMake configure/build with dependency ordering that blocks follow-up steps when predecessors fail. PlatformIO extra_scripts and similar build-code trust boundaries are detected and blocked. No runner performs flash, upload, OTA or device provisioning. Unsupported detection means the system reports truthfully instead of passing silently.</p>
@@ -750,7 +861,7 @@ const helpSlides = [
         html: () => `
             <div class="arch-layer">Web / API / CLI / MCP adapters</div>
             <div class="flow-arrow">↓</div>
-            <div class="arch-layer">Canonical Application Service</div>
+            <div class="arch-layer">Central Application Service</div>
             <div class="flow-arrow">↓</div>
             <div class="arch-layer">Inspection / Requirements / Council / SetupPlan</div>
             <div class="flow-arrow">↓</div>
@@ -804,7 +915,7 @@ const helpSlides = [
         title: 'Human in Control',
         html: () => `
             <div class="vertical-flow">
-                <span class="flow-step">Create Project</span>
+                <span class="flow-step">Open Existing Project</span>
                 <span class="flow-arrow">↓</span>
                 <span class="flow-step">Describe task in Chat</span>
                 <span class="flow-arrow">↓</span>
@@ -823,7 +934,8 @@ const helpSlides = [
                 <span class="flow-step">Final Approval → Controlled Git → Publish Approval</span>
             </div>
             <p>Corrections, questions and additional instructions happen through Chat.</p>
-            <p>Use cases: understand an existing project, add a feature, fix a problem, refactor, create a project, add tests, review, debug the workflow.</p>
+            <p>The productive Web GUI opens an existing validated project root; creating a new directory is not implied by selection.</p>
+            <p>Use cases: understand an existing project, add a feature, fix a problem, refactor, add tests, review and debug the workflow.</p>
         `
     },
     {
@@ -845,15 +957,39 @@ const helpSlides = [
     }
 ];
 
+const helpSlides = [
+    {title: '1. What is AI Dev Center?', html: () => `<p>A project workspace where an AI team can understand, plan, develop, verify and review work through one central workflow—with the human in control.</p>`},
+    {title: '2. Beyond isolated code generation', html: () => `<p>A useful change needs project understanding, technical decisions, tools, tests, review and delivery controls. A code snippet alone does not provide that continuity.</p>`},
+    {title: '3. The idea', html: () => `<p>Bring project facts, durable decisions, specialist AI roles, controlled tools and observable workflow state together around one project.</p>`},
+    {title: '4. How the user works', html: () => `<p>Choose a Project, describe the desired outcome, follow live progress, inspect results and decide each Human Approval request.</p>`},
+    {title: '5. Existing projects', html: () => `<p>The current Web GUI opens an exact existing project root. AI Dev Center observes its languages, frameworks, tests, toolchains and conventions before proposing change.</p>`},
+    {title: '6. New projects', html: () => `<p>Greenfield projects are part of the product direction. Safe Web creation is not implemented yet, so the current interface does not pretend that selecting a path creates one.</p>`},
+    {title: '7. More than conventional software', html: () => `<p>The scope includes software, firmware, embedded and hardware-near development. Physical device actions remain behind a separate appropriate approval boundary and are not automatically available.</p>`},
+    {title: '8. AI team and Engineering Council', html: () => `<p>Specialist roles examine the project and alternatives. The Engineering Council compares approaches, and a Chairman participates in the technical recommendation before controlled action is considered.</p>`},
+    {title: '9. Human control', html: () => `<p>Setup, capability use, final development acceptance and publish each have separate approvals. An approval never becomes permission for arbitrary shell commands or another approval boundary.</p>`},
+    {title: '10. Tools when needed', html: () => `<p>Missing toolchains are reported, not self-installed. Approved structured setup and capability registration can extend future technologies without turning a fixed list into the product architecture.</p>`},
+    {title: '11. One project, multiple frontends', html: () => `<p>Web, Signal, API, CLI and MCP connect to the same central workflow. Signal is an adapter contract today; a concrete deployed provider remains future integration work. Active Signal chat and project bindings are strict 1:1.</p>`},
+    {title: '12. Project Definitions / Memory', html: () => `<p>Observed project reality stays separate from explicit durable decisions and technical configuration. Conflicts are visible instead of silently merged, and raw chat history is not Project Memory.</p>`},
+    {title: '13. Transparency while work happens', html: () => `<p>The central Diagnostic Trace drives the live stage and Council-role activity shown in Web, including safe preparing, thinking, waiting, reviewing and failure states. Trace rows use compact local HH:MM:SS times while full ISO timestamps remain in API and persistence. Prompts, private reasoning, secrets and sensitive configuration stay out of the browser.</p>`},
+    {title: '14. From development to delivery', html: () => `<p>Controlled development leads to real verification and review, then separate final approval, controlled Git and Publish Approval. Verification never installs its own tools.</p>`},
+    {title: '15. Why AI Dev Center?', html: () => `<p>It combines project continuity, extensible capabilities, human control and transparent progress. Docker is the intended production direction, while unfinished integrations remain clearly identified.</p>`},
+];
+
 // ---------- Event binding ----------
 document.getElementById('new-project-btn').addEventListener('click', openModal);
 document.getElementById('cancel-project-btn').addEventListener('click', closeModal);
 document.getElementById('create-project-btn').addEventListener('click', handleCreateProject);
-document.getElementById('choose-directory-btn').addEventListener('click', () => {
-    document.getElementById('project-directory-picker').click();
-});
-document.getElementById('project-directory-picker').addEventListener('change', () => {
-    // no-op: do not populate from file selection
+document.getElementById('choose-directory-btn').addEventListener('click', async () => {
+    try {
+        const result = await fetchJson('/api/project/select-directory', {method: 'POST'});
+        document.getElementById('project-dir-input').value = result.project_path;
+        const nameInput = document.getElementById('project-name-input');
+        if (!nameInput.value.trim()) {
+            nameInput.value = result.project_path.split('/').filter(Boolean).pop() || '';
+        }
+    } catch (error) {
+        setLiveStatus(`Directory selection: ${error.message}`);
+    }
 });
 
 document.getElementById('send-btn').addEventListener('click', handleSend);
@@ -946,6 +1082,7 @@ document.addEventListener('keydown', (e) => {
 // Initial render
 initTraceDrag();
 renderRecents();
+validateRecentProjects();
 if (recents.length > 0) {
     selectProject(0);
 }

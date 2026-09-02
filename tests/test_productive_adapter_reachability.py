@@ -43,6 +43,24 @@ def test_productive_adapters_do_not_import_legacy_business_workflows():
     assert violations == []
 
 
+def test_shared_composition_wires_central_discovery_require_json_setting():
+    source = Path(composition.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    discovery_calls = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "AIRequirementDiscovery"
+    ]
+
+    assert len(discovery_calls) == 1
+    require_json = next(
+        keyword.value for keyword in discovery_calls[0].keywords
+        if keyword.arg == "require_json"
+    )
+    assert ast.unparse(require_json) == "config.discovery.require_json"
+
+
 @pytest.mark.parametrize("council", [None, SimpleNamespace(enabled=False)])
 def test_shared_composition_rejects_invalid_council_before_secrets(
     monkeypatch, council
@@ -64,15 +82,15 @@ def test_shared_composition_rejects_invalid_council_before_secrets(
     provider_factory.assert_not_called()
 
 
-def test_visible_help_and_pitch_describe_canonical_boundaries():
+def test_visible_help_and_pitch_describe_central_boundaries():
     root = Path(__file__).parents[1]
     help_text = (root / "web/index.html").read_text(encoding="utf-8")
     pitch_text = (root / "web/app.js").read_text(encoding="utf-8")
 
-    assert "Web, API, CLI, MCP and Signal are communication adapters" in help_text
+    assert "Web, Signal, API, CLI and MCP are frontends to the same central workflow" in help_text
     assert "Setup Approval before setup execution" in help_text
     assert "not presented as productive capabilities" in help_text
-    assert "Web, API, CLI, MCP and Signal are adapters" in pitch_text
+    assert "Web, Signal, API, CLI and MCP connect" in pitch_text
     assert "Setup Approval, Final Approval and Publish Approval" in pitch_text
     assert "outside the current productive scope" in pitch_text
     assert "Workflow / Agent orchestration" not in pitch_text

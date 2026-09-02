@@ -119,6 +119,19 @@ class DevelopmentWorkflow:
 
         run_id = run_id or project_id
         self._trace(run_id, "requirement_discovery", "started", "started", "Requirement discovery started")
+        set_discovery_activity = getattr(self._discovery, "set_activity_callback", None)
+        if callable(set_discovery_activity):
+            def record_discovery_activity(**activity):
+                runtime_state = activity.get("runtime_state", "working")
+                event_type = "failed" if runtime_state == "failed" else (
+                    "completed" if runtime_state == "completed" else "started"
+                )
+                self._trace(
+                    run_id, "requirement_discovery", event_type, event_type,
+                    f"Requirement discovery provider {runtime_state}",
+                    details=activity,
+                )
+            set_discovery_activity(record_discovery_activity)
         try:
             discovery_result = self._discovery.discover(project_info, project_id)
         except Exception as error:
@@ -170,6 +183,20 @@ class DevelopmentWorkflow:
         )
 
         self._trace(run_id, "engineering_council", "started", "started", "Engineering Council started")
+        set_activity_callback = getattr(self._council, "set_activity_callback", None)
+        if callable(set_activity_callback):
+            def record_council_activity(**activity):
+                runtime_state = activity.get("runtime_state", "working")
+                event_type = "failed" if runtime_state == "failed" else (
+                    "completed" if runtime_state == "completed" else "started"
+                )
+                status = event_type
+                actor = activity.get("actor", "Council")
+                self._trace(
+                    run_id, "engineering_council", event_type, status,
+                    f"{actor} {runtime_state}", details=activity,
+                )
+            set_activity_callback(record_council_activity)
         try:
             council_result = self._council.evaluate(council_input)
         except Exception as error:
@@ -177,6 +204,23 @@ class DevelopmentWorkflow:
             raise
         council_status = "completed" if council_result.council_complete else "incomplete"
         self._trace(run_id, "engineering_council", "completed", council_status, "Engineering Council completed", details={"variant_count": len(council_result.variants), "recommendation": council_result.recommendation or "", "council_complete": council_result.council_complete, "error_count": len(council_result.agent_errors) + bool(council_result.chairman_error)}, related_result_id=council_result.id)
+
+        if not council_result.council_complete:
+            self._trace(
+                run_id, "engineering_council", "blocked", "blocked",
+                "Incomplete Engineering Council result blocked planning",
+                details={"council_complete": False},
+                related_result_id=f"{council_result.id}:incomplete",
+            )
+            self._trace(
+                run_id, "workflow_end", "blocked", "blocked",
+                "Workflow stopped at incomplete Engineering Council result",
+                details={"end_state": "engineering_council_incomplete"},
+                related_result_id=f"workflow-end:{council_result.id}:incomplete",
+            )
+            raise WorkflowExecutionError(
+                "Engineering Council result is incomplete; planning is blocked."
+            )
 
         self._trace(run_id, "toolchain_materialization", "started", "started", "Toolchain materialization started")
         try:

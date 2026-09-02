@@ -153,6 +153,8 @@ DETAIL_KEYS = frozenset({
     "git_repository_present", "truncated",
     "aggregate_status", "verification_step_count", "truncated_output",
     "error_category", "diagnostics",
+    "actor", "actor_role", "runtime_state", "council_phase", "provider",
+    "model",
 })
 
 _locks_guard = threading.Lock()

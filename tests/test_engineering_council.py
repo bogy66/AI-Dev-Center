@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -682,6 +682,67 @@ class TestPhase1Parallelism:
         assert result.council_complete, f"Council failed: {result.agent_errors}"
         assert barrier.n_waiting == 0, "Barrier was not reached by all 3 agents"
         # Barrier should have been broken (all 3 reached it)
+
+
+def test_stuck_agent_is_bounded_and_completed_results_are_retained(tmp_path):
+    release_stuck_provider = threading.Event()
+    activities = []
+    provider_call_count = {}
+    config = _make_council_config()
+    config = replace(
+        config,
+        environment_architect=replace(
+            config.environment_architect, timeout_seconds=0.01,
+        ),
+    )
+    all_completed_ids = ["A2-var-1", "A3-var-1"]
+
+    class StuckProvider:
+        def complete(self, _prompt):
+            release_stuck_provider.wait()
+            return _make_phase1_response("A1", 1)
+
+    def provider_factory(agent_config, _resolver, ollama_url=None):
+        model = agent_config.model
+        call_number = provider_call_count.get(model, 0)
+        provider_call_count[model] = call_number + 1
+        if model == "model-ea" and call_number == 0:
+            return StuckProvider()
+        if model == "model-ch":
+            return FakeLLMProvider([_make_chairman_response(all_completed_ids)])
+        if call_number == 0:
+            agent_id = {"model-ti": "A2", "model-ra": "A3"}[model]
+            return FakeLLMProvider([_make_phase1_response(agent_id, 1)])
+        return FakeLLMProvider([_make_phase2_response(agent_config.role, all_completed_ids)])
+
+    try:
+        with patch("app.engineering_council._TIMEOUT_GRACE_SECONDS", 0), patch(
+            "app.engineering_council.create_council_provider",
+            side_effect=provider_factory,
+        ):
+            council = EngineeringCouncil(
+                council_config=config,
+                secret_resolver=SimpleSecretResolver({"openrouter-api": "test"}),
+                trace_dir=tmp_path,
+            )
+            council.set_activity_callback(lambda **activity: activities.append(activity))
+            result = council.evaluate(_make_council_input())
+    finally:
+        release_stuck_provider.set()
+
+    assert result.council_complete is False
+    assert result.variants
+    assert any("A1" in error and "deadline" in error for error in result.agent_errors)
+    assert any(
+        activity["actor"] == "Agent A1"
+        and activity["runtime_state"] == "failed"
+        for activity in activities
+    )
+    assert any(
+        activity["actor"] == "Agent A3"
+        and activity["runtime_state"] == "completed"
+        for activity in activities
+    )
 
 
 # =========================================================================

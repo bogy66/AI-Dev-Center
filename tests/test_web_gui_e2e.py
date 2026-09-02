@@ -1,6 +1,7 @@
 """Web boundary tests for the canonical setup application service."""
 
 from types import SimpleNamespace
+import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -35,30 +36,47 @@ def _components():
     return SimpleNamespace(service=service, plan_store=store, approval=approval, development_workflow=workflow)
 
 
-def _start(client):
-    return client.post("/api/workflow/start", json={"project_name": "test-proj", "project_directory": "/tmp/test-proj", "task_description": "Testing"})
+def _start(client, project_path):
+    return client.post("/api/workflow/start", json={"project_name": "test-proj", "project_directory": str(project_path), "task_description": "Testing"})
 
 
-def test_web_planning_uses_canonical_service_without_agent_or_execution():
+def _wait_for_plan(client, session_id):
+    for _ in range(100):
+        state = client.get(f"/api/state/{session_id}").json()
+        if state["plan_id"]:
+            return state
+        time.sleep(0.01)
+    return state
+
+
+def test_web_planning_uses_canonical_service_without_agent_or_execution(tmp_path):
     components = _components()
     app.dependency_overrides[get_web_setup_components] = lambda: components
     client = TestClient(app)
 
-    response = _start(client)
+    project = tmp_path / "test-proj"
+    project.mkdir()
+    response = _start(client, project)
 
-    assert response.status_code == 200
-    assert response.json()["status"] == "pending_approval"
-    components.service.plan_project_setup.assert_called_once_with("test-proj", "/tmp/test-proj")
+    assert response.status_code == 202
+    assert response.json()["status"] == "planning"
+    _wait_for_plan(client, response.json()["session_id"])
+    components.service.plan_project_setup.assert_called_once_with(
+        "test-proj", str(project.resolve()),
+    )
     components.plan_store.save.assert_called_once()
     components.approval.approve.assert_not_called()
     components.service.execute_approved_setup_and_development.assert_not_called()
 
 
-def test_canonical_approval_and_execution_are_separate_http_steps():
+def test_canonical_approval_and_execution_are_separate_http_steps(tmp_path):
     components = _components()
     app.dependency_overrides[get_web_setup_components] = lambda: components
     client = TestClient(app)
-    session_id = _start(client).json()["session_id"]
+    project = tmp_path / "test-proj"
+    project.mkdir()
+    session_id = _start(client, project).json()["session_id"]
+    _wait_for_plan(client, session_id)
     pending_plan = SimpleNamespace(id="plan-1", status="pending_approval")
     approved_plan = SimpleNamespace(id="plan-1", status="approved")
     components.plan_store.load.side_effect = [pending_plan, approved_plan]
@@ -76,7 +94,7 @@ def test_canonical_approval_and_execution_are_separate_http_steps():
     components.service.execute_approved_setup_and_development.assert_called_once_with(
         approved_plan,
         "test-proj",
-        "/tmp/test-proj",
+        str(project.resolve()),
         "Testing",
         session_id,
     )

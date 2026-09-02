@@ -1,10 +1,13 @@
 import pytest
 
-from app.ai_config import AIConfig, AuthenticationConfig, DiscoveryConfig
+from app.ai_config import (
+    AIConfig, AuthenticationConfig, CouncilAgentConfig, DiscoveryConfig,
+)
 from app.openrouter_llm_provider import OpenRouterLLMProvider
 from app.secret_resolver import SecretNotFoundError, SimpleSecretResolver
 from app.llm_provider_factory import (
     create_llm_provider,
+    create_council_provider,
     UnknownProviderError,
     MissingSecretError,
 )
@@ -84,6 +87,19 @@ def test_timeout_is_forwarded():
 
     assert isinstance(provider, OpenRouterLLMProvider)
     assert provider._timeout == int(custom_timeout)
+
+
+def test_council_role_timeout_is_forwarded_to_provider_http_client():
+    resolver = SimpleSecretResolver({"openrouter-api": "some-key"})
+    role_config = CouncilAgentConfig(
+        role="toolchain_integrator", provider="openrouter",
+        model="provider/model", timeout_seconds=47, temperature=0.7,
+    )
+
+    provider = create_council_provider(role_config, resolver)
+
+    assert isinstance(provider, OpenRouterLLMProvider)
+    assert provider._timeout == 47
 
 
 def test_unknown_provider_raises():
