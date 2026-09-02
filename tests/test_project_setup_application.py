@@ -5,13 +5,44 @@ import pytest
 
 from app.common_request import RequestIntent
 from app.dev_workflow import WorkflowExecutionError
+from app.project_intelligence import (
+    ProjectIntelligence,
+    ProjectArea,
+    DetectedLanguage,
+    Evidence,
+)
 from app.project_setup_application import ProjectSetupApplicationService
+
+
+def _mock_intelligence(project_id, project_path, kind="existing"):
+    return ProjectIntelligence(
+        project_root=str(project_path),
+        project_kind=kind,
+        areas=(),
+        languages=(),
+        frameworks=(),
+        package_systems=(),
+        build_systems=(),
+        test_systems=(),
+        firmware_indicators=(),
+        ci_indicators=(),
+        doc_indicators=(),
+        git_repository_present=False,
+        sensitive_configuration_present=False,
+        warnings=(),
+        truncated=False,
+        total_files_traversed=0,
+        total_files_excluded=0,
+        inspection_limit_exceeded=False,
+    )
 
 
 def test_service_inspects_once_and_delegates_canonical_planning(tmp_path):
     project_info = {"project_id": "demo", "project_path": str(tmp_path), "files": []}
     inspector = Mock()
     inspector.inspect.return_value = project_info
+    inspector.build_intelligence.return_value = _mock_intelligence("demo", tmp_path)
+    inspector.inspect_managed.return_value = (project_info, _mock_intelligence("demo", tmp_path))
     workflow_result = Mock()
     workflow = Mock()
     workflow.run.return_value = workflow_result
@@ -20,21 +51,28 @@ def test_service_inspects_once_and_delegates_canonical_planning(tmp_path):
     result = service.plan_project_setup("demo", tmp_path)
 
     assert result is workflow_result
-    inspector.inspect.assert_called_once_with("demo", tmp_path)
-    workflow.run.assert_called_once_with(project_info, "demo")
+    inspector.build_intelligence.assert_called_once_with(tmp_path)
+    inspector.inspect_managed.assert_called_once_with("demo", tmp_path)
+    workflow.run.assert_called_once()
+    assert workflow.run.call_args.args[1] == "demo"
 
 
 def test_service_builds_planning_intent_before_workflow_delegation(tmp_path):
     inspector = Mock()
+    inspector.build_intelligence.return_value = _mock_intelligence("demo", tmp_path)
     inspector.inspect.return_value = {"project_id": "demo", "files": []}
+    inspector.inspect_managed.return_value = (
+        {"project_id": "demo", "project_path": str(tmp_path), "files": []},
+        _mock_intelligence("demo", tmp_path),
+    )
     workflow = Mock()
     service = ProjectSetupApplicationService(workflow, inspector)
 
     request = service.build_request("demo", tmp_path)
 
     assert request.project_id == "demo"
-    assert request.project_info == {"project_id": "demo", "files": []}
     assert request.intent is RequestIntent.PLAN_PROJECT_SETUP
+    assert "project_kind" in request.project_info
 
 
 def test_service_rejects_empty_project_id_before_inspection(tmp_path):
@@ -44,12 +82,16 @@ def test_service_rejects_empty_project_id_before_inspection(tmp_path):
     with pytest.raises(ValueError, match="project_id"):
         service.plan_project_setup("", tmp_path)
 
-    inspector.inspect.assert_not_called()
+    inspector.build_intelligence.assert_not_called()
 
 
 def test_service_does_not_swallow_workflow_errors(tmp_path):
     inspector = Mock()
-    inspector.inspect.return_value = {"project_id": "demo", "files": []}
+    inspector.build_intelligence.return_value = _mock_intelligence("demo", tmp_path)
+    inspector.inspect_managed.return_value = (
+        {"project_id": "demo", "project_path": str(tmp_path), "files": []},
+        _mock_intelligence("demo", tmp_path),
+    )
     workflow = Mock()
     workflow.run.side_effect = WorkflowExecutionError("council unavailable")
     service = ProjectSetupApplicationService(workflow, inspector)

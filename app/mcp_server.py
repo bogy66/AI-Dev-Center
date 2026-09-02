@@ -8,6 +8,7 @@ components into callable tools.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from app.setup_approval import SetupApprovalError
@@ -35,8 +36,10 @@ class MCPServer:
         plan_store: Any,
         approval: Any,
         development_workflow: Any,
+        project_inspector: Any = None,
     ) -> None:
         self._project_scanner = project_scanner
+        self._project_inspector = project_inspector
         self._discovery = discovery
         self._preflight = preflight
         self._planner = planner
@@ -46,6 +49,10 @@ class MCPServer:
 
     def inspect_project(self, project_path: str) -> dict[str, Any]:
         """Inspect a project and return its structure."""
+        if self._project_inspector is not None:
+            return self._project_inspector.inspect(
+                Path(project_path).name, project_path,
+            )
         return {
             "project_path": project_path,
             "files": self._project_scanner.scan(project_path),

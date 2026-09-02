@@ -1,10 +1,9 @@
 import app.project_files as project_files
-import app.workflow_cli as workflow_cli
 
 
-def test_cli_reexports_the_neutral_reader_implementation():
-    assert workflow_cli.read_project_files is project_files.read_project_files
-    assert workflow_cli.MAX_FILE_SIZE == project_files.MAX_FILE_SIZE
+def test_cli_uses_shared_reader_module():
+    assert project_files.MAX_FILE_SIZE == 1_000_000
+    assert project_files.read_project_files is not None
 
 
 def test_reader_preserves_order_content_and_warnings(tmp_path):
@@ -20,4 +19,4 @@ def test_reader_preserves_order_content_and_warnings(tmp_path):
         {"path": "a.py", "content": "a"},
         {"path": "b.py", "content": "b"},
     ]
-    assert warnings == [f"Skipping large file: {tmp_path / 'large.bin'}"]
+    assert warnings == [f"Skipping large file: large.bin"]

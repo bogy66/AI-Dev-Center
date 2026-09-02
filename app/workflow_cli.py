@@ -10,6 +10,7 @@ from app.dev_workflow import DevelopmentWorkflow, WorkflowExecutionError
 from app.engineering_council import EngineeringCouncil
 from app.llm_provider_factory import create_llm_provider
 from app.local_secret_store import LocalSecretStore
+from app.project_intelligence import inspect_project
 from app.project_files import MAX_FILE_SIZE, read_project_files
 from app.requirement_preflight import RequirementPreflight
 from app.requirement_validator import RequirementValidator
@@ -96,16 +97,19 @@ def main() -> None:
         raise SystemExit(1)
 
     try:
-        files, warnings = read_project_files(project_path)
+        intelligence = inspect_project(project_path)
 
-        for warning in warnings:
+        for warning in intelligence.warnings:
             print(warning, file=sys.stderr)
 
-        project_info = {
-            "project_id": project_path.name,
-            "project_path": str(project_path),
-            "files": files,
-        }
+        files, file_warnings = read_project_files(project_path)
+        for warning in file_warnings:
+            print(warning, file=sys.stderr)
+
+        project_info = intelligence.to_summary()
+        project_info["project_id"] = project_path.name
+        project_info["project_path"] = str(project_path)
+        project_info["files"] = files
 
         workflow = build_workflow(config)
         result = workflow.run(

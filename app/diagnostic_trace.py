@@ -129,13 +129,16 @@ PHASES = frozenset({
     "diagnosis_review", "controlled_rework", "final_approval",
     "change_provenance", "controlled_git", "publish_approval",
     "controlled_publish", "workflow_end",
+    "verification_plan_created", "verification_step_started",
+    "verification_step_completed", "verification_step_failed",
+    "verification_completed",
 })
 EVENT_TYPES = frozenset({
     "started", "completed", "pending", "approved", "rejected", "blocked",
     "failed", "timeout", "rework_required", "committed", "published",
     "already_published", "nothing_to_commit", "requested",
 })
-STATUSES = EVENT_TYPES | frozenset({"accepted", "passed", "success", "incomplete", "review_failed", "ready_for_git", "ready_for_publish", "recovery_required"})
+STATUSES = EVENT_TYPES | frozenset({"accepted", "passed", "success", "incomplete", "review_failed", "ready_for_git", "ready_for_publish", "recovery_required", "unsupported", "tool_unavailable", "execution_error", "invalid_plan", "not_applicable"})
 DETAIL_KEYS = frozenset({
     "project_id", "project_type_count", "file_count", "warning_count",
     "requirement_count", "error_count", "missing_count", "result_count",
@@ -146,6 +149,10 @@ DETAIL_KEYS = frozenset({
     "rework_executed", "cycle", "commit_hash", "remote", "remote_ref",
     "published_commit_hash", "blockers", "failure_summary", "end_state",
     "execution_stage",
+    "project_kind", "language_count", "framework_count", "area_count",
+    "git_repository_present", "truncated",
+    "aggregate_status", "verification_step_count", "truncated_output",
+    "error_category", "diagnostics",
 })
 
 _locks_guard = threading.Lock()

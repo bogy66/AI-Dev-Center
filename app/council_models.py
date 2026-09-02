@@ -50,6 +50,7 @@ class CouncilInput:
     project_files: tuple[str, ...] = ()
     platform: str = "linux"
     validation_warnings: tuple[str, ...] = ()
+    project_intelligence: dict[str, Any] | None = None
 
     def __post_init__(self):
         object.__setattr__(self, "requirements", _as_tuple(self.requirements))

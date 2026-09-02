@@ -12,6 +12,7 @@ from app.dev_workflow import (
     WorkflowResult,
 )
 from app.project_inspector import ProjectInspector
+from app.project_intelligence import ProjectIntelligence
 from app.workflow_manager import WorkflowManager
 from app.final_approval import FinalApprovalResult
 from app.change_provenance import RunChangeProvenance
@@ -65,12 +66,23 @@ class ProjectSetupApplicationService:
         self, project_id: str, project_path: str | Path
     ) -> CommonRequest:
         """Inspect the project and create the sole supported input intent."""
-        project_info = self._project_inspector.inspect(project_id, project_path)
+        _, intelligence = self._project_inspector.inspect_managed(
+            project_id, project_path,
+        )
+        project_info = intelligence.to_summary()
+        project_info["project_id"] = project_id
+        project_info["project_path"] = str(Path(project_path).expanduser().resolve())
         return CommonRequest(
             project_id=project_id,
             project_info=project_info,
             intent=RequestIntent.PLAN_PROJECT_SETUP,
         )
+
+    def build_intelligence(
+        self, project_path: str | Path
+    ) -> ProjectIntelligence:
+        """Return the full typed project intelligence profile."""
+        return self._project_inspector.build_intelligence(project_path)
 
     def plan_project_setup(
         self, project_id: str, project_path: str | Path, run_id: str | None = None,
@@ -82,6 +94,9 @@ class ProjectSetupApplicationService:
         trace_run_id = run_id or project_id
         self._trace(trace_run_id, "common_request", "started", "started", "Canonical project setup workflow started", details={"project_id": project_id})
         self._trace(trace_run_id, "project_inspection", "started", "started", "Project inspection started", details={"project_id": project_id})
+
+        intelligence = self._project_inspector.build_intelligence(project_path)
+
         try:
             request = self.build_request(project_id, project_path)
         except Exception as error:
@@ -89,8 +104,17 @@ class ProjectSetupApplicationService:
             self._trace(trace_run_id, "workflow_end", "failed", "failed", "Workflow ended after project inspection failure", details={"end_state": "failed"})
             raise
         info = request.project_info if isinstance(request.project_info, dict) else {}
-        files = info.get("files", ()) if isinstance(info.get("files", ()), (list, tuple)) else ()
-        self._trace(trace_run_id, "project_inspection", "completed", "completed", "Project inspection completed", details={"project_id": project_id, "file_count": len(files), "warning_count": len(info.get("warnings", ())) if isinstance(info.get("warnings", ()), (list, tuple)) else 0})
+        self._trace(trace_run_id, "project_inspection", "completed", "completed", "Project inspection completed", details={
+            "project_id": project_id,
+            "project_kind": intelligence.project_kind,
+            "language_count": len(intelligence.language_names),
+            "framework_count": len(intelligence.framework_names),
+            "area_count": intelligence.area_count,
+            "git_repository_present": intelligence.git_repository_present,
+            "truncated": intelligence.truncated,
+            "warning_count": len(intelligence.warnings),
+            "file_count": intelligence.total_files_traversed,
+        })
         if request.intent is not RequestIntent.PLAN_PROJECT_SETUP:
             raise ValueError(f"Unsupported request intent: {request.intent}")
 

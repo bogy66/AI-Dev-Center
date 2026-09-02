@@ -20,7 +20,8 @@ from app.workflow_plan_store import WorkflowPlanStoreError
 # ---------------------------------------------------------------------------
 # Concrete dependencies – imported at module level so tests can patch them.
 # ---------------------------------------------------------------------------
-from app.project_scanner import ProjectScanner
+from app.project_scanner import ProjectScanner  # legacy compatibility only
+from app.project_inspector import ProjectInspector
 from app.ai_config import load_ai_config
 from app.ai_requirement_discovery import AIRequirementDiscovery
 from app.engineering_council import EngineeringCouncil
@@ -313,6 +314,7 @@ def _create_mcp_server() -> MCPServer:
 
     return MCPServer(
         project_scanner=ProjectScanner(),
+        project_inspector=ProjectInspector(),
         discovery=discovery,
         preflight=RequirementPreflight,
         planner=None,

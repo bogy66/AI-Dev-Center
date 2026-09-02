@@ -21,6 +21,7 @@ from app.setup_approval import SetupApproval
 from app.test_change_generator import TestChangeGenerator
 from app.testing_stage import DiagnosisReviewer, TestingStage
 from app.toolchain_materializer import ToolchainMaterializer
+from app.verification import build_default_registry
 from app.workflow_plan_store import WorkflowPlanStore
 
 
@@ -52,6 +53,8 @@ def build_canonical_components(config_path="config/ai-dev-center.yml"):
         DevelopmentStage(DeveloperAgent(executor)),
         TestChangeGenerator(executor), DeveloperFileApplier,
         ProjectTestRunner(), TestingStage(DiagnosisReviewer(executor)),
+        verification_registry=build_default_registry(),
+        project_inspector=ProjectInspector(),
     )
     workflow = DevelopmentWorkflow(
         discovery, RequirementValidator, RequirementPreflight,

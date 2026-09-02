@@ -11,6 +11,44 @@ import json
 from app.council_models import CouncilInput
 
 
+def _build_intelligence_section(pi: dict | None) -> str:
+    """Build a deterministic structured context from project intelligence.
+
+    Never includes source content, secrets, absolute paths or credentials.
+    """
+    if not isinstance(pi, dict) or not pi:
+        return ""
+    lines: list[str] = []
+    kind = pi.get("project_kind") or ""
+    if kind:
+        lines.append(f"Projekttyp: {kind}")
+    areas = pi.get("area_count")
+    if isinstance(areas, int) and areas > 1:
+        lines.append(f"Projektbereiche: {areas}")
+    langs = pi.get("languages") or ()
+    if langs:
+        lines.append(f"Sprachen: {', '.join(str(l) for l in langs)}")
+    fws = pi.get("frameworks") or ()
+    if fws:
+        lines.append(f"Frameworks: {', '.join(str(f) for f in fws)}")
+    pkgs = pi.get("package_systems") or ()
+    if pkgs:
+        lines.append(f"Package-Systeme: {', '.join(str(p) for p in pkgs)}")
+    blds = pi.get("build_systems") or ()
+    if blds:
+        lines.append(f"Build-Systeme: {', '.join(str(b) for b in blds)}")
+    tests = pi.get("test_systems") or ()
+    if tests:
+        lines.append(f"Testsysteme: {', '.join(str(t) for t in tests)}")
+    fw_inds = pi.get("firmware_indicators") or ()
+    if fw_inds:
+        lines.append(f"Firmware-Indikatoren: {', '.join(str(f) for f in fw_inds)}")
+    truncated = pi.get("truncated")
+    if truncated:
+        lines.append("(Projektanalyse war unvollständig — Dateilimit erreicht)")
+    return "\n".join(lines)
+
+
 # ==========================================================================
 # PHASE 1 — Rollenspezifische Prompt-Präambeln
 # ==========================================================================
@@ -173,6 +211,8 @@ def build_phase1_prompt(
 
     files = "\n".join(council_input.project_files) if council_input.project_files else "(keine)"
 
+    intelligence_section = _build_intelligence_section(council_input.project_intelligence)
+
     return f"""{role_prompt}
 
 ============================================================
@@ -181,6 +221,9 @@ STACK: {council_input.detected_stack or "unbekannt"}
 PLATTFORM: {council_input.platform}
 MAXIMALE ANZAHL VARIANTEN: {max_variants}
 ============================================================
+
+EXISTING-PROJECT INTELLIGENCE:
+{intelligence_section or "(keine)"}
 
 REQUIREMENTS (aus Discovery + Validation):
 {reqs_json}
@@ -359,6 +402,10 @@ def build_chairman_prompt(
 
     project_id = council_input.project_id if council_input else "unbekannt"
     stack = council_input.detected_stack or "unbekannt" if council_input else "unbekannt"
+    intelligence_section = (
+        _build_intelligence_section(council_input.project_intelligence)
+        if council_input and council_input.project_intelligence else ""
+    )
 
     return f"""{CHAIRMAN_SYSTEM_PROMPT}
 
@@ -366,6 +413,9 @@ def build_chairman_prompt(
 PROJEKT: {project_id}
 STACK: {stack}
 ============================================================
+
+EXISTING-PROJECT INTELLIGENCE:
+{intelligence_section or "(keine)"}
 
 VORSCHLÄGE (Phase 1 — alle Agenten):
 {proposals_json}

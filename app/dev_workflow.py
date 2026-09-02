@@ -152,6 +152,8 @@ class DevelopmentWorkflow:
             preflight=preflight_result,
             project_id=project_id,
             project_files=self._extract_project_files(project_info),
+            detected_stack=self._build_detected_stack(project_info),
+            project_intelligence=self._project_intelligence_from(project_info),
             validation_warnings=validation_result.warnings,
         )
 
@@ -186,25 +188,71 @@ class DevelopmentWorkflow:
     @staticmethod
     def _extract_project_files(project_info: object) -> tuple[str, ...]:
         """Return only explicitly supplied project file paths."""
-
         if not isinstance(project_info, dict):
             return ()
-
+        # New intelligence shape: has language_names and no 'files' key
+        # Old shape: direct 'files' list
         files = project_info.get("files")
-        if not isinstance(files, (list, tuple)):
-            return ()
+        if isinstance(files, (list, tuple)):
+            paths: list[str] = []
+            for item in files:
+                if not isinstance(item, dict):
+                    continue
+                if isinstance(item, dict):
+                    path = item.get("path") or item.get("file", "")
+                else:
+                    path = str(item)
+                if isinstance(path, str) and path:
+                    paths.append(path)
+            return tuple(paths)
+        files = project_info.get("project_files") or ()
+        if isinstance(files, (list, tuple)):
+            return tuple(str(f) for f in files if isinstance(f, str) and f)
+        return ()
 
-        paths: list[str] = []
+    @staticmethod
+    def _build_detected_stack(project_info: object) -> str:
+        if not isinstance(project_info, dict):
+            return ""
+        parts: list[str] = []
+        languages = project_info.get("languages") or ()
+        if languages:
+            parts.append("languages: " + ", ".join(str(l) for l in languages))
+        frameworks = project_info.get("frameworks") or ()
+        if frameworks:
+            parts.append("frameworks: " + ", ".join(str(f) for f in frameworks))
+        pkg = project_info.get("package_systems") or ()
+        if pkg:
+            parts.append("packages: " + ", ".join(str(p) for p in pkg))
+        build = project_info.get("build_systems") or ()
+        if build:
+            parts.append("build: " + ", ".join(str(b) for b in build))
+        test = project_info.get("test_systems") or ()
+        if test:
+            parts.append("tests: " + ", ".join(str(t) for t in test))
+        fw = project_info.get("firmware_indicators") or ()
+        if fw:
+            parts.append("firmware: " + ", ".join(str(f) for f in fw))
+        kind = project_info.get("project_kind") or ""
+        if kind:
+            parts.append(f"kind: {kind}")
+        return "; ".join(parts) if parts else ""
 
-        for item in files:
-            if not isinstance(item, dict):
-                continue
-
-            path = item.get("path")
-            if isinstance(path, str) and path:
-                paths.append(path)
-
-        return tuple(paths)
+    @staticmethod
+    def _project_intelligence_from(project_info: object) -> dict | None:
+        if not isinstance(project_info, dict):
+            return None
+        keys = (
+            "project_kind", "area_count", "languages", "frameworks",
+            "package_systems", "build_systems", "test_systems",
+            "firmware_indicators", "truncated",
+        )
+        result: dict = {}
+        for key in keys:
+            value = project_info.get(key)
+            if value is not None:
+                result[key] = value
+        return result if result else None
 
     def _validate_executable_step(self, step) -> None:
         """Reject steps that are not safe for automatic execution."""
