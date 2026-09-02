@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from importlib import metadata
+import re
 import shutil
 import subprocess
 import sys
@@ -72,6 +73,7 @@ class PythonPackageExecutor:
     """Executes approved Python-package setup steps using structured pip installs."""
 
     _SUPPORTED_INSTALL_METHODS = frozenset({"pip", "python_package"})
+    _PACKAGE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
     def __init__(
         self,
@@ -138,6 +140,8 @@ class PythonPackageExecutor:
             raise PackageMissingError(
                 "step.package must be a non-empty string"
             )
+        if self._PACKAGE_NAME.fullmatch(step.package.strip()) is None:
+            raise PackageMissingError("step.package must be one structured package name")
 
     def _validate_install_method(
         self,

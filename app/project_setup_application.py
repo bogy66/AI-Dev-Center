@@ -36,6 +36,19 @@ from app.execution import (
     CapabilityRegistry,
     DEFAULT_CAPABILITY_REGISTRY,
 )
+from app.missing_toolchain_setup import (
+    MissingToolchainSetupError,
+    MissingToolchainSetupRequest,
+    MissingToolchainSetupResult,
+    StructuredInstallerRegistry,
+    already_available_setup_result,
+    deserialize_setup_plan,
+    deserialize_verification_plan,
+    serialize_setup_plan,
+    serialize_verification_plan,
+)
+from app.setup_approval import SetupApproval
+from app.verification import TOOL_UNAVAILABLE
 
 
 class ProjectSetupApplicationService:
@@ -50,6 +63,8 @@ class ProjectSetupApplicationService:
         controlled_publish_stage: ControlledPublishStage | None = None,
         diagnostic_trace: DiagnosticTrace | None = None,
         capability_registry: CapabilityRegistry | None = None,
+        structured_installers: StructuredInstallerRegistry | None = None,
+        verification_registry: object | None = None,
     ) -> None:
         self._development_workflow = development_workflow
         self._project_inspector = project_inspector or ProjectInspector()
@@ -57,6 +72,8 @@ class ProjectSetupApplicationService:
         self._controlled_git_stage = controlled_git_stage or ControlledGitStage()
         self._controlled_publish_stage = controlled_publish_stage or ControlledPublishStage()
         self._capability_registry = capability_registry or DEFAULT_CAPABILITY_REGISTRY
+        self._structured_installers = structured_installers or StructuredInstallerRegistry()
+        self._verification_registry = verification_registry
         trace_path = self._workflow_manager.storage.parent / ".diagnostic-traces" / "events.jsonl"
         self._diagnostic_trace = diagnostic_trace or DiagnosticTrace(DiagnosticTraceStore(trace_path))
         if hasattr(self._development_workflow, "set_diagnostic_trace"):
@@ -226,6 +243,134 @@ class ProjectSetupApplicationService:
                 continue
             recovered.append(registration)
         return tuple(recovered)
+
+    def prepare_missing_toolchain_setup(
+        self, request: MissingToolchainSetupRequest,
+    ) -> MissingToolchainSetupResult:
+        """Turn a structured TOOL_UNAVAILABLE result into a pending SetupPlan."""
+        try:
+            root = str(Path(request.project_root).resolve())
+            if root != str(Path(request.verification_plan.project_root).resolve()):
+                raise MissingToolchainSetupError("VerificationPlan belongs to another project")
+            unavailable_ids = {
+                result.step_id for result in request.verification_result.steps
+                if result.status == TOOL_UNAVAILABLE.value
+            }
+            candidates = tuple(
+                step for step in request.verification_plan.steps
+                if step.step_id in unavailable_ids
+                and step.verification_kind == request.operation_type
+            )
+            if not candidates:
+                raise MissingToolchainSetupError("No matching TOOL_UNAVAILABLE verification step")
+            materialized = self._development_workflow.materialize_setup_plan(
+                request.council_result, request.project_id,
+            )
+            setup_steps = tuple(
+                step for step in materialized.steps
+                if step.package == request.toolchain and step.action == "install"
+            )
+            if len(setup_steps) != 1:
+                raise MissingToolchainSetupError("Council SetupPlan has no unique structured toolchain action")
+            plan = type(materialized)(
+                id=f"{materialized.id}-missing-{candidates[0].step_id}",
+                project_id=materialized.project_id,
+                steps=setup_steps,
+                requires_user_approval=True,
+                warnings=materialized.warnings,
+                status="pending_approval",
+            )
+            record = {
+                "status": "pending_approval",
+                "project_id": request.project_id,
+                "project_root": root,
+                "toolchain": request.toolchain,
+                "operation_type": request.operation_type,
+                "council_result_id": request.council_result.id,
+                "setup_plan": serialize_setup_plan(plan),
+                "verification_plan": serialize_verification_plan(request.verification_plan),
+                "verification_retry_status": "pending",
+            }
+            persisted = self._workflow_manager.create_missing_toolchain_setup(plan.id, record)
+            return MissingToolchainSetupResult(plan.id, persisted["status"])
+        except (MissingToolchainSetupError, ValueError) as error:
+            return MissingToolchainSetupResult("", "rejected", blockers=(str(error),))
+
+    def decide_missing_toolchain_setup(
+        self, plan_id: str, decision: str,
+        approved_by: str | None = None, comment: str | None = None,
+    ) -> MissingToolchainSetupResult:
+        record = self._workflow_manager.get_missing_toolchain_setup(plan_id)
+        if record is None:
+            return MissingToolchainSetupResult(plan_id, "rejected", blockers=("Setup request is missing",))
+        if decision not in {"approved", "rejected"}:
+            return MissingToolchainSetupResult(plan_id, "rejected", blockers=("Invalid Setup Approval decision",))
+        plan = deserialize_setup_plan(record["setup_plan"])
+        decided = SetupApproval.approve(plan) if decision == "approved" else SetupApproval.reject(plan)
+        updated = self._workflow_manager.decide_missing_toolchain_setup(
+            plan_id, decision, serialize_setup_plan(decided), approved_by, comment,
+        )
+        return MissingToolchainSetupResult(plan_id, updated["status"])
+
+    def execute_missing_toolchain_setup(self, plan_id: str) -> MissingToolchainSetupResult:
+        """Execute one approved structured installer exactly once."""
+        record = self._workflow_manager.get_missing_toolchain_setup(plan_id)
+        if record is not None and record.get("status") == "completed":
+            return MissingToolchainSetupResult(
+                plan_id, record.get("setup_outcome", "completed"),
+            )
+        if record is not None and record.get("status") == "executing":
+            return MissingToolchainSetupResult(
+                plan_id, "recovery_required",
+                blockers=("Interrupted setup requires explicit recovery",),
+            )
+        if record is None or record.get("status") != "approved":
+            status = record.get("status") if record else "missing"
+            return MissingToolchainSetupResult(plan_id, status, blockers=("Setup Approval is required",))
+        plan = deserialize_setup_plan(record["setup_plan"])
+        if len(plan.steps) != 1 or not plan.steps[0].is_approved:
+            return MissingToolchainSetupResult(plan_id, "failed", blockers=("Approved structured setup step is invalid",))
+        step = plan.steps[0]
+        installer = self._structured_installers.get(step.install_method or "")
+        if installer is None:
+            self._workflow_manager.update_missing_toolchain_setup(plan_id, status="failed")
+            return MissingToolchainSetupResult(plan_id, "failed", blockers=("No structured installer is registered",))
+        if installer.is_available(record["toolchain"]):
+            result = already_available_setup_result(step.id)
+            self._workflow_manager.update_missing_toolchain_setup(
+                plan_id, status="completed", setup_outcome="already_available",
+            )
+            return MissingToolchainSetupResult(plan_id, "already_available", result)
+        self._workflow_manager.update_missing_toolchain_setup(plan_id, status="executing")
+        result = installer.executor.execute(step)
+        available = result.success and installer.is_available(record["toolchain"])
+        self._workflow_manager.update_missing_toolchain_setup(
+            plan_id, status="completed" if available else "failed",
+            setup_outcome="installed" if available else "failed",
+        )
+        return MissingToolchainSetupResult(
+            plan_id, "completed" if available else "failed", result,
+            blockers=() if available else ("Toolchain is unavailable after setup",),
+        )
+
+    def retry_missing_toolchain_verification(self, plan_id: str) -> MissingToolchainSetupResult:
+        """Retry only the persisted workflow-owned VerificationPlan."""
+        record = self._workflow_manager.get_missing_toolchain_setup(plan_id)
+        if record is None or record.get("status") != "completed":
+            return MissingToolchainSetupResult(plan_id, "retry_blocked", blockers=("Successful setup is required",))
+        if record.get("verification_retry_status") == "completed":
+            return MissingToolchainSetupResult(plan_id, "verification_completed")
+        if self._verification_registry is None:
+            return MissingToolchainSetupResult(plan_id, "retry_blocked", blockers=("Verification registry is unavailable",))
+        plan = deserialize_verification_plan(record["verification_plan"])
+        result = self._verification_registry.execute_plan(plan)
+        self._workflow_manager.update_missing_toolchain_setup(
+            plan_id, verification_retry_status="completed",
+            verification_retry_aggregate=result.aggregate_status,
+        )
+        return MissingToolchainSetupResult(
+            plan_id, "verification_completed", verification_result=result,
+        )
 
     @staticmethod
     def _normalized_capability_scope(request: CapabilityRegistrationRequest) -> str:

@@ -23,6 +23,7 @@ from app.testing_stage import DiagnosisReviewer, TestingStage
 from app.toolchain_materializer import ToolchainMaterializer
 from app.verification import build_default_registry
 from app.execution import DEFAULT_CAPABILITY_REGISTRY
+from app.missing_toolchain_setup import StructuredInstallerRegistration, StructuredInstallerRegistry
 from app.workflow_plan_store import WorkflowPlanStore
 
 
@@ -50,23 +51,31 @@ def build_canonical_components(config_path="config/ai-dev-center.yml"):
         secret_resolver=secrets,
     )
     executor = AgentExecutor(model=config.model)
+    verification_registry = build_default_registry()
     development_testing = DevelopmentTestingStage(
         DevelopmentStage(DeveloperAgent(executor)),
         TestChangeGenerator(executor), DeveloperFileApplier,
         ProjectTestRunner(), TestingStage(DiagnosisReviewer(executor)),
-        verification_registry=build_default_registry(),
+        verification_registry=verification_registry,
         project_inspector=ProjectInspector(),
     )
+    materializer = ToolchainMaterializer()
+    package_executor = PythonPackageExecutor()
     workflow = DevelopmentWorkflow(
         discovery, RequirementValidator, RequirementPreflight,
-        executor=PythonPackageExecutor(), council=council,
-        materializer=ToolchainMaterializer(),
+        executor=package_executor, council=council,
+        materializer=materializer,
         development_testing_stage=development_testing,
     )
+    installers = StructuredInstallerRegistry()
+    installers.register(StructuredInstallerRegistration("pip", package_executor))
+    installers.register(StructuredInstallerRegistration("python_package", package_executor))
     return CanonicalComponents(
         ProjectSetupApplicationService(
             workflow, ProjectInspector(),
             capability_registry=DEFAULT_CAPABILITY_REGISTRY,
+            structured_installers=installers,
+            verification_registry=verification_registry,
         ),
         WorkflowPlanStore(".workflow-plans"), SetupApproval, workflow,
     )

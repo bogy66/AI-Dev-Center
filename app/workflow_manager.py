@@ -50,6 +50,7 @@ class WorkflowManager:
             "publish_approvals": {},
             "publish_results": {},
             "capability_approvals": {},
+            "missing_toolchain_setups": {},
             "execution_lifecycles": {},
         }
 
@@ -306,6 +307,49 @@ class WorkflowManager:
     def get_capability_approval(self, request_id):
         record = self.load().get("capability_approvals", {}).get(request_id)
         return dict(record) if isinstance(record, dict) else None
+
+    def create_missing_toolchain_setup(self, plan_id, record):
+        with self._lock:
+            state = self.load()
+            setups = state.setdefault("missing_toolchain_setups", {})
+            current = setups.get(plan_id)
+            if current is None:
+                setups[plan_id] = dict(record)
+                self.save(state)
+                current = setups[plan_id]
+            return dict(current)
+
+    def decide_missing_toolchain_setup(
+        self, plan_id, decision, approved_plan, approved_by=None, comment=None,
+    ):
+        if decision not in {"approved", "rejected"}:
+            raise ValueError("Setup decision must be approved or rejected")
+        with self._lock:
+            state = self.load()
+            record = state.get("missing_toolchain_setups", {}).get(plan_id)
+            if record is None or record.get("status") != "pending_approval":
+                raise ValueError("No pending missing-toolchain setup exists")
+            record["status"] = decision
+            record["setup_plan"] = approved_plan
+            record["approved_by"] = approved_by
+            record["approved_at"] = datetime.now(timezone.utc).isoformat()
+            record["comment"] = comment
+            self.save(state)
+            return dict(record)
+
+    def get_missing_toolchain_setup(self, plan_id):
+        record = self.load().get("missing_toolchain_setups", {}).get(plan_id)
+        return dict(record) if isinstance(record, dict) else None
+
+    def update_missing_toolchain_setup(self, plan_id, **updates):
+        with self._lock:
+            state = self.load()
+            record = state.get("missing_toolchain_setups", {}).get(plan_id)
+            if record is None:
+                raise ValueError("Missing-toolchain setup does not exist")
+            record.update(updates)
+            self.save(state)
+            return dict(record)
 
     def decide_publish_approval(self, run_id, decision, approved_by=None, comment=None):
         """Apply one explicit, terminal publish approval decision."""

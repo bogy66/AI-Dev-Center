@@ -89,6 +89,14 @@ class DevelopmentWorkflow:
     def set_diagnostic_trace(self, diagnostic_trace) -> None:
         self._diagnostic_trace = diagnostic_trace
 
+    def materialize_setup_plan(
+        self, council_result: CouncilResult, project_id: str,
+    ) -> SetupPlan:
+        """Provide the workflow-owned Council-to-SetupPlan boundary."""
+        if self._materializer is None:
+            raise WorkflowExecutionError("No toolchain materializer has been configured.")
+        return self._materializer.materialize(council_result, project_id)
+
     def _trace(self, run_id, phase, event_type, status, summary, **kwargs):
         if self._diagnostic_trace is not None:
             try:
