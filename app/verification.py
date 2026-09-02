@@ -46,11 +46,13 @@ INVALID_PLAN = VerificationStatus("invalid_plan")
 EXECUTION_ERROR = VerificationStatus("execution_error")
 TIMEOUT = VerificationStatus("timeout")
 NOT_APPLICABLE = VerificationStatus("not_applicable")
+BLOCKED = VerificationStatus("blocked")
 
 TERMINAL_STATUSES = frozenset({
     PASS.value, FAIL.value, UNSUPPORTED.value,
     TOOL_UNAVAILABLE.value, INVALID_PLAN.value,
     EXECUTION_ERROR.value, TIMEOUT.value, NOT_APPLICABLE.value,
+    BLOCKED.value,
 })
 
 _NON_BLOCKING = frozenset({
@@ -67,12 +69,14 @@ class VerificationStep:
     step_id: str
     area: str
     working_directory: str
-    verification_kind: str  # "test" | "build" | "validate" | "compile_check"
+    verification_kind: str  # "test" | "build" | "validate" | "compile" | "configure"
     test_system: str        # e.g. "pytest", "unittest", "vitest", "jest", etc.
-    runner_type: str        # e.g. "pytest", "python_unittest", "cmake_build", "npm"
+    runner_type: str        # e.g. "pytest", "python_unittest", "cmake_build", "esphome_check"
     policy: str             # "controlled_execution" | "unsupported" | "deferred"
     evidence: tuple[str, ...] = ()
     status: str = "pending"
+    depends_on: tuple[str, ...] = ()
+    metadata: dict | None = None  # e.g. {"environment": "esp32dev", "config": "esphome/device.yaml"}
 
     @property
     def is_executable(self) -> bool:
@@ -161,9 +165,6 @@ class VerificationResult:
 
 
 def _aggregate(steps: tuple[VerificationStepResult, ...]) -> str:
-    # Only not_applicable is truly non-blocking (e.g. greenfield).
-    # All other statuses — fail, unsupported, tool_unavailable, deferred,
-    # execution_error, timeout, invalid_plan — block aggregate PASS.
     requires_pass = [s for s in steps
                      if s.status != NOT_APPLICABLE.value]
     if not requires_pass:
@@ -171,6 +172,30 @@ def _aggregate(steps: tuple[VerificationStepResult, ...]) -> str:
     if all(s.status == PASS.value for s in requires_pass):
         return PASS.value
     return FAIL.value
+
+
+def _resolve_cwd(root: Path, step: VerificationStep) -> tuple[Path, VerificationStepResult | None]:
+    """Validate and resolve working directory. Returns (cwd, None) or (root, error)."""
+    cwd = (root / step.working_directory).resolve()
+    if not str(cwd).startswith(str(root)):
+        return root, VerificationStepResult(
+            step_id=step.step_id, area=step.area,
+            status=INVALID_PLAN.value,
+            verification_kind=step.verification_kind,
+            runner_type=step.runner_type,
+            passed=False,
+            diagnostics=f"Working directory escapes project root: {cwd}",
+        )
+    if not cwd.is_dir():
+        return root, VerificationStepResult(
+            step_id=step.step_id, area=step.area,
+            status=INVALID_PLAN.value,
+            verification_kind=step.verification_kind,
+            runner_type=step.runner_type,
+            passed=False,
+            diagnostics=f"Working directory does not exist: {step.working_directory}",
+        )
+    return cwd, None
 
 
 # ---------------------------------------------------------------------------
@@ -267,14 +292,38 @@ class ControlledRunnerRegistry:
     def execute_plan(
         self, plan: VerificationPlan,
     ) -> VerificationResult:
-        results: list[VerificationStepResult] = []
+        results: dict[str, VerificationStepResult] = {}
         for step in plan.steps:
+            # Check dependencies — if any previous step failed/blocked,
+            # mark this step as blocked
+            blocked_by = None
+            for dep_id in step.depends_on:
+                prev = results.get(dep_id)
+                if prev is not None and prev.status != PASS.value:
+                    blocked_by = dep_id
+                    break
+            if blocked_by is not None:
+                result = VerificationStepResult(
+                    step_id=step.step_id, area=step.area,
+                    status=BLOCKED.value,
+                    verification_kind=step.verification_kind,
+                    runner_type=step.runner_type,
+                    passed=False,
+                    diagnostics=f"Blocked by failed dependency: {blocked_by}",
+                )
+                results[step.step_id] = result
+                continue
             result = self.execute_step(step, plan.project_root)
-            results.append(result)
+            results[step.step_id] = result
+        ordered = tuple(results.get(s.step_id, VerificationStepResult(
+            step_id=s.step_id, area=s.area, status=BLOCKED.value,
+            verification_kind=s.verification_kind, runner_type=s.runner_type,
+            passed=False, diagnostics="Step result missing",
+        )) for s in plan.steps)
         return VerificationResult(
             run_id=plan.run_id,
-            steps=tuple(results),
-            aggregate_status=_aggregate(tuple(results)),
+            steps=ordered,
+            aggregate_status=_aggregate(ordered),
         )
 
 
@@ -493,7 +542,7 @@ def build_verification_plan(intelligence, run_id: str) -> VerificationPlan:
     }
 
     BUILD_RUNNER_MAP: dict[str, tuple[str, str]] = {
-        "cmake": ("cmake_build", "deferred"),
+        "cmake": ("cmake", "controlled_execution"),
         "make": ("make", "deferred"),
         "platformio": ("platformio", "unsupported"),
     }
@@ -528,15 +577,73 @@ def build_verification_plan(intelligence, run_id: str) -> VerificationPlan:
                 policy = "unsupported"
             else:
                 runner_type, policy = tpl
-            steps.append(VerificationStep(
-                step_id=f"{area_path or 'root'}-build-{bs_name}",
-                area=area_path, working_directory=wd,
-                verification_kind="build",
-                test_system=bs_name,
-                runner_type=runner_type,
-                policy=policy,
-                evidence=tuple(e.path for e in (getattr(bs, "evidence", ()) or ())),
-            ))
+            if bs_name == "cmake" and policy == "controlled_execution":
+                c1 = f"{area_path or 'root'}-cmake-configure"
+                c2 = f"{area_path or 'root'}-cmake-build"
+                steps.append(VerificationStep(
+                    step_id=c1, area=area_path, working_directory=wd,
+                    verification_kind="configure", test_system="cmake",
+                    runner_type=runner_type, policy=policy,
+                ))
+                steps.append(VerificationStep(
+                    step_id=c2, area=area_path, working_directory=wd,
+                    verification_kind="build", test_system="cmake",
+                    runner_type=runner_type, policy=policy,
+                    depends_on=(c1,),
+                ))
+            else:
+                steps.append(VerificationStep(
+                    step_id=f"{area_path or 'root'}-build-{bs_name}",
+                    area=area_path, working_directory=wd,
+                    verification_kind="build",
+                    test_system=bs_name,
+                    runner_type=runner_type,
+                    policy=policy,
+                    evidence=tuple(e.path for e in (getattr(bs, "evidence", ()) or ())),
+                ))
+
+        for fw in (getattr(area, "firmware_indicators", ()) or ()):
+            fw_name = getattr(fw, "name", str(fw))
+            if fw_name == "esphome":
+                cfg = getattr(fw, "config_path", None) or None
+                s1_id = f"{area_path or 'root'}-esphome-validate"
+                s2_id = f"{area_path or 'root'}-esphome-compile"
+                steps.append(VerificationStep(
+                    step_id=s1_id, area=area_path, working_directory=wd,
+                    verification_kind="validate", test_system="esphome",
+                    runner_type="esphome_check", policy="controlled_execution",
+                    metadata={"config": cfg},
+                ))
+                steps.append(VerificationStep(
+                    step_id=s2_id, area=area_path, working_directory=wd,
+                    verification_kind="compile", test_system="esphome",
+                    runner_type="esphome_check", policy="controlled_execution",
+                    depends_on=(s1_id,),
+                    metadata={"config": cfg},
+                ))
+            elif fw_name == "platformio":
+                boards = getattr(fw, "boards", ()) or ()
+                has_hooks = getattr(fw, "has_untrusted_hooks", False)
+                for env_name in boards or ("default",):
+                    env = env_name if env_name else "default"
+                    policy = "unsupported" if has_hooks else "controlled_execution"
+                    steps.append(VerificationStep(
+                        step_id=f"{area_path or 'root'}-pio-build-{env}",
+                        area=area_path, working_directory=wd,
+                        verification_kind="build", test_system="platformio",
+                        runner_type="platformio", policy=policy,
+                        metadata={"environment": env},
+                    ))
+                    if env == "native" and not has_hooks:
+                        bid = f"{area_path or 'root'}-pio-build-native"
+                        steps.append(VerificationStep(
+                            step_id=f"{area_path or 'root'}-pio-test-native",
+                            area=area_path, working_directory=wd,
+                            verification_kind="test", test_system="platformio",
+                            runner_type="platformio", policy="controlled_execution",
+                            metadata={"environment": "native"},
+                            depends_on=(bid,),
+                        ))
 
     if not steps:
         steps.append(VerificationStep(
@@ -559,4 +666,248 @@ def build_default_registry() -> ControlledRunnerRegistry:
     registry = ControlledRunnerRegistry()
     registry.register(PytestRunner())
     registry.register(PythonUnittestRunner())
+    registry.register(ESPHomeCheckRunner())
+    registry.register(PlatformIORunner())
+    registry.register(CMakeRunner())
     return registry
+
+
+# ---------------------------------------------------------------------------
+# ESPHome Check Runner — validate + compile only, no hardware
+# ---------------------------------------------------------------------------
+
+class ESPHomeCheckRunner(VerificationRunner):
+    runner_type = "esphome_check"
+
+    def __init__(self, timeout=600):
+        self._timeout = timeout
+
+    def can_run(self, step: VerificationStep) -> bool:
+        return step.runner_type == "esphome_check"
+
+    def execute(self, step: VerificationStep, project_root: str | Path) -> VerificationStepResult:
+        root = Path(project_root).resolve()
+        cwd, err = _resolve_cwd(root, step)
+        if err is not None:
+            return err
+
+        esphome_bin = shutil.which("esphome")
+        if esphome_bin is None:
+            return VerificationStepResult(
+                step_id=step.step_id, area=step.area,
+                status=TOOL_UNAVAILABLE.value,
+                verification_kind=step.verification_kind,
+                runner_type=step.runner_type,
+                passed=False,
+                diagnostics="ESPHome CLI not found",
+            )
+
+        if step.verification_kind == "validate":
+            meta = step.metadata or {}
+            cfg = meta.get("config")
+            if cfg:
+                target = str(cwd / cfg)
+            else:
+                target = str(cwd)
+            args = (esphome_bin, "config", target)
+        elif step.verification_kind == "compile":
+            meta = step.metadata or {}
+            cfg = meta.get("config")
+            if cfg:
+                target = str(cwd / cfg)
+            else:
+                target = str(cwd)
+            args = (esphome_bin, "compile", target)
+        else:
+            return VerificationStepResult(
+                step_id=step.step_id, area=step.area,
+                status=UNSUPPORTED.value,
+                verification_kind=step.verification_kind,
+                runner_type=step.runner_type,
+                passed=False,
+                diagnostics=f"ESPHome operation not supported: {step.verification_kind}",
+            )
+
+        result = _safe_exec(args, cwd, self._timeout)
+        if result is None:
+            return VerificationStepResult(
+                step_id=step.step_id, area=step.area,
+                status=TOOL_UNAVAILABLE.value,
+                verification_kind=step.verification_kind,
+                runner_type=step.runner_type,
+                passed=False,
+                diagnostics="ESPHome execution failed",
+            )
+
+        return _build_step_result(step, result, args)
+
+
+# ---------------------------------------------------------------------------
+# PlatformIO Runner — build + native test only, no hardware
+# ---------------------------------------------------------------------------
+
+class PlatformIORunner(VerificationRunner):
+    runner_type = "platformio"
+
+    _FORBIDDEN_TARGETS = frozenset({"upload", "uploadfs", "monitor",
+                                     "device", "remote"})
+    _FORBIDDEN_ARGS = frozenset({"--upload-port", "--monitor-port"})
+
+    def __init__(self, timeout=900):
+        self._timeout = timeout
+        self._pio_cmd = shutil.which("platformio") or shutil.which("pio") or "platformio"
+
+    def can_run(self, step: VerificationStep) -> bool:
+        return step.runner_type == "platformio"
+
+    def execute(self, step: VerificationStep, project_root: str | Path) -> VerificationStepResult:
+        root = Path(project_root).resolve()
+        cwd, err = _resolve_cwd(root, step)
+        if err is not None:
+            return err
+
+        if shutil.which("platformio") is None and shutil.which("pio") is None:
+            return VerificationStepResult(
+                step_id=step.step_id, area=step.area,
+                status=TOOL_UNAVAILABLE.value,
+                verification_kind=step.verification_kind,
+                runner_type=step.runner_type,
+                passed=False,
+                diagnostics="PlatformIO CLI not found",
+            )
+
+        meta = step.metadata or {}
+        env = meta.get("environment", "")
+
+        if step.verification_kind == "build":
+            args = (self._pio_cmd, "run")
+            if env:
+                args = (*args, "-e", env)
+        elif step.verification_kind == "test" and env == "native":
+            args = (self._pio_cmd, "test", "-e", "native",
+                    "--without-uploading", "--without-publishing")
+        else:
+            return VerificationStepResult(
+                step_id=step.step_id, area=step.area,
+                status=UNSUPPORTED.value,
+                verification_kind=step.verification_kind,
+                runner_type=step.runner_type,
+                passed=False,
+                diagnostics=f"PlatformIO operation not supported: {step.verification_kind}",
+            )
+
+        result = _safe_exec(args, cwd, self._timeout)
+        if result is None:
+            return VerificationStepResult(
+                step_id=step.step_id, area=step.area,
+                status=TOOL_UNAVAILABLE.value,
+                verification_kind=step.verification_kind,
+                runner_type=step.runner_type,
+                passed=False,
+                diagnostics="PlatformIO execution failed",
+            )
+
+        return _build_step_result(step, result, args)
+
+
+# ---------------------------------------------------------------------------
+# CMake Runner — configure → build → ctest, controlled build dir
+# ---------------------------------------------------------------------------
+
+class CMakeRunner(VerificationRunner):
+    runner_type = "cmake"
+
+    def __init__(self, timeout=600):
+        self._timeout = timeout
+
+    def can_run(self, step: VerificationStep) -> bool:
+        return step.runner_type in ("cmake", "cmake_build")
+
+    def execute(self, step: VerificationStep, project_root: str | Path) -> VerificationStepResult:
+        root = Path(project_root).resolve()
+        cwd, err = _resolve_cwd(root, step)
+        if err is not None:
+            return err
+
+        cmake_bin = shutil.which("cmake")
+        if cmake_bin is None:
+            return VerificationStepResult(
+                step_id=step.step_id, area=step.area,
+                status=TOOL_UNAVAILABLE.value,
+                verification_kind=step.verification_kind,
+                runner_type=step.runner_type,
+                passed=False,
+                diagnostics="CMake not found",
+            )
+
+        build_dir = root / ".ai-build"
+        build_dir.mkdir(exist_ok=True)
+
+        if step.verification_kind == "configure":
+            args = (cmake_bin, "-S", str(cwd), "-B", str(build_dir))
+        elif step.verification_kind == "build":
+            args = (cmake_bin, "--build", str(build_dir))
+        elif step.verification_kind == "test" and step.test_system == "ctest":
+            ctest_bin = shutil.which("ctest")
+            if ctest_bin is None:
+                return VerificationStepResult(
+                    step_id=step.step_id, area=step.area,
+                    status=TOOL_UNAVAILABLE.value,
+                    verification_kind=step.verification_kind,
+                    runner_type=step.runner_type,
+                    passed=False,
+                    diagnostics="CTest not found",
+                )
+            args = (ctest_bin, "--test-dir", str(build_dir))
+        else:
+            return VerificationStepResult(
+                step_id=step.step_id, area=step.area,
+                status=UNSUPPORTED.value,
+                verification_kind=step.verification_kind,
+                runner_type=step.runner_type,
+                passed=False,
+                diagnostics=f"CMake operation not supported: {step.verification_kind}",
+            )
+
+        result = _safe_exec(args, cwd.parent if step.verification_kind == "configure" else cwd,
+                            self._timeout)
+        if result is None:
+            return VerificationStepResult(
+                step_id=step.step_id, area=step.area,
+                status=TOOL_UNAVAILABLE.value,
+                verification_kind=step.verification_kind,
+                runner_type=step.runner_type,
+                passed=False,
+                diagnostics="CMake execution failed",
+            )
+
+        return _build_step_result(step, result, args)
+
+
+def _build_step_result(step, result, args):
+    timed_out = getattr(result, "timed_out", False)
+    stdout = (result.stdout or "")[:_MAX_OUTPUT]
+    stderr = (result.stderr or "")[:_MAX_OUTPUT]
+    truncated = (len(result.stdout or "") > _MAX_OUTPUT or
+                 len(result.stderr or "") > _MAX_OUTPUT)
+    passed = result.returncode == 0 and not timed_out
+
+    if timed_out:
+        status = TIMEOUT.value
+    elif result.returncode == 0:
+        status = PASS.value
+    else:
+        status = FAIL.value
+
+    return VerificationStepResult(
+        step_id=step.step_id, area=step.area,
+        status=status,
+        verification_kind=step.verification_kind,
+        runner_type=step.runner_type,
+        passed=passed,
+        return_code=result.returncode,
+        stdout=stdout, stderr=stderr,
+        command=args,
+        timed_out=timed_out,
+        truncated_output=truncated,
+    )

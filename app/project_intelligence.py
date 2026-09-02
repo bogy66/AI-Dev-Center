@@ -120,6 +120,8 @@ class DetectedFirmware:
     name: str
     evidence: tuple[Evidence, ...]
     boards: tuple[str, ...] = ()
+    config_path: str | None = None
+    has_untrusted_hooks: bool = False
 
 
 @dataclass(frozen=True)
@@ -493,14 +495,19 @@ def _detect_frameworks(root: Path, relative_root: str,
             except Exception:
                 pass
 
-    # ESPHome via structured YAML parsing
-    for yaml_path in sorted(root.glob("*.yaml")) + sorted(root.glob("*.yml")):
+    # ESPHome via recursive structured YAML parsing
+    for yaml_path in sorted(root.rglob("*.yaml")) + sorted(root.rglob("*.yml")):
+        try:
+            rel = yaml_path.relative_to(root).as_posix()
+        except Exception:
+            rel = yaml_path.name
+        if _is_excluded(rel):
+            continue
         try:
             import yaml
             with open(yaml_path, "r", encoding="utf-8") as fh:
                 data = yaml.safe_load(fh)
             if isinstance(data, dict) and "esphome" in data:
-                rel = f"{relative_root}/{yaml_path.name}" if relative_root else yaml_path.name
                 results.append(DetectedFramework(
                     "esphome",
                     (Evidence(rel, "explicit_configuration"),),
@@ -557,18 +564,24 @@ def _detect_firmware(root: Path, relative_root: str) -> list[DetectedFirmware]:
     pio_ini = root / "platformio.ini"
     if pio_ini.is_file():
         boards: list[str] = []
+        has_hooks = False
         content = _read_limited(pio_ini)
         if content:
             for match in re.finditer(r'(?:board|board_build\.mcu)\s*=\s*(\S+)', content):
                 boards.append(match.group(1))
+            if re.search(r"(?m)^\s*extra_scripts\s*=", content):
+                has_hooks = True
         results.append(DetectedFirmware(
             "platformio",
             (Evidence(f"{_pref}platformio.ini", "explicit_configuration"),),
             boards=tuple(boards[:10]),
+            has_untrusted_hooks=has_hooks,
         ))
 
-    # ESPHome (recursive YAML)
-    for yaml_path in sorted(root.glob("*.yaml")) + sorted(root.glob("*.yml")):
+    # ESPHome via recursive YAML detection
+    for yaml_path in sorted(root.rglob("*.yaml")) + sorted(root.rglob("*.yml")):
+        if _is_excluded(yaml_path.relative_to(root).as_posix()):
+            continue
         try:
             import yaml
             with open(yaml_path, "r", encoding="utf-8") as fh:
@@ -578,11 +591,17 @@ def _detect_firmware(root: Path, relative_root: str) -> list[DetectedFirmware]:
                 if isinstance(data.get("esphome"), dict):
                     board = data["esphome"].get("board")
                 boards = (str(board),) if board else ()
+                cfg_rel = None
+                try:
+                    cfg_rel = yaml_path.relative_to(root).as_posix()
+                except Exception:
+                    cfg_rel = yaml_path.name
                 results.append(DetectedFirmware(
                     "esphome",
-                    (Evidence(f"{_pref}{yaml_path.name}" if _pref else yaml_path.name,
+                    (Evidence(cfg_rel or yaml_path.name,
                               "explicit_configuration"),),
                     boards=boards,
+                    config_path=cfg_rel,
                 ))
                 break
         except Exception:
