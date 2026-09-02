@@ -27,6 +27,7 @@ from app.missing_toolchain_setup import StructuredInstallerRegistration, Structu
 from app.workflow_plan_store import WorkflowPlanStore
 from app.project_context import ProjectDefinitionStore
 from app.signal_adapter import SignalCommunicationAdapter
+from app.signal_project_binding import SignalProjectBindingService
 from app.workflow_manager import WorkflowManager
 
 
@@ -37,6 +38,7 @@ class CanonicalComponents:
     approval: object
     development_workflow: DevelopmentWorkflow
     signal_adapter: SignalCommunicationAdapter
+    signal_project_bindings: SignalProjectBindingService
 
 
 def build_canonical_components(config_path="config/ai-dev-center.yml"):
@@ -85,7 +87,11 @@ def build_canonical_components(config_path="config/ai-dev-center.yml"):
         project_definition_store=ProjectDefinitionStore(),
         technical_config=config,
     )
+    signal_project_bindings = SignalProjectBindingService(workflow_manager)
     return CanonicalComponents(
         service, plan_store, SetupApproval, workflow,
-        SignalCommunicationAdapter(service, plan_store, workflow_manager),
+        SignalCommunicationAdapter(
+            service, plan_store, workflow_manager, signal_project_bindings,
+        ),
+        signal_project_bindings,
     )

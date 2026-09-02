@@ -5,11 +5,16 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from hashlib import sha256
-from pathlib import Path
 from typing import Any, Mapping, Protocol
 
 from app.common_request import RequestIntent
 from app.dev_workflow import WorkflowExecutionError
+from app.signal_project_binding import (
+    SignalConversationUnboundError,
+    SignalProjectBindingError,
+    SignalProjectBindingService,
+    SignalProjectReferenceError,
+)
 
 
 class SignalTransportProvider(Protocol):
@@ -28,8 +33,6 @@ class SignalIncomingMessage:
     received_at: datetime
     text: str
     intent: str
-    project_id: str
-    project_path: str
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "SignalIncomingMessage":
@@ -37,18 +40,24 @@ class SignalIncomingMessage:
             raise ValueError("Signal input must be a structured object")
         required = (
             "sender_id", "conversation_id", "message_id", "received_at",
-            "text", "intent", "project_id", "project_path",
+            "text", "intent",
         )
+        forbidden = {
+            "project", "project_id", "project_name", "project_path",
+            "project_root", "repository", "repository_path",
+        }
+        if any(name in value for name in forbidden):
+            raise ValueError("Normal Signal input cannot select a project")
         data: dict[str, str] = {}
         for name in required:
             item = value.get(name)
             if not isinstance(item, str) or not item.strip():
                 raise ValueError(f"Signal field {name} must be a non-empty string")
             data[name] = item.strip()
-        for name in ("sender_id", "conversation_id", "message_id", "intent", "project_id"):
+        for name in ("sender_id", "conversation_id", "message_id", "intent"):
             if len(data[name]) > 512:
                 raise ValueError(f"Signal field {name} is too long")
-        if len(data["text"]) > 4096 or len(data["project_path"]) > 4096:
+        if len(data["text"]) > 4096:
             raise ValueError("Signal input is too long")
         try:
             received_at = datetime.fromisoformat(data.pop("received_at").replace("Z", "+00:00"))
@@ -63,6 +72,7 @@ class SignalIncomingMessage:
 class SignalAdapterResponse:
     status: str
     message: str
+    sender_id: str | None = None
     conversation_id: str | None = None
     reply_destination: str | None = None
     in_reply_to: str | None = None
@@ -81,10 +91,15 @@ class SignalAdapterResponse:
 class SignalCommunicationAdapter:
     """Validate Signal envelopes and delegate planning to shared services."""
 
-    def __init__(self, service, plan_store, workflow_manager) -> None:
+    def __init__(
+        self, service, plan_store, workflow_manager, project_bindings=None,
+    ) -> None:
         self._service = service
         self._plan_store = plan_store
         self._workflow_manager = workflow_manager
+        self._project_bindings = project_bindings or SignalProjectBindingService(
+            workflow_manager
+        )
 
     def handle(self, raw_message: Mapping[str, Any]) -> SignalAdapterResponse:
         try:
@@ -93,10 +108,10 @@ class SignalCommunicationAdapter:
             return SignalAdapterResponse("malformed_input", "The Signal request is malformed.")
 
         correlation = {
+            "sender_id": incoming.sender_id,
             "conversation_id": incoming.conversation_id,
             "reply_destination": incoming.conversation_id,
             "in_reply_to": incoming.message_id,
-            "project_id": incoming.project_id,
         }
         try:
             claimed, record = self._workflow_manager.begin_communication_request(
@@ -154,10 +169,31 @@ class SignalCommunicationAdapter:
                 "unsupported_request", "This Signal request type is not supported.",
                 **correlation,
             )
+        try:
+            binding = self._project_bindings.resolve(incoming.conversation_id)
+        except SignalConversationUnboundError:
+            return SignalAdapterResponse(
+                "project_unbound",
+                "This Signal conversation is not bound to a project.",
+                **correlation,
+            )
+        except SignalProjectReferenceError:
+            return SignalAdapterResponse(
+                "project_binding_invalid",
+                "This Signal conversation has no valid active project binding.",
+                **correlation,
+            )
+        except SignalProjectBindingError:
+            return SignalAdapterResponse(
+                "project_binding_invalid",
+                "This Signal conversation has no valid active project binding.",
+                **correlation,
+            )
+        correlation["project_id"] = binding.project_id
         run_id = self._run_id(incoming)
         try:
             result = self._service.plan_project_setup(
-                incoming.project_id, Path(incoming.project_path), run_id=run_id,
+                binding.project_id, binding.project_root, run_id=run_id,
             )
             self._plan_store.save(result.setup_plan)
         except (ValueError, WorkflowExecutionError):

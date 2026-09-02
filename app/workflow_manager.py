@@ -54,6 +54,7 @@ class WorkflowManager:
             "missing_toolchain_setups": {},
             "execution_lifecycles": {},
             "communication_requests": {},
+            "signal_project_bindings": [],
         }
 
     def _merge_with_defaults(self, default, state):
@@ -550,6 +551,10 @@ class WorkflowManager:
             requests[key] = record
             self.save(state)
             return True, dict(record)
+
+    def communication_state_transaction(self):
+        """Expose the existing state lock for an application-level transaction."""
+        return self._lock
 
     def complete_communication_request(
         self, transport, message_id, sender_id, conversation_id, response,

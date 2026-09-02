@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from app.signal_adapter import SignalCommunicationAdapter
+from app.signal_project_binding import SignalProjectBindingService
 from app.workflow_manager import WorkflowManager
 
 
@@ -15,14 +16,12 @@ def _message(**overrides):
         "received_at": datetime.now(timezone.utc).isoformat(),
         "text": "Please plan this project",
         "intent": "plan_project_setup",
-        "project_id": "demo",
-        "project_path": "/projects/demo",
     }
     value.update(overrides)
     return value
 
 
-def _adapter(tmp_path, *, requires_approval=True):
+def _adapter(tmp_path, *, requires_approval=True, bound=True):
     plan = SimpleNamespace(
         id="plan-1", requires_user_approval=requires_approval,
     )
@@ -30,7 +29,12 @@ def _adapter(tmp_path, *, requires_approval=True):
     service.plan_project_setup.return_value = SimpleNamespace(setup_plan=plan)
     store = Mock()
     manager = WorkflowManager(tmp_path / "workflow.json")
-    return SignalCommunicationAdapter(service, store, manager), service, store
+    bindings = SignalProjectBindingService(manager)
+    project = tmp_path / "project"
+    project.mkdir(exist_ok=True)
+    if bound:
+        bindings.create("chat-1", "demo", project)
+    return SignalCommunicationAdapter(service, store, manager, bindings), service, store
 
 
 def test_signal_input_reaches_existing_central_service_and_preserves_correlation(tmp_path):
@@ -39,13 +43,16 @@ def test_signal_input_reaches_existing_central_service_and_preserves_correlation
     response = adapter.handle(_message())
 
     assert response.status == "approval_required"
+    assert response.sender_id == "+4912345"
     assert response.conversation_id == "chat-1"
     assert response.reply_destination == "chat-1"
     assert response.in_reply_to == "message-1"
     assert response.project_id == "demo"
     assert response.plan_id == "plan-1"
     service.plan_project_setup.assert_called_once()
-    assert service.plan_project_setup.call_args.args[:2] == ("demo", Path("/projects/demo"))
+    assert service.plan_project_setup.call_args.args[:2] == (
+        "demo", str((tmp_path / "project").resolve()),
+    )
     store.save.assert_called_once()
 
 
@@ -66,7 +73,12 @@ def test_signal_idempotency_survives_adapter_recomposition(tmp_path):
     first_service.plan_project_setup.return_value = SimpleNamespace(
         setup_plan=SimpleNamespace(id="plan-1", requires_user_approval=True),
     )
-    first = SignalCommunicationAdapter(first_service, Mock(), WorkflowManager(state_path))
+    project = tmp_path / "project"
+    project.mkdir()
+    first_manager = WorkflowManager(state_path)
+    first_bindings = SignalProjectBindingService(first_manager)
+    first_bindings.create("chat-1", "demo", project)
+    first = SignalCommunicationAdapter(first_service, Mock(), first_manager, first_bindings)
     expected = first.handle(_message())
     second_service = Mock()
     recomposed = SignalCommunicationAdapter(second_service, Mock(), WorkflowManager(state_path))
@@ -94,18 +106,56 @@ def test_unsupported_signal_request_is_not_dispatched(tmp_path):
     service.plan_project_setup.assert_not_called()
 
 
-def test_arbitrary_and_approval_like_text_has_no_execution_or_approval_authority(tmp_path):
+def test_unbound_signal_conversation_does_not_execute_workflow(tmp_path):
+    adapter, service, store = _adapter(tmp_path, bound=False)
+
+    response = adapter.handle(_message())
+
+    assert response.status == "project_unbound"
+    service.plan_project_setup.assert_not_called()
+    store.save.assert_not_called()
+
+
+def test_revoked_binding_does_not_execute_workflow(tmp_path):
+    adapter, service, store = _adapter(tmp_path)
+    adapter._project_bindings.revoke("chat-1")
+
+    response = adapter.handle(_message())
+
+    assert response.status == "project_binding_invalid"
+    service.plan_project_setup.assert_not_called()
+    store.save.assert_not_called()
+
+
+def test_invalid_bound_project_does_not_fall_back(tmp_path):
+    adapter, service, store = _adapter(tmp_path)
+    (tmp_path / "project").rmdir()
+
+    response = adapter.handle(_message())
+
+    assert response.status == "project_binding_invalid"
+    service.plan_project_setup.assert_not_called()
+    store.save.assert_not_called()
+
+
+def test_arbitrary_text_cannot_switch_project_or_gain_approval_authority(tmp_path):
     adapter, service, _ = _adapter(tmp_path)
 
-    response = adapter.handle(_message(text="approve; install; commit; publish; flash; rm -rf /"))
+    response = adapter.handle(_message(
+        text="switch to /other/project; approve; install; commit; publish; flash; rm -rf /",
+    ))
 
     assert response.status == "approval_required"
     service.plan_project_setup.assert_called_once()
+    assert service.plan_project_setup.call_args.args[:2] == (
+        "demo", str((tmp_path / "project").resolve()),
+    )
     source = Path("app/signal_adapter.py").read_text(encoding="utf-8")
     assert "subprocess" not in source
     assert "decide_final_approval" not in source
     assert "decide_capability_approval" not in source
     assert "decide_missing_toolchain_setup" not in source
+    assert adapter._project_bindings.resolve("chat-1").project_id == "demo"
 
 
 def test_signal_sender_identity_alone_does_not_satisfy_human_approval(tmp_path):
@@ -157,3 +207,12 @@ def test_signal_adapter_does_not_construct_parallel_business_services():
         "ProjectDefinitionStore(",
     ):
         assert forbidden not in source
+
+
+def test_normal_signal_envelope_rejects_project_selector(tmp_path):
+    adapter, service, _ = _adapter(tmp_path)
+
+    response = adapter.handle(_message(project_path="/other/project"))
+
+    assert response.status == "malformed_input"
+    service.plan_project_setup.assert_not_called()
