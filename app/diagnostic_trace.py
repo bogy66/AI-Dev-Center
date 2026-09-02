@@ -154,7 +154,47 @@ DETAIL_KEYS = frozenset({
     "aggregate_status", "verification_step_count", "truncated_output",
     "error_category", "diagnostics",
     "actor", "actor_role", "runtime_state", "council_phase", "provider",
-    "model",
+    "model", "failure_category", "diagnostic_level", "result_kind", "duration_ms",
+    "council_output",
+    "interface_data", "interface_stage", "upstream_stage", "downstream_stage",
+    "execution_identity",
+})
+
+COUNCIL_OUTPUT_KEYS = frozenset({
+    "info", "verbose", "very_verbose", "summary", "name", "description",
+    "recommendation", "selected_approach", "status", "risks", "constraints",
+    "concerns", "preferences", "variant_id", "variant_ids", "agent_id",
+    "role", "phase", "environment", "hardware_target", "connection",
+    "capabilities", "toolchain", "requirement_ref", "type", "version",
+    "purpose", "depends_on", "state", "environment_constraint", "advantages",
+    "disadvantages", "confidence", "feasibility", "scores",
+    "would_recommend", "reviews", "rejected_variants", "preferred_variants",
+    "merge_decisions", "merged_variant_ids", "resulting_variant_id", "reason",
+    "council_complete", "error_count", "total_llm_calls", "result_id",
+    "plausibility", "completeness", "complexity", "risk", "ci_cd_fitness",
+    "maintainability", "cost_efficiency",
+    "normal", "x", "y", "input", "output", "intent", "user_request",
+    "user_request_present", "project", "project_id", "project_root", "project_kind",
+    "file_count", "area_count", "languages", "frameworks", "package_systems",
+    "build_systems", "test_systems", "requirements", "requirement_count",
+    "required", "valid", "errors", "warnings", "warning_count", "error_count",
+    "normalized_requirements", "missing_requirements", "missing_count",
+    "overall_ready", "preflight_results", "present", "satisfied",
+    "detected_version", "stack", "project_files", "validation_warnings",
+    "proposal_count", "review_count", "proposals", "proposal", "review",
+    "chairman_decision", "available", "source", "destination",
+    "id", "requirement_id", "result_count", "required_version",
+    "evidence_count", "error_category", "firmware_indicators", "git_repository_present",
+    "truncated", "total_files_traversed", "f", "entity", "entity_version",
+    "implementation_version", "provider", "model", "model_version",
+    "actor", "actor_role", "phase", "council_phase", "dependencies",
+    "interface", "data", "task_description",
+})
+FORBIDDEN_COUNCIL_OUTPUT_KEYS = frozenset({
+    "prompt", "system_prompt", "raw_response", "raw_llm_response",
+    "agent_reasoning", "reasoning", "chain_of_thought", "credentials",
+    "authorization", "api_key", "secret", "token",
+    "verification", "command", "shell_command", "argv", "executable",
 })
 
 _locks_guard = threading.Lock()
@@ -297,7 +337,11 @@ class DiagnosticTrace:
         for key, value in (details or {}).items():
             if key not in DETAIL_KEYS:
                 continue
-            safe_details[key] = self._safe_value(value)
+            safe_details[key] = (
+                self._safe_council_output(value)
+                if key in {"council_output", "interface_data", "execution_identity"}
+                else self._safe_value(value)
+            )
         return self.store.append({
             "run_id": run_id,
             "phase": phase,
@@ -320,4 +364,26 @@ class DiagnosticTrace:
             return value
         if isinstance(value, (list, tuple)):
             return [DiagnosticTrace._safe_value(item) for item in value[:50] if isinstance(item, (str, bool, int, float)) or item is None]
+        return "[UNSUPPORTED]"
+
+    @staticmethod
+    def _safe_council_output(value, depth=0):
+        if depth > 10:
+            return "[TRUNCATED]"
+        if isinstance(value, dict):
+            return {
+                str(key): DiagnosticTrace._safe_council_output(item, depth + 1)
+                for key, item in list(value.items())[:80]
+                if str(key) in COUNCIL_OUTPUT_KEYS
+                and str(key) not in FORBIDDEN_COUNCIL_OUTPUT_KEYS
+            }
+        if isinstance(value, (list, tuple)):
+            return [
+                DiagnosticTrace._safe_council_output(item, depth + 1)
+                for item in value[:50]
+            ]
+        if isinstance(value, str):
+            return _redact(value)[:1000]
+        if isinstance(value, (bool, int, float)) or value is None:
+            return value
         return "[UNSUPPORTED]"

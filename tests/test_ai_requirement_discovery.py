@@ -111,6 +111,19 @@ class TestAIRequirementDiscovery:
         assert "/tmp/project" in fake.called_with
         assert "esphome.yaml" in fake.called_with
 
+    def test_user_request_and_project_intelligence_are_distinct_prompt_inputs(self):
+        fake = self.FakeLLM("[]")
+        discovery = AIRequirementDiscovery(llm_provider=fake)
+
+        discovery.discover(
+            {"project_kind": "existing", "languages": ["Python"]},
+            user_request="Add a status endpoint",
+        )
+
+        assert "Add a status endpoint" in fake.called_with
+        assert '"project_kind": "existing"' in fake.called_with
+        assert '"languages": [' in fake.called_with
+
     # ------------------------------------------------------------------
     # 3. stack_context parameter is accepted and does not break discovery
     # ------------------------------------------------------------------

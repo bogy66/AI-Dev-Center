@@ -55,7 +55,10 @@ Given the following project information, list all technical requirements
 (external tools, packages, libraries, SDKs, hardware capabilities, etc.)
 that this project needs in order to build, test, flash, or run.
 
-Project information:
+User request:
+{user_request}
+
+Observed project information:
 {project_info}
 
 Rules:
@@ -108,10 +111,13 @@ Return ONLY valid JSON, no additional commentary.
         except Exception:
             pass
 
-    def _build_prompt(self, project_info: dict[str, Any]) -> str:
+    def _build_prompt(
+        self, project_info: dict[str, Any], user_request: str | None = None,
+    ) -> str:
         serialized = json.dumps(project_info, indent=2, default=str)
         return self._DISCOVERY_PROMPT_TEMPLATE.format(
             project_info=serialized,
+            user_request=user_request or "No user request was supplied.",
             types=", ".join(
                 getattr(RequirementType, attr)
                 for attr in dir(RequirementType)
@@ -204,6 +210,7 @@ Return ONLY valid JSON, no additional commentary.
         project_info: dict[str, Any],
         stack_context: str | None = None,
         conversation_trace_id: str | None = None,
+        user_request: str | None = None,
     ) -> DiscoveryResult:
         """Run LLM‑based discovery and return a DiscoveryResult.
 
@@ -211,6 +218,7 @@ Return ONLY valid JSON, no additional commentary.
             project_info: Dictionary containing information about the project.
             stack_context: Optional stack identifier (ignored in this version).
             conversation_trace_id: Optional trace id for debugging.
+            user_request: Actual adapter-neutral business request, when supplied.
 
         Returns:
             DiscoveryResult with discovered requirements.
@@ -218,7 +226,7 @@ Return ONLY valid JSON, no additional commentary.
         warnings: list[str] = []
         fallback_used = False
         requirements: list[Requirement] = []
-        prompt = self._build_prompt(project_info)
+        prompt = self._build_prompt(project_info, user_request)
 
         if self._provider is None:
             self._activity("failed", "ProviderUnavailable")

@@ -224,6 +224,24 @@ class TestDevelopmentWorkflow:
             project_id,
         )
 
+    def test_discovery_receives_real_user_request_without_merging_project_facts(self):
+        discovery, validator, preflight, planner, council, materializer, *_ = _make_components()
+        workflow = DevelopmentWorkflow(
+            discovery, validator, preflight, planner,
+            council=council, materializer=materializer,
+        )
+        project_info = {"project_kind": "existing", "languages": ["Python"]}
+
+        workflow.run(
+            project_info, "proj-1", user_request="Add a status endpoint",
+            source_interface="web",
+        )
+
+        discovery.discover.assert_called_once_with(
+            project_info, "proj-1", user_request="Add a status endpoint",
+        )
+        assert "user_request" not in project_info
+
     def test_validator_receives_discovery_requirements(self):
         (
             discovery,

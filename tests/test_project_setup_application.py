@@ -77,6 +77,29 @@ def test_service_builds_planning_intent_before_workflow_delegation(tmp_path):
     assert "project_kind" in request.project_info
 
 
+def test_service_carries_user_intent_into_central_workflow(tmp_path):
+    inspector = Mock()
+    intelligence = _mock_intelligence("demo", tmp_path)
+    inspector.build_intelligence.return_value = intelligence
+    inspector.inspect_managed.return_value = ({"project_id": "demo"}, intelligence)
+    workflow = Mock()
+    service = ProjectSetupApplicationService(workflow, inspector)
+
+    service.plan_project_setup(
+        "demo", tmp_path, entry_interface="web",
+        entry_data={"task_description": "Repair this project", "project_id": "demo"},
+    )
+
+    request = service.build_request(
+        "demo", tmp_path, user_request="Repair this project",
+        source_interface="web",
+    )
+    assert request.user_request == "Repair this project"
+    assert request.source_interface == "web"
+    assert workflow.run.call_args.kwargs["user_request"] == "Repair this project"
+    assert workflow.run.call_args.kwargs["source_interface"] == "web"
+
+
 def test_service_rejects_empty_project_id_before_inspection(tmp_path):
     inspector = Mock()
     service = ProjectSetupApplicationService(Mock(), inspector)

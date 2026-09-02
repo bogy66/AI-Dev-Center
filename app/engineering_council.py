@@ -56,6 +56,7 @@ from app.council_prompts import (
 from app.llm_provider_factory import create_council_provider
 from app.logger import get_logger
 from app.secret_resolver import SecretResolver
+from app.execution_identity import execution_identity
 
 logger = get_logger("council")
 
@@ -137,25 +138,52 @@ class EngineeringCouncil:
         self._call_records: list[AgentCallRecord] = []
         self._run_id: str = ""
         self._activity_callback: Callable[..., None] | None = None
+        self._result_callback: Callable[..., None] | None = None
 
     def set_activity_callback(self, callback: Callable[..., None] | None) -> None:
         """Project safe Council runtime activity into the central trace."""
         self._activity_callback = callback
 
-    def _activity(self, task: _AgentTask, state: str, *, force: bool = False) -> None:
+    def set_result_callback(self, callback: Callable[..., None] | None) -> None:
+        """Project safe structured Council work products into the central trace."""
+        self._result_callback = callback
+
+    def _result(self, **result) -> None:
+        if self._result_callback is None:
+            return
+        try:
+            self._result_callback(**result)
+        except Exception:
+            logger.debug("Central Council result recording failed", exc_info=True)
+
+    def _activity(
+        self, task: _AgentTask, state: str, *, force: bool = False,
+        failure_category: str | None = None,
+    ) -> None:
         if task.activity_closed.is_set() and not force:
             return
         if self._activity_callback is None:
             return
         try:
-            self._activity_callback(
+            operation = {"phase1": "proposal", "phase2": "review"}.get(
+                task.phase, task.phase,
+            )
+            details = dict(
                 actor=f"Agent {task.agent_id}" if task.agent_id != "C" else "Chairman",
                 actor_role=task.role,
                 runtime_state=state,
                 council_phase=task.phase,
                 provider=task.config.provider,
                 model=task.config.model,
+                execution_identity=execution_identity(
+                    "chairman" if task.agent_id == "C" else f"council_agent_{task.agent_id.lower()}_{operation}",
+                    provider=task.config.provider, model=task.config.model,
+                    actor=task.agent_id, phase=task.phase,
+                ),
             )
+            if failure_category:
+                details["failure_category"] = failure_category
+            self._activity_callback(**details)
         except Exception:
             # Observability must never change Council decisions or execution.
             logger.debug("Central Council activity recording failed", exc_info=True)
@@ -243,10 +271,259 @@ class EngineeringCouncil:
             total_llm_calls=len(self._call_records),
         )
 
+        self._emit_structured_results(
+            council_input, proposal_set, vote_sets, council_result,
+        )
+
         if self._trace_dir:
             self._persist_trace(council_input, proposal_set, vote_sets, council_result, started)
 
         return council_result
+
+    def _emit_structured_results(
+        self, council_input: CouncilInput, proposal_set: ProposalSet,
+        vote_sets: tuple[AgentVoteSet, ...], council_result: CouncilResult,
+    ) -> None:
+        """Emit bounded projections only; never raw responses or reasoning fields."""
+        def duration_for(agent_id, phase):
+            return sum(
+                record.duration_ms for record in self._call_records
+                if record.agent_id == agent_id and record.phase == phase
+            )
+
+        def typed(data, data_type, source, destination):
+            return {
+                "type": data_type, "interface": "internal",
+                "source": source, "destination": destination, "data": data,
+            }
+
+        requirements = [{
+            "id": item.id, "name": item.name, "type": item.type,
+            "purpose": item.purpose, "required": item.required,
+        } for item in council_input.requirements]
+        phase1_x_info = {
+            "requirement_count": len(requirements),
+            "stack": council_input.detected_stack or "",
+        }
+        phase1_x_verbose = {
+            **phase1_x_info, "requirements": requirements,
+            "project_files": list(council_input.project_files),
+            "validation_warnings": list(council_input.validation_warnings),
+        }
+
+        proposal_agents = {proposal.agent_id for proposal in proposal_set.proposals}
+        for proposal in proposal_set.proposals:
+            tools = [{
+                "requirement_ref": tool.requirement_ref, "name": tool.name,
+                "type": tool.type, "version": tool.version,
+                "purpose": tool.purpose, "depends_on": list(tool.depends_on),
+                "state": tool.state,
+                "environment_constraint": tool.environment_constraint,
+            } for tool in proposal.toolchain]
+            info = {
+                "summary": proposal.description or proposal.name,
+                "name": proposal.name, "risks": list(proposal.risks[:3]),
+                "constraints": list(proposal.disadvantages[:3]),
+            }
+            verbose = {**info,
+                "variant_id": proposal.variant_id,
+                "environment": proposal.environment,
+                "capabilities": list(proposal.capabilities),
+                "toolchain": [{"name": item["name"], "type": item["type"],
+                               "state": item["state"], "purpose": item["purpose"]}
+                              for item in tools],
+                "advantages": list(proposal.advantages),
+                "feasibility": proposal.feasibility,
+            }
+            very_verbose = {**verbose,
+                "hardware_target": proposal.hardware_target,
+                "connection": proposal.connection,
+                "confidence": proposal.confidence,
+                "toolchain": tools,
+                "disadvantages": list(proposal.disadvantages),
+            }
+            config = _get_agent_config(self._config, proposal.agent_id)
+            self._result(
+                actor=f"Agent {proposal.agent_id}", actor_role=proposal.agent_role,
+                council_phase="phase1", result_kind="proposal",
+                provider=config.provider, model=config.model,
+                duration_ms=duration_for(proposal.agent_id, "phase1"),
+                summary=f"{proposal.agent_id} proposal: {proposal.name}",
+                council_output={"info": info, "verbose": verbose,
+                                "very_verbose": very_verbose},
+                interface_data={
+                    "normal": {"summary": "Proposal input produced a structured proposal."},
+                    "info": {"x": typed(phase1_x_info, "council_input", "engineering_council", f"council_agent_{proposal.agent_id.lower()}_proposal"),
+                             "f": execution_identity(f"council_agent_{proposal.agent_id.lower()}_proposal", provider=config.provider, model=config.model, actor=proposal.agent_id, phase="phase1"),
+                             "y": typed({"available": True, "name": proposal.name}, "proposal", f"council_agent_{proposal.agent_id.lower()}_proposal", "engineering_council")},
+                    "verbose": {"x": typed(phase1_x_verbose, "council_input", "engineering_council", f"council_agent_{proposal.agent_id.lower()}_proposal"), "f": execution_identity(f"council_agent_{proposal.agent_id.lower()}_proposal", provider=config.provider, model=config.model, actor=proposal.agent_id, phase="phase1"), "y": typed(verbose, "proposal", f"council_agent_{proposal.agent_id.lower()}_proposal", "engineering_council")},
+                    "very_verbose": {"x": typed(phase1_x_verbose, "council_input", "engineering_council", f"council_agent_{proposal.agent_id.lower()}_proposal"), "f": execution_identity(f"council_agent_{proposal.agent_id.lower()}_proposal", provider=config.provider, model=config.model, actor=proposal.agent_id, phase="phase1"), "y": typed(very_verbose, "proposal", f"council_agent_{proposal.agent_id.lower()}_proposal", "engineering_council")},
+                },
+            )
+        for agent_id in sorted(set(AGENT_ROLES) - proposal_agents):
+            config = _get_agent_config(self._config, agent_id)
+            empty = {"summary": "No usable structured proposal produced."}
+            self._result(
+                actor=f"Agent {agent_id}", actor_role=AGENT_ROLES[agent_id],
+                council_phase="phase1", result_kind="proposal",
+                provider=config.provider, model=config.model,
+                duration_ms=duration_for(agent_id, "phase1"),
+                summary=empty["summary"],
+                council_output={"info": empty, "verbose": empty,
+                                "very_verbose": empty},
+                interface_data={
+                    "normal": {"summary": "Proposal input produced no usable structured proposal."},
+                    "info": {"x": typed(phase1_x_info, "council_input", "engineering_council", f"council_agent_{agent_id.lower()}_proposal"), "f": execution_identity(f"council_agent_{agent_id.lower()}_proposal", provider=config.provider, model=config.model, actor=agent_id, phase="phase1"), "y": typed({"available": False}, "proposal", f"council_agent_{agent_id.lower()}_proposal", "engineering_council")},
+                    "verbose": {"x": typed(phase1_x_verbose, "council_input", "engineering_council", f"council_agent_{agent_id.lower()}_proposal"), "f": execution_identity(f"council_agent_{agent_id.lower()}_proposal", provider=config.provider, model=config.model, actor=agent_id, phase="phase1"), "y": typed({"available": False}, "proposal", f"council_agent_{agent_id.lower()}_proposal", "engineering_council")},
+                    "very_verbose": {"x": typed(phase1_x_verbose, "council_input", "engineering_council", f"council_agent_{agent_id.lower()}_proposal"), "f": execution_identity(f"council_agent_{agent_id.lower()}_proposal", provider=config.provider, model=config.model, actor=agent_id, phase="phase1"), "y": typed({"available": False}, "proposal", f"council_agent_{agent_id.lower()}_proposal", "engineering_council")},
+                },
+            )
+
+        review_agents = {vote_set.agent_id for vote_set in vote_sets}
+        proposals_for_review = [{
+            "variant_id": item.variant_id, "name": item.name,
+            "description": item.description, "environment": item.environment,
+            "capabilities": list(item.capabilities), "risks": list(item.risks),
+        } for item in proposal_set.proposals]
+        for vote_set in vote_sets:
+            reviews = [{
+                "variant_id": vote.variant_id,
+                "would_recommend": vote.would_recommend,
+                "concerns": list(vote.concerns), "scores": vote.scores,
+            } for vote in vote_set.votes]
+            info_reviews = [{
+                "variant_id": item["variant_id"],
+                "would_recommend": item["would_recommend"],
+                "concerns": item["concerns"][:3],
+            } for item in reviews]
+            config = _get_agent_config(self._config, vote_set.agent_id)
+            self._result(
+                actor=f"Agent {vote_set.agent_id}", actor_role=vote_set.agent_role,
+                council_phase="phase2", result_kind="review",
+                provider=config.provider, model=config.model,
+                duration_ms=duration_for(vote_set.agent_id, "phase2"),
+                summary=f"{vote_set.agent_id} reviewed {len(reviews)} variants",
+                council_output={
+                    "info": {"summary": f"Reviewed {len(reviews)} variants",
+                             "reviews": info_reviews},
+                    "verbose": {"summary": f"Reviewed {len(reviews)} variants",
+                                "reviews": reviews},
+                    "very_verbose": {"summary": f"Reviewed {len(reviews)} variants",
+                                     "reviews": reviews},
+                },
+                interface_data={
+                    "normal": {"summary": "Proposal variants produced a structured review."},
+                    "info": {"x": typed({"proposal_count": len(proposals_for_review)}, "proposal_set", "engineering_council", f"council_agent_{vote_set.agent_id.lower()}_review"),
+                             "f": execution_identity(f"council_agent_{vote_set.agent_id.lower()}_review", provider=config.provider, model=config.model, actor=vote_set.agent_id, phase="phase2"),
+                             "y": typed({"review_count": len(reviews)}, "review_set", f"council_agent_{vote_set.agent_id.lower()}_review", "engineering_council")},
+                    "verbose": {"x": typed({"proposals": proposals_for_review}, "proposal_set", "engineering_council", f"council_agent_{vote_set.agent_id.lower()}_review"),
+                                "f": execution_identity(f"council_agent_{vote_set.agent_id.lower()}_review", provider=config.provider, model=config.model, actor=vote_set.agent_id, phase="phase2"),
+                                "y": typed({"reviews": info_reviews}, "review_set", f"council_agent_{vote_set.agent_id.lower()}_review", "engineering_council")},
+                    "very_verbose": {"x": typed({"proposals": proposals_for_review}, "proposal_set", "engineering_council", f"council_agent_{vote_set.agent_id.lower()}_review"),
+                                     "f": execution_identity(f"council_agent_{vote_set.agent_id.lower()}_review", provider=config.provider, model=config.model, actor=vote_set.agent_id, phase="phase2"),
+                                     "y": typed({"reviews": reviews}, "review_set", f"council_agent_{vote_set.agent_id.lower()}_review", "engineering_council")},
+                },
+            )
+        for agent_id in sorted(set(AGENT_ROLES) - review_agents):
+            config = _get_agent_config(self._config, agent_id)
+            empty = {"summary": "No usable structured review produced."}
+            self._result(
+                actor=f"Agent {agent_id}", actor_role=AGENT_ROLES[agent_id],
+                council_phase="phase2", result_kind="review",
+                provider=config.provider, model=config.model,
+                duration_ms=duration_for(agent_id, "phase2"),
+                summary=empty["summary"],
+                council_output={"info": empty, "verbose": empty,
+                                "very_verbose": empty},
+                interface_data={
+                    "normal": {"summary": "Proposal variants produced no usable structured review."},
+                    "info": {"x": typed({"proposal_count": len(proposals_for_review)}, "proposal_set", "engineering_council", f"council_agent_{agent_id.lower()}_review"),
+                             "f": execution_identity(f"council_agent_{agent_id.lower()}_review", provider=config.provider, model=config.model, actor=agent_id, phase="phase2"),
+                             "y": typed({"available": False}, "review_set", f"council_agent_{agent_id.lower()}_review", "engineering_council")},
+                    "verbose": {"x": typed({"proposals": proposals_for_review}, "proposal_set", "engineering_council", f"council_agent_{agent_id.lower()}_review"),
+                                "f": execution_identity(f"council_agent_{agent_id.lower()}_review", provider=config.provider, model=config.model, actor=agent_id, phase="phase2"),
+                                "y": typed({"available": False}, "review_set", f"council_agent_{agent_id.lower()}_review", "engineering_council")},
+                    "very_verbose": {"x": typed({"proposals": proposals_for_review}, "proposal_set", "engineering_council", f"council_agent_{agent_id.lower()}_review"),
+                                     "f": execution_identity(f"council_agent_{agent_id.lower()}_review", provider=config.provider, model=config.model, actor=agent_id, phase="phase2"),
+                                     "y": typed({"available": False}, "review_set", f"council_agent_{agent_id.lower()}_review", "engineering_council")},
+                },
+            )
+
+        selected = next(
+            (variant for variant in council_result.variants
+             if variant.id == council_result.recommendation), None,
+        )
+        selected_name = selected.name if selected else None
+        chairman_info = {
+            "summary": (
+                f"Selected {selected_name or council_result.recommendation}"
+                if council_result.recommendation else "No final recommendation produced."
+            ),
+            "recommendation": council_result.recommendation,
+            "selected_approach": selected_name,
+            "status": "complete" if council_result.council_complete else "incomplete",
+        }
+        chairman_verbose = {**chairman_info,
+            "preferred_variants": [variant.name for variant in council_result.variants],
+            "rejected_variants": [variant.name for variant in council_result.rejected_variants],
+            "merge_decisions": [{
+                "merged_variant_ids": list(item.merged_variant_ids),
+                "resulting_variant_id": item.resulting_variant_id,
+                "reason": item.reason,
+            } for item in council_result.merge_decisions],
+        }
+        chairman_very_verbose = {**chairman_verbose,
+            "result_id": council_result.id,
+            "council_complete": council_result.council_complete,
+            "error_count": len(council_result.agent_errors) + bool(council_result.chairman_error),
+            "total_llm_calls": council_result.total_llm_calls,
+            "variant_ids": [variant.id for variant in council_result.variants],
+        }
+        self._result(
+            actor="Chairman", actor_role="chairman", council_phase="phase3",
+            result_kind="chairman_decision", provider=self._config.chairman.provider,
+            model=self._config.chairman.model,
+            duration_ms=duration_for("C", "phase3"),
+            summary=chairman_info["summary"],
+            council_output={"info": chairman_info, "verbose": chairman_verbose,
+                            "very_verbose": chairman_very_verbose},
+            interface_data={
+                "normal": {"summary": "Council proposals and reviews produced a Chairman decision."},
+                "info": {
+                    "x": typed({"proposal_count": len(proposal_set.proposals),
+                                "review_count": len(vote_sets)}, "council_review_set",
+                               "engineering_council", "chairman"),
+                    "f": execution_identity("chairman", provider=self._config.chairman.provider, model=self._config.chairman.model, actor="C", phase="phase3"),
+                    "y": typed({"recommendation": council_result.recommendation,
+                                "council_complete": council_result.council_complete},
+                               "chairman_decision", "chairman", "engineering_council"),
+                },
+                "verbose": {
+                    "x": typed({"proposals": proposals_for_review,
+                          "reviews": [{"agent_id": item.agent_id,
+                                       "review_count": len(item.votes)}
+                                      for item in vote_sets]}, "council_review_set",
+                               "engineering_council", "chairman"),
+                    "f": execution_identity("chairman", provider=self._config.chairman.provider, model=self._config.chairman.model, actor="C", phase="phase3"),
+                    "y": typed(chairman_verbose, "chairman_decision",
+                               "chairman", "engineering_council"),
+                },
+                "very_verbose": {
+                    "x": typed({"proposals": proposals_for_review,
+                          "reviews": [{"agent_id": item.agent_id,
+                                       "reviews": [{"variant_id": vote.variant_id,
+                                                    "would_recommend": vote.would_recommend,
+                                                    "concerns": list(vote.concerns),
+                                                    "scores": vote.scores}
+                                                   for vote in item.votes]}
+                                      for item in vote_sets]}, "council_review_set",
+                               "engineering_council", "chairman"),
+                    "f": execution_identity("chairman", provider=self._config.chairman.provider, model=self._config.chairman.model, actor="C", phase="phase3"),
+                    "y": typed(chairman_very_verbose, "chairman_decision",
+                               "chairman", "engineering_council"),
+                },
+            },
+        )
 
     # ------------------------------------------------------------------
     # Phase 1 — Independent Proposals
@@ -597,7 +874,9 @@ class EngineeringCouncil:
                 for future in expired:
                     task = futures[future]
                     task.activity_closed.set()
-                    self._activity(task, "failed", force=True)
+                    self._activity(
+                        task, "failed", force=True, failure_category="timeout",
+                    )
                     future.cancel()
                     error = "provider call exceeded its configured deadline"
                     results_by_agent[task.agent_id] = _AgentResult(
@@ -631,7 +910,9 @@ class EngineeringCouncil:
                     try:
                         results_by_agent[task.agent_id] = future.result()
                     except Exception as exc:
-                        self._activity(task, "failed")
+                        self._activity(
+                            task, "failed", failure_category="provider_failure",
+                        )
                         logger.warning(f"Council agent {task.agent_id} failed: {exc}")
                         results_by_agent[task.agent_id] = _AgentResult(
                             agent_id=task.agent_id,
@@ -671,7 +952,7 @@ class EngineeringCouncil:
                 self._config.ollama_url,
             )
         except Exception:
-            self._activity(task, "failed")
+            self._activity(task, "failed", failure_category="provider_configuration")
             raise
 
         last_raw = ""
@@ -724,7 +1005,7 @@ class EngineeringCouncil:
                     raw_response_snippet=last_raw[:500],
                 ))
                 if attempt >= _MAX_RETRIES:
-                    self._activity(task, "failed")
+                    self._activity(task, "failed", failure_category="invalid_json")
                     logger.warning(f"Agent {task.agent_id}: JSON parse failed after retry")
                     return _AgentResult(
                         agent_id=task.agent_id,
@@ -739,7 +1020,7 @@ class EngineeringCouncil:
                 )
 
             except Exception as exc:
-                self._activity(task, "failed")
+                self._activity(task, "failed", failure_category="provider_failure")
                 logger.warning(f"Agent {task.agent_id}: {exc}")
                 return _AgentResult(
                     agent_id=task.agent_id,

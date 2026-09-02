@@ -63,6 +63,10 @@ def test_web_planning_uses_canonical_service_without_agent_or_execution(tmp_path
     _wait_for_plan(client, response.json()["session_id"])
     components.service.plan_project_setup.assert_called_once_with(
         "test-proj", str(project.resolve()),
+        entry_interface="web", entry_data={
+            "task_description": "Testing",
+            "project_id": "test-proj",
+        },
     )
     components.plan_store.save.assert_called_once()
     components.approval.approve.assert_not_called()

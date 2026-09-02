@@ -20,3 +20,5 @@ class CommonRequest:
     project_id: str
     project_info: dict[str, Any]
     intent: RequestIntent
+    user_request: str | None = None
+    source_interface: str | None = None

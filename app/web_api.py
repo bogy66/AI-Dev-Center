@@ -527,6 +527,10 @@ def _run_initial_planning(session: Session, components: WebSetupComponents):
     try:
         result = components.service.plan_project_setup(
             session.project_id, session.project_path,
+            entry_interface="web", entry_data={
+                "task_description": session.task_description,
+                "project_id": session.project_id,
+            },
         )
         plan = result.setup_plan
         components.plan_store.save(plan)

@@ -209,7 +209,11 @@ def test_start_endpoint_uses_exact_existing_project_root(client, tmp_path):
     state = _wait_for_workflow_state(client, data["session_id"])
     assert state["plan_id"] == "plan-123"
     components.service.plan_project_setup.assert_called_once_with(
-        "testproj", str(project.resolve())
+        "testproj", str(project.resolve()),
+        entry_interface="web", entry_data={
+            "task_description": "Create ESPHome project",
+            "project_id": "testproj",
+        },
     )
     components.plan_store.save.assert_called_once_with(
         components.service.plan_project_setup.return_value.setup_plan
@@ -309,16 +313,64 @@ def test_browser_uses_structured_activity_and_local_compact_trace_time():
     assert "hour: '2-digit', minute: '2-digit', second: '2-digit'" in script
 
 
+def test_council_detail_selector_has_four_product_levels(client):
+    html = client.get("/").text
+    selector = html.split('id="trace-level-select"', 1)[1].split("</select>", 1)[0]
+
+    assert 'value="NORMAL" selected' in selector
+    assert 'value="INFO"' in selector
+    assert 'value="VERBOSE"' in selector
+    assert 'value="VERY_VERBOSE"' in selector
+    assert 'value="DEBUG"' not in selector
+
+
+def test_council_detail_rendering_is_progressive_and_text_safe():
+    script = Path("web/app.js").read_text(encoding="utf-8")
+
+    assert "diagnosticDetailRank" in script
+    assert "meta.council_output" in script
+    assert "projections[projectionKey] || projections.info" in script
+    assert "selectedLevel === 'NORMAL'" in script
+    assert "diagnosticDetailRank[selectedLevel] >= diagnosticDetailRank[requiredLevel]" in script
+    assert "diagnosticDetailRank[selectedLevel] >= diagnosticDetailRank.VERBOSE" in script
+    assert "container.textContent" in script
+    assert "Provider: ${meta.provider" in script
+    assert "Model: ${meta.model" in script
+    assert "Duration: ${Number(meta.duration_ms || 0).toFixed(1)} ms" in script
+    for forbidden in ("raw_llm_response", "agent_reasoning", "chain_of_thought"):
+        assert forbidden not in script
+
+
+def test_interface_trace_renders_grouped_xy_at_detail_levels():
+    script = Path("web/app.js").read_text(encoding="utf-8")
+
+    assert "selectedInterfaceProjection" in script
+    assert "appendInterfaceLines" in script
+    assert "x — Input" in script
+    assert "f — Processor" in script
+    assert "y — Output" in script
+    assert "if (selectedLevel === 'NORMAL') return" in script
+    assert "${label}: ${value.type || 'unavailable'} / ${value.interface || 'unavailable'}" in script
+    assert "Source: ${value.source || 'unavailable'}" in script
+    assert "Destination: ${value.destination || 'unavailable'}" in script
+    assert "JSON.stringify(value.data" in script
+    assert "Entity: ${processor.entity" in script
+    assert "Version: ${processor.entity_version}" in script
+    assert "Implementation: ${processor.implementation_version}" in script
+    assert "container.textContent" in script
+
+
 def test_detailed_trace_renders_actor_and_structured_runtime_states():
     script = Path("web/app.js").read_text(encoding="utf-8")
 
     assert "const runtimeState = String(meta.runtime_state || '').trim()" in script
     assert "const activityActor = actor || String(event.component || 'Workflow')" in script
-    assert "${activityActor} — ${runtimeState}" in script
-    assert "filtered.map(formatTraceLine)" in script
-    # Direct interpolation deliberately has no state-specific branch: preparing,
-    # thinking, reviewing, completed and failed therefore use the same visible path.
-    assert "runtimeState ===" not in script
+    assert "${activityActor}${version} — ${runtimeState}" in script
+    assert ".map(event => formatTraceLine(event, selectedLevel))" in script
+    # Every non-Council-output event with a runtime state reaches the shared
+    # Actor — runtime_state return path; selectedLevel only adds safe failure detail.
+    assert "if (runtimeState)" in script
+    assert "meta.execution_identity || {}" in script
 
 
 def test_detailed_trace_preserves_ordinary_event_fallback():
@@ -590,7 +642,7 @@ def test_start_session_is_observable_while_planning_is_still_running(
     components = _set_override()
     completed_result = components.service.plan_project_setup.return_value
 
-    def blocking_plan(*_args):
+    def blocking_plan(*_args, **_kwargs):
         entered.set()
         release.wait(2)
         return completed_result

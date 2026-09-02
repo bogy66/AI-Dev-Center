@@ -10,9 +10,26 @@ from app.controlled_git_stage import GitCommitResult
 from app.diagnostic_trace import (
     DiagnosticTrace, DiagnosticTraceError, DiagnosticTraceStore,
 )
+from app.execution_identity import ADC_IMPLEMENTATION_VERSION, execution_identity
 from app.dev_workflow import DevelopmentWorkflow
 from app.project_setup_application import ProjectSetupApplicationService
 from app.workflow_manager import WorkflowManager
+
+
+def test_execution_identity_versions_contract_without_fabricated_model_version():
+    deterministic = execution_identity("requirement_validation")
+    assert deterministic == {
+        "entity": "requirement_validation",
+        "entity_version": 1,
+        "implementation_version": ADC_IMPLEMENTATION_VERSION,
+    }
+
+    ai_actor = execution_identity(
+        "council_agent_a3_review", provider="openrouter", model="configured-model",
+    )
+    assert ai_actor["provider"] == "openrouter"
+    assert ai_actor["model"] == "configured-model"
+    assert "model_version" not in ai_actor
 
 
 def _trace(tmp_path):
@@ -109,6 +126,94 @@ def test_safe_runtime_activity_metadata_excludes_prompt_and_reasoning(tmp_path):
     assert event.details["runtime_state"] == "thinking"
     assert "prompt" not in event.details and "reasoning" not in event.details
     assert "must not persist" not in path.read_text(encoding="utf-8")
+
+
+def test_council_projection_is_nested_bounded_and_excludes_private_fields(tmp_path):
+    trace, path = _trace(tmp_path)
+    trace.record(
+        "run", "engineering_council", "completed", "completed", "A1 proposal",
+        details={
+            "diagnostic_level": "INFO", "result_kind": "proposal",
+            "council_output": {
+                "info": {"summary": "Safe proposal", "risks": ["bounded risk"]},
+                "very_verbose": {
+                    "capabilities": ["build"],
+                    "prompt": "secret prompt", "reasoning": "private thought",
+                    "raw_response": "raw model response", "api_key": "secret-key",
+                    "verification": "unsafe-verifier --run && execute-next",
+                    "command": "unsafe-command --flag",
+                },
+            },
+        },
+    )
+
+    output = trace.get_trace("run")[0].details["council_output"]
+    assert output["info"]["summary"] == "Safe proposal"
+    assert output["very_verbose"]["capabilities"] == ["build"]
+    raw = path.read_text(encoding="utf-8")
+    for forbidden in (
+        "secret prompt", "private thought", "raw model response", "secret-key",
+        "unsafe-verifier", "unsafe-command",
+    ):
+        assert forbidden not in raw
+
+
+def test_interface_projection_persists_safe_xy_and_rejects_unsafe_payloads(tmp_path):
+    trace, path = _trace(tmp_path)
+    trace.record(
+        "run", "requirement_discovery", "completed", "completed",
+        "Requirement Discovery transformed its input",
+        details={
+            "diagnostic_level": "NORMAL", "result_kind": "interface",
+            "interface_stage": "requirement_discovery",
+            "interface_data": {
+                "info": {"x": {"type": "future_domain_payload", "interface": "mcp",
+                                 "source": "future_agent", "destination": "requirement_discovery",
+                                 "data": {"requirement_count": 1}},
+                         "f": {"entity": "requirement_discovery",
+                               "entity_version": 1,
+                               "implementation_version": "adc-python-1"},
+                         "y": {"type": "requirement_set", "interface": "internal",
+                               "source": "requirement_discovery", "destination": "validator",
+                               "data": {"requirement_count": 1}}},
+                "very_verbose": {
+                    "x": {"type": "user_request", "interface": "web",
+                          "source": "web", "destination": "requirement_discovery",
+                          "data": {"user_request": "Create ESPHome project",
+                                   "prompt": "internal prompt", "token": "secret-token"}},
+                    "f": {"entity": "requirement_discovery",
+                          "entity_version": 1,
+                          "implementation_version": "adc-python-1",
+                          "provider": "safe-provider", "model": "safe-model",
+                          "command": "unsafe processor command"},
+                    "y": {"type": "requirement_set", "interface": "internal",
+                          "source": "requirement_discovery", "destination": "validator",
+                          "data": {"requirements": [{"name": "esphome",
+                                                      "command": "unsafe --execute"}]}},
+                },
+            },
+        },
+    )
+
+    interface = trace.get_trace("run")[0].details["interface_data"]
+    assert interface["info"]["x"]["type"] == "future_domain_payload"
+    assert interface["info"]["x"]["interface"] == "mcp"
+    assert interface["very_verbose"]["x"]["data"]["user_request"] == "Create ESPHome project"
+    for endpoint in ("x", "y"):
+        assert {"type", "interface", "source", "destination", "data"} <= set(
+            interface["very_verbose"][endpoint]
+        )
+    assert interface["very_verbose"]["f"] == {
+        "entity": "requirement_discovery", "entity_version": 1,
+        "implementation_version": "adc-python-1",
+        "provider": "safe-provider", "model": "safe-model",
+    }
+    assert "model_version" not in interface["very_verbose"]["f"]
+    assert interface["very_verbose"]["y"]["data"]["requirements"][0]["name"] == "esphome"
+    raw = path.read_text(encoding="utf-8")
+    for forbidden in ("internal prompt", "secret-token", "unsafe --execute",
+                      "unsafe processor command"):
+        assert forbidden not in raw
 
 
 def test_invalid_contract_and_persistence_failure_are_explicit(tmp_path):

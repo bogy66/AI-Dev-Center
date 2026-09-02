@@ -12,6 +12,7 @@ let pollingTimer = null;
 let approvalActionRendered = false;
 let currentHelpSlide = 0;
 let helpPitchDeckInitialized = false;
+let currentTraceEvents = [];
 const totalHelpSlides = 15;
 
 // ---------- API helpers ----------
@@ -204,15 +205,121 @@ function formatActivity(activity) {
     return subject && state ? `${subject} — ${state}…` : (subject || state);
 }
 
-function formatTraceLine(event) {
+const diagnosticDetailRank = {
+    NORMAL: 0, INFO: 1, VERBOSE: 2, VERY_VERBOSE: 3,
+};
+
+function readableDiagnosticKey(key) {
+    return String(key).replaceAll('_', ' ')
+        .replace(/^./, character => character.toUpperCase());
+}
+
+function selectedInterfaceProjection(interfaceData, selectedLevel) {
+    const key = selectedLevel === 'VERY_VERBOSE'
+        ? 'very_verbose' : selectedLevel.toLowerCase();
+    return interfaceData[key] || interfaceData.info || interfaceData.normal || {};
+}
+
+function appendInterfaceLines(lines, interfaceData, selectedLevel) {
+    const projection = selectedInterfaceProjection(interfaceData, selectedLevel);
+    if (selectedLevel === 'NORMAL') return;
+    const appendEndpoint = (label, endpoint) => {
+        const value = endpoint || {};
+        lines.push(`${label}: ${value.type || 'unavailable'} / ${value.interface || 'unavailable'}`);
+        if (diagnosticDetailRank[selectedLevel] >= diagnosticDetailRank.VERBOSE) {
+            lines.push(`Source: ${value.source || 'unavailable'}`);
+            lines.push(`Destination: ${value.destination || 'unavailable'}`);
+            lines.push('Data:');
+            lines.push(JSON.stringify(value.data ?? {available: false}, null, 2));
+        }
+    };
+    lines.push('x — Input');
+    appendEndpoint('Input', projection.x);
+    lines.push('f — Processor');
+    const processor = projection.f || {};
+    lines.push(`Entity: ${processor.entity || 'unavailable'}`);
+    if (processor.entity_version !== undefined) lines.push(`Version: ${processor.entity_version}`);
+    if (processor.implementation_version) lines.push(`Implementation: ${processor.implementation_version}`);
+    if (processor.provider) lines.push(`Provider: ${processor.provider}`);
+    if (processor.model) lines.push(`Model: ${processor.model}`);
+    if (processor.model_version) lines.push(`Model version: ${processor.model_version}`);
+    lines.push('y — Output');
+    appendEndpoint('Output', projection.y);
+}
+
+function formatInterfaceOutput(event, selectedLevel) {
+    const meta = event.metadata || {};
+    const projection = selectedInterfaceProjection(meta.interface_data || {}, selectedLevel);
+    const identity = projection.f || (meta.interface_data || {}).info?.f || {};
+    const version = identity.entity_version !== undefined ? ` v${identity.entity_version}` : '';
+    const lines = [
+        `[${formatTraceTime(event.timestamp)}] ${readableDiagnosticKey(meta.interface_stage || event.action)}${version}`,
+        event.result_summary || projection.summary || 'Interface transformation recorded.',
+    ];
+    appendInterfaceLines(lines, meta.interface_data || {}, selectedLevel);
+    return lines.join('\n');
+}
+
+function formatCouncilOutput(event, selectedLevel) {
+    const meta = event.metadata || {};
+    const projections = meta.council_output || {};
+    const projectionKey = selectedLevel === 'VERY_VERBOSE'
+        ? 'very_verbose' : selectedLevel.toLowerCase();
+    const output = selectedLevel === 'NORMAL'
+        ? {} : (projections[projectionKey] || projections.info || {});
+    const phaseNames = {
+        phase1: 'Phase 1 — Proposals',
+        phase2: 'Phase 2 — Reviews',
+        phase3: 'Phase 3 — Chairman',
+    };
+    const identity = selectedInterfaceProjection(meta.interface_data || {}, selectedLevel).f
+        || (meta.interface_data || {}).info?.f || {};
+    const version = identity.entity_version !== undefined ? ` v${identity.entity_version}` : '';
+    const lines = [
+        `[${formatTraceTime(event.timestamp)}] ${phaseNames[meta.council_phase] || 'Engineering Council'}`,
+        `${meta.actor || 'Council'}${version}${meta.actor_role ? ` · ${readableDiagnosticKey(meta.actor_role)}` : ''}`,
+        event.result_summary || 'No usable structured result produced.',
+    ];
+    appendInterfaceLines(lines, meta.interface_data || {}, selectedLevel);
+    if (diagnosticDetailRank[selectedLevel] >= diagnosticDetailRank.VERBOSE) {
+        lines.push(`Provider: ${meta.provider || 'unavailable'}`);
+        lines.push(`Model: ${meta.model || 'unavailable'}`);
+        lines.push(`Phase: ${meta.council_phase || 'unavailable'}`);
+        lines.push(`Duration: ${Number(meta.duration_ms || 0).toFixed(1)} ms`);
+    }
+    Object.entries(output).forEach(([key, value]) => {
+        if (key === 'summary') return;
+        const rendered = typeof value === 'string' || typeof value === 'number'
+            || typeof value === 'boolean' || value === null
+            ? String(value ?? 'none') : JSON.stringify(value, null, 2);
+        lines.push(`${readableDiagnosticKey(key)}: ${rendered}`);
+    });
+    return lines.join('\n');
+}
+
+function formatTraceLine(event, selectedLevel = 'NORMAL') {
     const meta = event.metadata || {};
     const actor = String(meta.actor || meta.role || '').trim();
     const runtimeState = String(meta.runtime_state || '').trim();
     const timestamp = formatTraceTime(event.timestamp);
 
+    if (meta.council_output) {
+        return formatCouncilOutput(event, selectedLevel);
+    }
+
+    if (meta.interface_data) {
+        return formatInterfaceOutput(event, selectedLevel);
+    }
+
     if (runtimeState) {
         const activityActor = actor || String(event.component || 'Workflow');
-        return `[${timestamp}] ${activityActor} — ${runtimeState}`;
+        const identity = meta.execution_identity || {};
+        const version = identity.entity_version !== undefined ? ` v${identity.entity_version}` : '';
+        const failure = runtimeState === 'failed'
+            && diagnosticDetailRank[selectedLevel] >= diagnosticDetailRank.INFO
+            && meta.failure_category
+            ? ` (${meta.failure_category})` : '';
+        return `[${timestamp}] ${activityActor}${version} — ${runtimeState}${failure}`;
     }
 
     const rolePart = actor ? ` actor=${actor}` : '';
@@ -221,34 +328,21 @@ function formatTraceLine(event) {
 }
 
 function appendTrace(traceEvents) {
+    currentTraceEvents = traceEvents;
     const container = document.getElementById('trace-list-container');
     const filter = document.getElementById('trace-filter').value;
     const selectedLevel = document.getElementById('trace-level-select').value;
 
-    const levelRank = {
-        'DEBUG': 0,
-        'INFO': 1,
-        'WARNING': 2,
-        'ERROR': 3,
-    };
-
-    const detailThreshold = {
-        'INFO': 1,
-        'DEBUG': 0,
-        'VERBOSE': -1,
-        'VERY_VERBOSE': -2,
-    };
-
-    const threshold = detailThreshold[selectedLevel] !== undefined ? detailThreshold[selectedLevel] : 1;
-
     const filtered = traceEvents.filter(e => {
         const componentOk = filter === 'all' || e.component === filter;
         if (!componentOk) return false;
-        const eventRank = levelRank[e.level] !== undefined ? levelRank[e.level] : 99;
-        return eventRank >= threshold;
+        const requiredLevel = (e.metadata || {}).diagnostic_level;
+        if (!requiredLevel) return true;
+        return diagnosticDetailRank[selectedLevel] >= diagnosticDetailRank[requiredLevel];
     });
 
-    container.textContent = filtered.map(formatTraceLine).join('\n');
+    container.textContent = filtered
+        .map(event => formatTraceLine(event, selectedLevel)).join('\n\n');
 }
 
 function startPolling(sessionId) {
@@ -974,7 +1068,7 @@ const helpSlides = [
     {title: '10. Tools when needed', html: () => `<p>Missing toolchains are reported, not self-installed. Approved structured setup and capability registration can extend future technologies without turning a fixed list into the product architecture.</p>`},
     {title: '11. One project, multiple frontends', html: () => `<p>Web, Signal, API, CLI and MCP connect to the same central workflow. Signal is an adapter contract today; a concrete deployed provider remains future integration work. Active Signal chat and project bindings are strict 1:1.</p>`},
     {title: '12. Project Definitions / Memory', html: () => `<p>Observed project reality stays separate from explicit durable decisions and technical configuration. Conflicts are visible instead of silently merged, and raw chat history is not Project Memory.</p>`},
-    {title: '13. Transparency while work happens', html: () => `<p>The central Diagnostic Trace drives the live stage and Council-role activity shown in Web, including safe preparing, thinking, waiting, reviewing and failure states. Trace rows use compact local HH:MM:SS times while full ISO timestamps remain in API and persistence. Prompts, private reasoning, secrets and sensitive configuration stay out of the browser.</p>`},
+    {title: '13. Transparency while work happens', html: () => `<p>The central Diagnostic Trace records typed input x, the versioned processor identity f, and typed output y across planning handoffs. Type, interface, source and destination show the actual user intent entering through Web and reaching Requirement Discovery alongside separate observed Project Intelligence. This makes workflow execution more reproducible while keeping ADC entity versions distinct from configured AI provider and model identity. NORMAL stays operationally compact; INFO shows concise x/f/y; VERBOSE and VERY VERBOSE progressively reveal allowlisted structured data and safe metadata. Partial successful proposals and reviews remain inspectable after an incomplete Council. Trace rows use local HH:MM:SS, while provider prompts, raw responses, private reasoning, secrets and executable command payloads remain excluded at every level.</p>`},
     {title: '14. From development to delivery', html: () => `<p>Controlled development leads to real verification and review, then separate final approval, controlled Git and Publish Approval. Verification never installs its own tools.</p>`},
     {title: '15. Why AI Dev Center?', html: () => `<p>It combines project continuity, extensible capabilities, human control and transparent progress. Docker is the intended production direction, while unfinished integrations remain clearly identified.</p>`},
 ];
@@ -1018,7 +1112,9 @@ document.getElementById('copy-session-btn').addEventListener('click', () => {
 });
 document.getElementById('open-path-btn').addEventListener('click', handleOpenProjectPath);
 document.getElementById('trace-filter').addEventListener('change', () => {});
-document.getElementById('trace-level-select').addEventListener('change', () => {});
+document.getElementById('trace-level-select').addEventListener(
+    'change', () => appendTrace(currentTraceEvents)
+);
 document.getElementById('clear-trace-btn').addEventListener('click', () => {
     document.getElementById('trace-list-container').innerHTML = '';
 });

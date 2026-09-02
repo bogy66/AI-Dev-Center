@@ -79,10 +79,10 @@
                         <option value="Workflow">Workflow</option>
                     </select>
                     <select id="trace-level-select">
-                        <option value="INFO" selected>INFO</option>
-                        <option value="DEBUG">DEBUG</option>
+                        <option value="NORMAL" selected>NORMAL</option>
+                        <option value="INFO">INFO</option>
                         <option value="VERBOSE">VERBOSE</option>
-                        <option value="VERY_VERBOSE">VERY_VERBOSE</option>
+                        <option value="VERY_VERBOSE">VERY VERBOSE</option>
                     </select>
                     <button id="clear-trace-btn">Clear</button>
                     <button id="copy-all-btn">Copy</button>
@@ -121,7 +121,7 @@
                         <li>Review each approval request before setup, capability use, final acceptance or publishing.</li>
                     </ol>
                     <p><strong>Projects</strong> is your local list of project roots. The Web GUI currently opens existing projects; safe Web creation of a new greenfield directory is a product goal, not an implemented button.</p>
-                    <p><strong>Diagnostic Trace</strong> is the live progress and problem view. It shows which stage the central workflow reached without revealing API keys, passwords or secret contents.</p>
+                    <p><strong>Diagnostic Trace</strong> is the live progress and problem view. At central planning boundaries it presents what kind of input a stage received, which interface and source supplied it, which processor/version handled it, what kind of output it produced, and where that output went. NORMAL stays compact; INFO adds concise type/interface and processor identity; VERBOSE adds structured handoffs, engineering fields and safe provider/model context; VERY VERBOSE shows the fullest allowlisted x→f→y projection. Web, Signal, API, CLI and MCP are representable interface concepts, not claims that every complete adapter workflow exists today. No level reveals prompts, raw responses, credentials, private model reasoning or executable command payloads.</p>
                     <p><strong>Human Approval</strong> means the AI can propose a controlled next step, but approval remains a separate decision. Approving one boundary never approves setup, capabilities, Git, publish or hardware actions at another boundary.</p>
                     <h3>What the AI does</h3>
                     <p>It first observes the existing project without executing it, preserves its architecture and conventions, clarifies requirements, asks an Engineering Council to compare approaches, and prepares structured work for development and verification. Missing tools are reported rather than silently installed.</p>
@@ -150,7 +150,7 @@
                     <p>Preexisting or mixed changes, foreign staged content, a final hash mismatch, missing remotes, detached HEAD, unrelated later commits and non-fast-forward pushes are fail-safe blockers. There is no force push or automatic merge/rebase repair. Publish means Git remote push here—not release automation, deployment, hardware flashing or OTA.</p>
 
                     <h3>Central Diagnostic Trace</h3>
-                    <p>Each central run has a persistent, ordered diagnostic timeline showing reached phases, structured results, separate approval boundaries, blockers and Git/publish outcomes such as pending, failed, rework_required, approved, committed and published.</p>
+                    <p>Each central run has a persistent, ordered diagnostic timeline showing reached phases, actual structured inputs, versioned processor identities and outputs, separate approval boundaries, blockers and Git/publish outcomes such as pending, failed, rework_required, approved, committed and published. ADC entity versions remain distinct from configured provider/model identity. The central request carries the actual Web task into Requirement Discovery alongside—but separate from—observed Project Intelligence, and the trace shows both where the task entered and which internal stage received it.</p>
                     <p>Workflow State remains authoritative for decisions, while logging remains intended for developer logs. The Diagnostic Trace observes both but cannot approve setup, Git or publish. Its details are allowlisted and redacted: secrets, raw environments, request headers and full file contents are not stored.</p>
 
                     <h3>Safe execution and recovery</h3>

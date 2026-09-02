@@ -21,6 +21,7 @@ from app.toolchain_materializer import ToolchainMaterializer
 from app.development_testing_stage import DevelopmentTestingResult, DevelopmentTestingStage
 from app.controlled_rework_stage import ControlledReworkResult, ControlledReworkStage
 from app.diagnostic_trace import DiagnosticTraceError
+from app.execution_identity import execution_identity
 
 
 class WorkflowExecutionError(Exception):
@@ -116,9 +117,82 @@ class DevelopmentWorkflow:
             except DiagnosticTraceError:
                 return None
 
+    @staticmethod
+    def _requirement_view(requirement, *, fullest=False):
+        view = {
+            "id": requirement.id, "name": requirement.name,
+            "type": requirement.type, "purpose": requirement.purpose,
+            "required": requirement.required,
+            "status": getattr(requirement.status, "value", requirement.status),
+        }
+        if fullest:
+            view.update({
+                "confidence": requirement.confidence,
+                "required_version": requirement.required_version,
+                "evidence_count": len(requirement.evidence),
+            })
+        return view
+
+    def _discovery_identity(self):
+        provider = getattr(self._discovery, "_provider", None)
+        return execution_identity(
+            "requirement_discovery",
+            provider=type(provider).__name__ if provider is not None else None,
+            model=getattr(self._discovery, "_ai_model", None),
+        )
+
+    def _interface(
+        self, run_id, phase, summary, *, info_x, info_y,
+        verbose_x=None, verbose_y=None, very_verbose_x=None,
+        very_verbose_y=None, upstream_stage=None, downstream_stage=None,
+        status="completed", identity=None, x_type="structured_input",
+        y_type="structured_output", interface="internal",
+    ):
+        def typed(data, data_type, source, destination):
+            return {
+                "type": data_type, "interface": interface,
+                "source": source or "unavailable",
+                "destination": destination or "unavailable", "data": data,
+            }
+        processor = identity or execution_identity(phase)
+        source = upstream_stage or "unavailable"
+        destination = downstream_stage or "unavailable"
+        self._trace(
+            run_id, phase, "completed" if status == "completed" else "failed",
+            status, summary,
+            details={
+                "diagnostic_level": "NORMAL", "result_kind": "interface",
+                "interface_stage": phase, "upstream_stage": upstream_stage or "",
+                "downstream_stage": downstream_stage or "",
+                "interface_data": {
+                    "normal": {"summary": summary, "f": processor},
+                    "info": {"x": typed(info_x, x_type, source, phase),
+                             "f": processor,
+                             "y": typed(info_y, y_type, phase, destination)},
+                    "verbose": {
+                        "x": typed(verbose_x if verbose_x is not None else info_x,
+                                   x_type, source, phase),
+                        "f": processor,
+                        "y": typed(verbose_y if verbose_y is not None else info_y,
+                                   y_type, phase, destination),
+                    },
+                    "very_verbose": {
+                        "x": typed(very_verbose_x if very_verbose_x is not None else (
+                            verbose_x if verbose_x is not None else info_x
+                        ), x_type, source, phase),
+                        "f": processor,
+                        "y": typed(very_verbose_y if very_verbose_y is not None else (
+                            verbose_y if verbose_y is not None else info_y
+                        ), y_type, phase, destination),
+                    },
+                },
+            },
+        )
+
     def run(
         self, project_info: object, project_id: str, run_id: str | None = None,
         project_context: object | None = None,
+        user_request: str | None = None, source_interface: str | None = None,
     ) -> WorkflowResult:
         """Run discovery through Council-based planning only.
 
@@ -127,6 +201,12 @@ class DevelopmentWorkflow:
 
         run_id = run_id or project_id
         self._trace(run_id, "requirement_discovery", "started", "started", "Requirement discovery started")
+        discovery_input = self._project_intelligence_from(project_info) or {}
+        discovery_input = {
+            "project": discovery_input,
+            "user_request_present": bool(user_request),
+            "user_request": user_request or "not available at this boundary",
+        }
         set_discovery_activity = getattr(self._discovery, "set_activity_callback", None)
         if callable(set_discovery_activity):
             def record_discovery_activity(**activity):
@@ -141,11 +221,43 @@ class DevelopmentWorkflow:
                 )
             set_discovery_activity(record_discovery_activity)
         try:
-            discovery_result = self._discovery.discover(project_info, project_id)
+            if user_request:
+                discovery_result = self._discovery.discover(
+                    project_info, project_id, user_request=user_request,
+                )
+            else:
+                discovery_result = self._discovery.discover(project_info, project_id)
         except Exception as error:
             self._trace(run_id, "requirement_discovery", "failed", "failed", f"Requirement discovery failed: {type(error).__name__}")
+            self._interface(
+                run_id, "requirement_discovery", "Requirement Discovery produced no structured output",
+                info_x={"user_request_present": bool(user_request)},
+                info_y={"available": False, "error_category": type(error).__name__},
+                verbose_x=discovery_input,
+                verbose_y={"available": False, "error_category": type(error).__name__},
+                upstream_stage="project_inspection", downstream_stage="requirement_validation",
+                status="failed",
+                identity=self._discovery_identity(),
+                x_type="project_intelligence", y_type="requirement_set",
+            )
             raise
         self._trace(run_id, "requirement_discovery", "completed", "completed", "Requirement discovery completed", details={"requirement_count": len(discovery_result.requirements), "warning_count": len(discovery_result.warnings)})
+        discovery_output = [
+            self._requirement_view(requirement)
+            for requirement in discovery_result.requirements
+        ]
+        self._interface(
+            run_id, "requirement_discovery", "Requirement Discovery transformed project facts into requirements",
+            info_x={"user_request_present": bool(user_request), "project_kind": discovery_input["project"].get("project_kind", "")},
+            info_y={"requirement_count": len(discovery_output), "warning_count": len(discovery_result.warnings)},
+            verbose_x=discovery_input,
+            verbose_y={"requirements": discovery_output, "warnings": list(discovery_result.warnings)},
+            very_verbose_y={"requirements": [self._requirement_view(item, fullest=True) for item in discovery_result.requirements], "warnings": list(discovery_result.warnings)},
+            upstream_stage="project_inspection", downstream_stage="requirement_validation",
+            status="failed" if discovery_result.fallback_used else "completed",
+            identity=self._discovery_identity(),
+            x_type="project_intelligence", y_type="requirement_set",
+        )
 
         if discovery_result.fallback_used:
             self._trace(run_id, "requirement_discovery", "blocked", "blocked", "Requirement discovery fallback blocked planning")
@@ -158,16 +270,68 @@ class DevelopmentWorkflow:
             validation_result = self._validator.validate(discovery_result.requirements)
         except Exception as error:
             self._trace(run_id, "requirement_validation", "failed", "failed", f"Requirement validation failed: {type(error).__name__}")
+            self._interface(
+                run_id, "requirement_validation", "Requirement Validation produced no structured output",
+                info_x={"requirement_count": len(discovery_output)},
+                info_y={"available": False, "error_category": type(error).__name__},
+                verbose_x={"requirements": discovery_output},
+                verbose_y={"available": False, "error_category": type(error).__name__},
+                upstream_stage="requirement_discovery", downstream_stage="preflight",
+                status="failed",
+                identity=execution_identity("requirement_validation"),
+                x_type="requirement_set", y_type="validation_result",
+            )
             raise
         self._trace(run_id, "requirement_validation", "completed", "completed", "Requirement validation completed", details={"requirement_count": len(validation_result.normalized_requirements), "warning_count": len(validation_result.warnings), "error_count": len(validation_result.errors)})
+        self._interface(
+            run_id, "requirement_validation", "Requirement Validation transformed discovered requirements",
+            info_x={"requirement_count": len(discovery_result.requirements)},
+            info_y={"valid": validation_result.valid, "requirement_count": len(validation_result.normalized_requirements), "warning_count": len(validation_result.warnings), "error_count": len(validation_result.errors)},
+            verbose_x={"requirements": discovery_output},
+            verbose_y={"valid": validation_result.valid, "normalized_requirements": [self._requirement_view(item) for item in validation_result.normalized_requirements], "warning_count": len(validation_result.warnings), "error_count": len(validation_result.errors)},
+            very_verbose_x={"requirements": [self._requirement_view(item, fullest=True) for item in discovery_result.requirements]},
+            very_verbose_y={"valid": validation_result.valid, "normalized_requirements": [self._requirement_view(item, fullest=True) for item in validation_result.normalized_requirements], "warning_count": len(validation_result.warnings), "error_count": len(validation_result.errors)},
+            upstream_stage="requirement_discovery", downstream_stage="preflight",
+            identity=execution_identity("requirement_validation"),
+            x_type="requirement_set", y_type="validation_result",
+        )
 
         self._trace(run_id, "preflight", "started", "started", "Requirement preflight started")
         try:
             preflight_result = self._preflight.check(validation_result.normalized_requirements, project_id)
         except Exception as error:
             self._trace(run_id, "preflight", "failed", "failed", f"Preflight failed: {type(error).__name__}")
+            normalized = [
+                self._requirement_view(item)
+                for item in validation_result.normalized_requirements
+            ]
+            self._interface(
+                run_id, "preflight", "Preflight produced no structured output",
+                info_x={"requirement_count": len(normalized)},
+                info_y={"available": False, "error_category": type(error).__name__},
+                verbose_x={"requirements": normalized},
+                verbose_y={"available": False, "error_category": type(error).__name__},
+                upstream_stage="requirement_validation", downstream_stage="engineering_council",
+                status="failed",
+                identity=execution_identity("preflight"),
+                x_type="requirement_set", y_type="preflight_result",
+            )
             raise
         self._trace(run_id, "preflight", "completed", "completed", "Requirement preflight completed", details={"result_count": len(preflight_result.results), "missing_count": len(preflight_result.missing_requirements), "warning_count": len(preflight_result.warnings)})
+        preflight_rows = [{
+            "requirement_id": item.requirement_id, "present": item.present,
+            "satisfied": item.satisfied, "detected_version": item.detected_version,
+        } for item in preflight_result.results]
+        self._interface(
+            run_id, "preflight", "Preflight checked validated requirements",
+            info_x={"requirement_count": len(validation_result.normalized_requirements)},
+            info_y={"overall_ready": preflight_result.overall_ready, "result_count": len(preflight_rows), "missing_count": len(preflight_result.missing_requirements)},
+            verbose_x={"requirements": [self._requirement_view(item) for item in validation_result.normalized_requirements]},
+            verbose_y={"overall_ready": preflight_result.overall_ready, "preflight_results": preflight_rows, "missing_requirements": [self._requirement_view(item) for item in preflight_result.missing_requirements]},
+            upstream_stage="requirement_validation", downstream_stage="engineering_council",
+            identity=execution_identity("preflight"),
+            x_type="requirement_set", y_type="preflight_result",
+        )
 
         if self._council is None:
             raise WorkflowExecutionError(
@@ -204,13 +368,69 @@ class DevelopmentWorkflow:
                     f"{actor} {runtime_state}", details=activity,
                 )
             set_activity_callback(record_council_activity)
+        set_result_callback = getattr(self._council, "set_result_callback", None)
+        if callable(set_result_callback):
+            def record_council_result(**result):
+                summary = result.pop("summary", "Council structured result")
+                self._trace(
+                    run_id, "engineering_council", "completed", "completed",
+                    summary,
+                    details={"diagnostic_level": "NORMAL", **result},
+                )
+            set_result_callback(record_council_result)
         try:
             council_result = self._council.evaluate(council_input)
         except Exception as error:
             self._trace(run_id, "engineering_council", "failed", "failed", f"Engineering Council failed: {type(error).__name__}")
+            council_failure_x = {
+                "project_id": council_input.project_id,
+                "stack": council_input.detected_stack,
+                "requirements": [
+                    self._requirement_view(item) for item in council_input.requirements
+                ],
+                "project_files": list(council_input.project_files),
+                "validation_warnings": list(council_input.validation_warnings),
+            }
+            self._interface(
+                run_id, "engineering_council", "Engineering Council produced no CouncilResult",
+                info_x={"requirement_count": len(council_input.requirements)},
+                info_y={"available": False, "error_category": type(error).__name__},
+                verbose_x=council_failure_x,
+                verbose_y={"available": False, "error_category": type(error).__name__},
+                upstream_stage="preflight", downstream_stage="toolchain_materialization",
+                status="failed",
+                identity=execution_identity("engineering_council"),
+                x_type="council_input", y_type="council_result",
+            )
             raise
         council_status = "completed" if council_result.council_complete else "incomplete"
         self._trace(run_id, "engineering_council", "completed", council_status, "Engineering Council completed", details={"variant_count": len(council_result.variants), "recommendation": council_result.recommendation or "", "council_complete": council_result.council_complete, "error_count": len(council_result.agent_errors) + bool(council_result.chairman_error)}, related_result_id=council_result.id)
+        council_x = {
+            "project_id": council_input.project_id,
+            "stack": council_input.detected_stack,
+            "requirements": [self._requirement_view(item) for item in council_input.requirements],
+            "project_files": list(council_input.project_files),
+            "validation_warnings": list(council_input.validation_warnings),
+        }
+        council_y = {
+            "result_id": council_result.id,
+            "council_complete": council_result.council_complete,
+            "recommendation": council_result.recommendation,
+            "variant_ids": [item.id for item in council_result.variants],
+            "error_count": len(council_result.agent_errors) + bool(council_result.chairman_error),
+        }
+        self._interface(
+            run_id, "engineering_council", "Engineering Council transformed CouncilInput into CouncilResult",
+            info_x={"requirement_count": len(council_input.requirements), "stack": council_input.detected_stack or ""},
+            info_y={"proposal_count": len(council_result.variants), "council_complete": council_result.council_complete, "recommendation": council_result.recommendation},
+            verbose_x=council_x, verbose_y=council_y,
+            very_verbose_x={**council_x, "requirements": [self._requirement_view(item, fullest=True) for item in council_input.requirements]},
+            very_verbose_y={**council_y, "total_llm_calls": council_result.total_llm_calls},
+            upstream_stage="preflight", downstream_stage="toolchain_materialization",
+            status="completed" if council_result.council_complete else "failed",
+            identity=execution_identity("engineering_council"),
+            x_type="council_input", y_type="council_result",
+        )
 
         if not council_result.council_complete:
             self._trace(
@@ -234,8 +454,28 @@ class DevelopmentWorkflow:
             setup_plan = self._materializer.materialize(council_result, project_id)
         except Exception as error:
             self._trace(run_id, "toolchain_materialization", "failed", "failed", f"Toolchain materialization failed: {type(error).__name__}")
+            self._interface(
+                run_id, "toolchain_materialization", "Toolchain Materializer produced no SetupPlan",
+                info_x={"result_id": council_result.id},
+                info_y={"available": False, "error_category": type(error).__name__},
+                upstream_stage="engineering_council", downstream_stage="setup_plan",
+                status="failed", identity=execution_identity("toolchain_materializer"),
+                x_type="council_result", y_type="setup_plan",
+            )
             raise
         self._trace(run_id, "toolchain_materialization", "completed", "completed", "Toolchain materialization completed", details={"plan_id": setup_plan.id, "step_count": len(setup_plan.steps)}, related_result_id=setup_plan.id)
+        self._interface(
+            run_id, "toolchain_materialization", "Toolchain Materializer transformed CouncilResult into SetupPlan",
+            info_x={"result_id": council_result.id},
+            info_y={"plan_id": setup_plan.id, "step_count": len(setup_plan.steps)},
+            verbose_x={"result_id": council_result.id,
+                       "recommendation": council_result.recommendation,
+                       "council_complete": council_result.council_complete},
+            verbose_y={"plan_id": setup_plan.id, "step_count": len(setup_plan.steps)},
+            upstream_stage="engineering_council", downstream_stage="setup_plan",
+            identity=execution_identity("toolchain_materializer"),
+            x_type="council_result", y_type="setup_plan",
+        )
         self._trace(run_id, "setup_plan", "completed", "completed", "Setup plan created", details={"plan_id": setup_plan.id, "step_count": len(setup_plan.steps)}, related_result_id=setup_plan.id)
         self._trace(run_id, "setup_approval", "pending", "pending", "Setup approval is pending", details={"plan_id": setup_plan.id}, related_result_id=f"setup-approval:{setup_plan.id}:pending")
         self._trace(run_id, "workflow_end", "completed", "pending", "Workflow stopped at pending setup approval", details={"end_state": "setup_approval_pending"}, related_result_id=f"workflow-end:{setup_plan.id}:pending")

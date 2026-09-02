@@ -54,6 +54,7 @@ from app.project_context import (
     ProjectContext, ProjectDefinition, ProjectDefinitionStore,
     compose_project_context,
 )
+from app.execution_identity import execution_identity
 
 
 class ProjectSetupApplicationService:
@@ -103,7 +104,8 @@ class ProjectSetupApplicationService:
         return self._diagnostic_trace.get_trace(run_id)
 
     def build_request(
-        self, project_id: str, project_path: str | Path
+        self, project_id: str, project_path: str | Path, *,
+        user_request: str | None = None, source_interface: str | None = None,
     ) -> CommonRequest:
         """Inspect the project and create the sole supported input intent."""
         _, intelligence = self._project_inspector.inspect_managed(
@@ -116,6 +118,8 @@ class ProjectSetupApplicationService:
             project_id=project_id,
             project_info=project_info,
             intent=RequestIntent.PLAN_PROJECT_SETUP,
+            user_request=user_request.strip() if isinstance(user_request, str) and user_request.strip() else None,
+            source_interface=source_interface.strip() if isinstance(source_interface, str) and source_interface.strip() else None,
         )
 
     def build_intelligence(
@@ -453,6 +457,8 @@ class ProjectSetupApplicationService:
 
     def plan_project_setup(
         self, project_id: str, project_path: str | Path, run_id: str | None = None,
+        *, entry_interface: str | None = None,
+        entry_data: dict | None = None,
     ) -> WorkflowResult:
         """Plan setup through the canonical workflow; never approve or execute."""
         if not isinstance(project_id, str) or not project_id.strip():
@@ -472,7 +478,11 @@ class ProjectSetupApplicationService:
             )
 
         try:
-            request = self.build_request(project_id, project_path)
+            task = entry_data.get("task_description") if isinstance(entry_data, dict) else None
+            request = self.build_request(
+                project_id, project_path, user_request=task,
+                source_interface=entry_interface,
+            )
         except Exception as error:
             self._trace(trace_run_id, "project_inspection", "failed", "failed", f"Project inspection failed: {type(error).__name__}")
             self._trace(trace_run_id, "workflow_end", "failed", "failed", "Workflow ended after project inspection failure", details={"end_state": "failed"})
@@ -489,6 +499,97 @@ class ProjectSetupApplicationService:
             "warning_count": len(intelligence.warnings),
             "file_count": intelligence.total_files_traversed,
         })
+        request_x = {
+            "project_id": project_id,
+            "project_root": str(Path(project_path).expanduser().resolve()),
+            "intent": request.intent.value,
+            "user_request_present": bool(request.user_request),
+            "user_request": request.user_request or "not available at this boundary",
+        }
+        entry_x = dict(entry_data) if isinstance(entry_data, dict) else request_x
+        entry_kind = request.source_interface or "internal"
+
+        def typed(data, data_type, interface, source, destination):
+            return {
+                "type": data_type, "interface": interface,
+                "source": source, "destination": destination, "data": data,
+            }
+        intelligence_y = {
+            "project_id": project_id,
+            "project_root": intelligence.project_root,
+            "project_kind": intelligence.project_kind,
+            "area_count": intelligence.area_count,
+            "file_count": intelligence.total_files_traversed,
+            "languages": list(intelligence.language_names),
+            "frameworks": list(intelligence.framework_names),
+            "package_systems": list(intelligence.package_system_names),
+            "build_systems": list(intelligence.build_system_names),
+            "test_systems": list(intelligence.test_system_names),
+            "warnings": list(intelligence.warnings),
+        }
+        self._trace(
+            trace_run_id, "common_request", "completed", "completed",
+            "Planning request was normalized for the central workflow",
+            details={
+                "diagnostic_level": "NORMAL", "result_kind": "interface",
+                "interface_stage": "common_request",
+                "downstream_stage": "project_inspection",
+                "interface_data": {
+                    "normal": {"summary": "Planning request entered the central workflow.",
+                               "f": execution_identity("common_request")},
+                    "info": {"x": typed({"project_id": project_id}, "user_request",
+                                         entry_kind, entry_kind, "common_request"),
+                             "f": execution_identity("common_request"),
+                             "y": typed({"intent": request.intent.value,
+                                         "user_request_present": bool(request.user_request)}, "common_request",
+                                        "internal", "common_request", "project_inspection")},
+                    "verbose": {"x": typed(entry_x, "user_request", entry_kind,
+                                            entry_kind, "common_request"),
+                                "f": execution_identity("common_request"),
+                                "y": typed({"project_id": request.project_id,
+                                            "intent": request.intent.value,
+                                            "user_request_present": bool(request.user_request),
+                                            "user_request": request.user_request or "not available at this boundary"}, "common_request",
+                                           "internal", "common_request", "project_inspection")},
+                    "very_verbose": {"x": typed(entry_x, "user_request", entry_kind,
+                                                 entry_kind, "common_request"),
+                                     "f": execution_identity("common_request"),
+                                     "y": typed({"project_id": request.project_id,
+                                                 "intent": request.intent.value,
+                                                 "user_request_present": bool(request.user_request),
+                                                 "user_request": request.user_request or "not available at this boundary"}, "common_request",
+                                                "internal", "common_request", "project_inspection")},
+                },
+            },
+        )
+        self._trace(
+            trace_run_id, "project_inspection", "completed", "completed",
+            "Project Inspection transformed a project root into Project Intelligence",
+            details={
+                "diagnostic_level": "NORMAL", "result_kind": "interface",
+                "interface_stage": "project_inspection",
+                "upstream_stage": "common_request",
+                "downstream_stage": "requirement_discovery",
+                "interface_data": {
+                    "normal": {"summary": "Project root produced structured Project Intelligence.",
+                               "f": execution_identity("project_inspection")},
+                    "info": {"x": typed({"project_id": project_id}, "common_request",
+                                         "internal", "common_request", "project_inspection"),
+                             "f": execution_identity("project_inspection"),
+                             "y": typed({"project_kind": intelligence.project_kind,
+                                         "area_count": intelligence.area_count,
+                                         "file_count": intelligence.total_files_traversed},
+                                        "project_intelligence", "internal",
+                                        "project_inspection", "requirement_discovery")},
+                    "verbose": {"x": typed(request_x, "common_request", "internal", "common_request", "project_inspection"),
+                                "f": execution_identity("project_inspection"),
+                                "y": typed(intelligence_y, "project_intelligence", "internal", "project_inspection", "requirement_discovery")},
+                    "very_verbose": {"x": typed(request_x, "common_request", "internal", "common_request", "project_inspection"),
+                                     "f": execution_identity("project_inspection"),
+                                     "y": typed(intelligence_y, "project_intelligence", "internal", "project_inspection", "requirement_discovery")},
+                },
+            },
+        )
         if request.intent is not RequestIntent.PLAN_PROJECT_SETUP:
             raise ValueError(f"Unsupported request intent: {request.intent}")
 
@@ -497,18 +598,26 @@ class ProjectSetupApplicationService:
                 if run_id is None:
                     return self._development_workflow.run(
                         request.project_info, request.project_id,
+                        user_request=request.user_request,
+                        source_interface=request.source_interface,
                     )
                 return self._development_workflow.run(
                     request.project_info, request.project_id, run_id,
+                    user_request=request.user_request,
+                    source_interface=request.source_interface,
                 )
             if run_id is None:
                 return self._development_workflow.run(
                     request.project_info, request.project_id,
                     project_context=project_context,
+                    user_request=request.user_request,
+                    source_interface=request.source_interface,
                 )
             return self._development_workflow.run(
                 request.project_info, request.project_id, run_id,
                 project_context=project_context,
+                user_request=request.user_request,
+                source_interface=request.source_interface,
             )
         except WorkflowBlockedError:
             # The central workflow already persisted the authoritative blocked
