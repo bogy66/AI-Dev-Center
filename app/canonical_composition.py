@@ -25,6 +25,7 @@ from app.verification import build_default_registry
 from app.execution import DEFAULT_CAPABILITY_REGISTRY
 from app.missing_toolchain_setup import StructuredInstallerRegistration, StructuredInstallerRegistry
 from app.workflow_plan_store import WorkflowPlanStore
+from app.project_context import ProjectDefinitionStore
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,8 @@ def build_canonical_components(config_path="config/ai-dev-center.yml"):
             capability_registry=DEFAULT_CAPABILITY_REGISTRY,
             structured_installers=installers,
             verification_registry=verification_registry,
+            project_definition_store=ProjectDefinitionStore(),
+            technical_config=config,
         ),
         WorkflowPlanStore(".workflow-plans"), SetupApproval, workflow,
     )

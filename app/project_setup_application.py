@@ -49,6 +49,10 @@ from app.missing_toolchain_setup import (
 )
 from app.setup_approval import SetupApproval
 from app.verification import TOOL_UNAVAILABLE
+from app.project_context import (
+    ProjectContext, ProjectDefinition, ProjectDefinitionStore,
+    compose_project_context,
+)
 
 
 class ProjectSetupApplicationService:
@@ -65,6 +69,8 @@ class ProjectSetupApplicationService:
         capability_registry: CapabilityRegistry | None = None,
         structured_installers: StructuredInstallerRegistry | None = None,
         verification_registry: object | None = None,
+        project_definition_store: ProjectDefinitionStore | None = None,
+        technical_config: object | None = None,
     ) -> None:
         self._development_workflow = development_workflow
         self._project_inspector = project_inspector or ProjectInspector()
@@ -74,6 +80,8 @@ class ProjectSetupApplicationService:
         self._capability_registry = capability_registry or DEFAULT_CAPABILITY_REGISTRY
         self._structured_installers = structured_installers or StructuredInstallerRegistry()
         self._verification_registry = verification_registry
+        self._project_definition_store = project_definition_store or ProjectDefinitionStore()
+        self._technical_config = technical_config
         trace_path = self._workflow_manager.storage.parent / ".diagnostic-traces" / "events.jsonl"
         self._diagnostic_trace = diagnostic_trace or DiagnosticTrace(DiagnosticTraceStore(trace_path))
         if hasattr(self._development_workflow, "set_diagnostic_trace"):
@@ -114,6 +122,36 @@ class ProjectSetupApplicationService:
     ) -> ProjectIntelligence:
         """Return the full typed project intelligence profile."""
         return self._project_inspector.build_intelligence(project_path)
+
+    def build_project_context(
+        self, project_id: str, project_path: str | Path,
+    ) -> ProjectContext:
+        """Compose observed, decided and configured sources without flattening."""
+        if self._technical_config is None:
+            raise ValueError("Technical config is required for Project Context")
+        intelligence = self._project_inspector.build_intelligence(project_path)
+        return compose_project_context(
+            project_id, intelligence,
+            self._project_definition_store.active(project_id),
+            self._technical_config,
+        )
+
+    def create_project_definition(
+        self, project_id: str, key: str, value, category: str,
+        scope: str, source: str,
+    ) -> ProjectDefinition:
+        """Controlled structured update; never grants workflow authority."""
+        return self._project_definition_store.create(
+            project_id, key, value, category, scope, source,
+        )
+
+    def supersede_project_definition(
+        self, definition_id: str, value, source: str,
+    ) -> ProjectDefinition:
+        return self._project_definition_store.supersede(definition_id, value, source)
+
+    def revoke_project_definition(self, definition_id: str) -> ProjectDefinition:
+        return self._project_definition_store.revoke(definition_id)
 
     def request_capability_registration(
         self, request: CapabilityRegistrationRequest,
@@ -424,6 +462,13 @@ class ProjectSetupApplicationService:
         self._trace(trace_run_id, "project_inspection", "started", "started", "Project inspection started", details={"project_id": project_id})
 
         intelligence = self._project_inspector.build_intelligence(project_path)
+        project_context = None
+        if self._technical_config is not None:
+            project_context = compose_project_context(
+                project_id, intelligence,
+                self._project_definition_store.active(project_id),
+                self._technical_config,
+            )
 
         try:
             request = self.build_request(project_id, project_path)
@@ -447,9 +492,23 @@ class ProjectSetupApplicationService:
             raise ValueError(f"Unsupported request intent: {request.intent}")
 
         try:
+            if project_context is None:
+                if run_id is None:
+                    return self._development_workflow.run(
+                        request.project_info, request.project_id,
+                    )
+                return self._development_workflow.run(
+                    request.project_info, request.project_id, run_id,
+                )
             if run_id is None:
-                return self._development_workflow.run(request.project_info, request.project_id)
-            return self._development_workflow.run(request.project_info, request.project_id, run_id)
+                return self._development_workflow.run(
+                    request.project_info, request.project_id,
+                    project_context=project_context,
+                )
+            return self._development_workflow.run(
+                request.project_info, request.project_id, run_id,
+                project_context=project_context,
+            )
         except Exception as error:
             self._trace(trace_run_id, "workflow_end", "failed", "failed", f"Planning workflow failed: {type(error).__name__}", details={"end_state": "failed"}, related_result_id=f"planning:{trace_run_id}:failed")
             raise

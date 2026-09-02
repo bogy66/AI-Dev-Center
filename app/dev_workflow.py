@@ -36,6 +36,7 @@ class WorkflowResult:
     preflight_result: PreflightResult
     council_result: CouncilResult
     setup_plan: SetupPlan
+    project_context: object | None = None
 
 
 @dataclass(frozen=True)
@@ -107,7 +108,10 @@ class DevelopmentWorkflow:
             except DiagnosticTraceError:
                 return None
 
-    def run(self, project_info: object, project_id: str, run_id: str | None = None) -> WorkflowResult:
+    def run(
+        self, project_info: object, project_id: str, run_id: str | None = None,
+        project_context: object | None = None,
+    ) -> WorkflowResult:
         """Run discovery through Council-based planning only.
 
         This method never approves, rejects or executes setup steps.
@@ -191,6 +195,7 @@ class DevelopmentWorkflow:
             preflight_result=preflight_result,
             council_result=council_result,
             setup_plan=setup_plan,
+            project_context=project_context,
         )
 
     @staticmethod
