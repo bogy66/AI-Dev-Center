@@ -65,42 +65,71 @@ class CapabilityRegistration:
 class CapabilityRegistry:
     """Explicit set of capabilities admitted by the approval/registration flow."""
     def __init__(self, registrations: tuple[CapabilityRegistration, ...] = ()):
-        self._registrations: dict[str, CapabilityRegistration] = {}
+        self._registrations: dict[tuple[str, str | None], CapabilityRegistration] = {}
         for registration in registrations:
             self.register_approved(registration)
 
+    @staticmethod
+    def _key(capability: str, project_scope: str | Path | None) -> tuple[str, str | None]:
+        scope = None if project_scope is None else str(Path(project_scope).resolve())
+        return capability, scope
+
     def register_approved(self, registration: CapabilityRegistration) -> None:
         """Consume a complete approval decision, without accepting command policy."""
-        if registration.capability in self._registrations:
-            raise ValueError(f"Capability already registered: {registration.capability}")
         if registration.status != ACTIVE:
             raise ValueError("Only active capability registrations may be registered")
         if registration.bootstrap_compatibility:
             raise ValueError("Bootstrap compatibility entries cannot use the approval API")
+        if registration.project_scope is None:
+            raise ValueError("Dynamic capability registration requires a project scope")
         provenance = registration.approval_provenance
         if provenance is None or not provenance.is_complete():
             raise ValueError("Complete approval provenance is required")
-        self._registrations[registration.capability] = registration
+        if Path(provenance.project_intelligence_ref).resolve() != Path(registration.project_scope):
+            raise ValueError("Project scope does not match Project Intelligence provenance")
+        key = self._key(registration.capability, registration.project_scope)
+        current = self._registrations.get(key)
+        if current == registration:
+            return
+        if current is not None:
+            raise ValueError(
+                f"Capability already registered for project scope: {registration.capability}"
+            )
+        self._registrations[key] = registration
 
     def _register_bootstrap(self, registration: CapabilityRegistration) -> None:
         """Internal compatibility path for the fixed runners shipped today."""
         if not registration.bootstrap_compatibility:
             raise ValueError("Bootstrap registration must be marked as compatibility")
-        if registration.capability in self._registrations:
+        key = self._key(registration.capability, None)
+        if key in self._registrations:
             raise ValueError(f"Capability already registered: {registration.capability}")
-        self._registrations[registration.capability] = registration
+        self._registrations[key] = registration
 
-    def get(self, capability: str) -> CapabilityRegistration | None:
-        return self._registrations.get(capability)
+    def get(
+        self, capability: str, project_root: str | Path | None = None,
+    ) -> CapabilityRegistration | None:
+        if project_root is not None:
+            scoped = self._registrations.get(self._key(capability, project_root))
+            if scoped is not None:
+                return scoped
+        bootstrap = self._registrations.get(self._key(capability, None))
+        if bootstrap is not None and bootstrap.bootstrap_compatibility:
+            return bootstrap
+        return None
 
-    def set_status(self, capability: str, status: str) -> None:
+    def set_status(
+        self, capability: str, status: str,
+        project_scope: str | Path | None = None,
+    ) -> None:
         """Suspend or revoke a registration without replacing its provenance."""
         if status not in (SUSPENDED, REVOKED):
             raise ValueError("An existing registration may only be suspended or revoked")
-        current = self._registrations.get(capability)
+        key = self._key(capability, project_scope)
+        current = self._registrations.get(key)
         if current is None:
             raise KeyError(capability)
-        self._registrations[capability] = CapabilityRegistration(
+        self._registrations[key] = CapabilityRegistration(
             capability=current.capability,
             executable_names=current.executable_names,
             allowed_operations=current.allowed_operations,
@@ -179,7 +208,7 @@ def validate_request(
     if not cwd.is_relative_to(root):
         return _error(INVALID_PLAN, f"cwd escapes project root: {cwd}")
 
-    registration = capability_registry.get(request.tool_name)
+    registration = capability_registry.get(request.tool_name, root)
     if registration is None:
         return _error(UNSUPPORTED, f"Capability not registered: {request.tool_name}")
     if registration.status != ACTIVE:

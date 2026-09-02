@@ -25,6 +25,17 @@ from app.canonical_execution import (
     PROCESS_OWNER_ID, ConcurrentExecutionError, ExecutionReentryError,
     RecoveryRequiredError, acquire_project_execution,
 )
+from app.capability_registration import (
+    CapabilityRegistrationError,
+    CapabilityRegistrationRequest,
+    CapabilityRegistrationResult,
+)
+from app.execution import (
+    ApprovalProvenance,
+    CapabilityRegistration,
+    CapabilityRegistry,
+    DEFAULT_CAPABILITY_REGISTRY,
+)
 
 
 class ProjectSetupApplicationService:
@@ -38,16 +49,19 @@ class ProjectSetupApplicationService:
         controlled_git_stage: ControlledGitStage | None = None,
         controlled_publish_stage: ControlledPublishStage | None = None,
         diagnostic_trace: DiagnosticTrace | None = None,
+        capability_registry: CapabilityRegistry | None = None,
     ) -> None:
         self._development_workflow = development_workflow
         self._project_inspector = project_inspector or ProjectInspector()
         self._workflow_manager = workflow_manager or WorkflowManager()
         self._controlled_git_stage = controlled_git_stage or ControlledGitStage()
         self._controlled_publish_stage = controlled_publish_stage or ControlledPublishStage()
+        self._capability_registry = capability_registry or DEFAULT_CAPABILITY_REGISTRY
         trace_path = self._workflow_manager.storage.parent / ".diagnostic-traces" / "events.jsonl"
         self._diagnostic_trace = diagnostic_trace or DiagnosticTrace(DiagnosticTraceStore(trace_path))
         if hasattr(self._development_workflow, "set_diagnostic_trace"):
             self._development_workflow.set_diagnostic_trace(self._diagnostic_trace)
+        self.recover_approved_capabilities()
 
     def _trace(self, run_id, phase, event_type, status, summary, **kwargs):
         try:
@@ -83,6 +97,175 @@ class ProjectSetupApplicationService:
     ) -> ProjectIntelligence:
         """Return the full typed project intelligence profile."""
         return self._project_inspector.build_intelligence(project_path)
+
+    def request_capability_registration(
+        self, request: CapabilityRegistrationRequest,
+    ) -> CapabilityRegistrationResult:
+        """Validate Council authority and open a separate Human Approval."""
+        try:
+            variant = self._validate_capability_request(request)
+            normalized_scope = self._normalized_capability_scope(request)
+        except (CapabilityRegistrationError, ValueError) as error:
+            return CapabilityRegistrationResult(
+                request.request_id, "rejected", blockers=(str(error),),
+            )
+        self._workflow_manager.create_capability_approval(
+            request.request_id,
+            request.project_id,
+            request.project_intelligence.project_root,
+            request.council_result.id,
+            variant.id,
+            request.capability,
+            request.executable_names,
+            request.allowed_operations,
+            normalized_scope,
+        )
+        self._trace(
+            request.request_id, "capability_approval", "pending", "pending",
+            "Capability Human Approval is pending",
+            details={"capability": request.capability, "chairman_variant": variant.id},
+            related_result_id=request.request_id,
+        )
+        return CapabilityRegistrationResult(request.request_id, "pending")
+
+    def decide_capability_approval(
+        self, request_id: str, decision: str,
+        approved_by: str | None = None, comment: str | None = None,
+    ) -> CapabilityRegistrationResult:
+        record = self._workflow_manager.decide_capability_approval(
+            request_id, decision, approved_by, comment,
+        )
+        return CapabilityRegistrationResult(request_id, record["status"])
+
+    def register_approved_capability(
+        self, request: CapabilityRegistrationRequest,
+    ) -> CapabilityRegistrationResult:
+        """Produce and register capability metadata only after all authorities."""
+        try:
+            variant = self._validate_capability_request(request)
+            normalized_scope = self._normalized_capability_scope(request)
+            human = self._workflow_manager.get_capability_approval(request.request_id)
+            if human is None or human.get("status") != "approved":
+                state = human.get("status") if human else "missing"
+                raise CapabilityRegistrationError(f"Human Approval is {state}")
+            if (
+                human.get("project_id") != request.project_id
+                or human.get("project_intelligence_ref") != request.project_intelligence.project_root
+                or human.get("council_result_id") != request.council_result.id
+                or human.get("chairman_variant_id") != variant.id
+                or human.get("capability") != request.capability
+                or tuple(human.get("executable_names", ())) != request.executable_names
+                or tuple(human.get("allowed_operations", ())) != request.allowed_operations
+                or human.get("project_scope") != normalized_scope
+            ):
+                raise CapabilityRegistrationError("Human Approval does not match the registration request")
+            provenance = ApprovalProvenance(
+                project_intelligence_ref=request.project_intelligence.project_root,
+                engineering_council_ref=request.council_result.id,
+                chairman_approval_ref=variant.id,
+                human_approval_ref=human.get("id", ""),
+            )
+            if not provenance.is_complete():
+                raise CapabilityRegistrationError("Required approval provenance is incomplete")
+            registration = CapabilityRegistration(
+                capability=request.capability,
+                executable_names=request.executable_names,
+                allowed_operations=request.allowed_operations,
+                approval_provenance=provenance,
+                project_scope=normalized_scope,
+            )
+            self._capability_registry.register_approved(registration)
+        except (CapabilityRegistrationError, ValueError) as error:
+            return CapabilityRegistrationResult(
+                request.request_id, "rejected", blockers=(str(error),),
+            )
+        self._trace(
+            request.request_id, "capability_registration", "registered", "completed",
+            "Approved capability registered",
+            details={"capability": request.capability},
+            related_result_id=request.request_id,
+        )
+        return CapabilityRegistrationResult(
+            request.request_id, "registered", registration=registration,
+        )
+
+    def recover_approved_capabilities(self) -> tuple[CapabilityRegistration, ...]:
+        """Idempotently restore valid approved dynamic registrations."""
+        recovered: list[CapabilityRegistration] = []
+        state = self._workflow_manager.load()
+        if not isinstance(state, dict):
+            return ()
+        approvals = state.get("capability_approvals", {})
+        if not isinstance(approvals, dict):
+            return ()
+        for record in approvals.values():
+            if not isinstance(record, dict) or record.get("status") != "approved":
+                continue
+            try:
+                scope = str(Path(record["project_scope"]).resolve())
+                intelligence_ref = str(Path(record["project_intelligence_ref"]).resolve())
+                if scope != intelligence_ref or not record.get("approved_at"):
+                    raise ValueError("Recovered project scope or Human Approval is invalid")
+                provenance = ApprovalProvenance(
+                    project_intelligence_ref=record["project_intelligence_ref"],
+                    engineering_council_ref=record["council_result_id"],
+                    chairman_approval_ref=record["chairman_variant_id"],
+                    human_approval_ref=record["id"],
+                )
+                if not provenance.is_complete():
+                    raise ValueError("Recovered approval provenance is incomplete")
+                registration = CapabilityRegistration(
+                    capability=record["capability"],
+                    executable_names=tuple(record["executable_names"]),
+                    allowed_operations=tuple(record["allowed_operations"]),
+                    approval_provenance=provenance,
+                    project_scope=scope,
+                )
+                self._capability_registry.register_approved(registration)
+            except (KeyError, TypeError, ValueError):
+                continue
+            recovered.append(registration)
+        return tuple(recovered)
+
+    @staticmethod
+    def _normalized_capability_scope(request: CapabilityRegistrationRequest) -> str:
+        intelligence_root = Path(request.project_intelligence.project_root).resolve()
+        if request.project_scope is None:
+            raise CapabilityRegistrationError("Dynamic capability registration requires project scope")
+        requested_scope = Path(request.project_scope).resolve()
+        if requested_scope != intelligence_root:
+            raise CapabilityRegistrationError(
+                "Capability project scope must match the Project Intelligence root"
+            )
+        return str(intelligence_root)
+
+    @staticmethod
+    def _validate_capability_request(request: CapabilityRegistrationRequest):
+        if not request.request_id or not request.project_id:
+            raise CapabilityRegistrationError("Capability request identity is incomplete")
+        intelligence = request.project_intelligence
+        council = request.council_result
+        if not intelligence.project_root:
+            raise CapabilityRegistrationError("Project Intelligence reference is missing")
+        if council.project_id != request.project_id:
+            raise CapabilityRegistrationError("Council result belongs to another project")
+        if not council.council_complete or council.chairman_error or not council.id:
+            raise CapabilityRegistrationError("Chairman approval is missing")
+        variant = request.recommended_variant()
+        if request.capability not in variant.capabilities:
+            raise CapabilityRegistrationError("Capability is not present in the Chairman recommendation")
+        council_tools = {item.name for item in variant.toolchain if item.name}
+        if not request.executable_names or not set(request.executable_names).issubset(council_tools):
+            raise CapabilityRegistrationError("Executable identity is not present in the Council result")
+        # Construction performs the shared metadata validation without registering.
+        CapabilityRegistration(
+            capability=request.capability,
+            executable_names=request.executable_names,
+            allowed_operations=request.allowed_operations,
+            approval_provenance=None,
+            project_scope=request.project_scope,
+        )
+        return variant
 
     def plan_project_setup(
         self, project_id: str, project_path: str | Path, run_id: str | None = None,

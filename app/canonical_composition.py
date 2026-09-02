@@ -22,6 +22,7 @@ from app.test_change_generator import TestChangeGenerator
 from app.testing_stage import DiagnosisReviewer, TestingStage
 from app.toolchain_materializer import ToolchainMaterializer
 from app.verification import build_default_registry
+from app.execution import DEFAULT_CAPABILITY_REGISTRY
 from app.workflow_plan_store import WorkflowPlanStore
 
 
@@ -63,6 +64,9 @@ def build_canonical_components(config_path="config/ai-dev-center.yml"):
         development_testing_stage=development_testing,
     )
     return CanonicalComponents(
-        ProjectSetupApplicationService(workflow, ProjectInspector()),
+        ProjectSetupApplicationService(
+            workflow, ProjectInspector(),
+            capability_registry=DEFAULT_CAPABILITY_REGISTRY,
+        ),
         WorkflowPlanStore(".workflow-plans"), SetupApproval, workflow,
     )

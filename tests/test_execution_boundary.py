@@ -94,11 +94,12 @@ class TestExecutionRequest:
             executable_names=("futurecc",),
             allowed_operations=("compile",),
             approval_provenance=ApprovalProvenance(
-                project_intelligence_ref="inspection-1",
+                project_intelligence_ref=str(tmp_path),
                 engineering_council_ref="council-1",
                 chairman_approval_ref="chairman-1",
                 human_approval_ref="human-1",
             ),
+            project_scope=str(tmp_path),
         ))
         monkeypatch.setattr("app.execution._find_executable", lambda name: "/bin/true" if name == "futurecc" else None)
         req = ExecutionRequest(
@@ -114,6 +115,7 @@ class TestExecutionRequest:
             executable_names=("futurecc",),
             allowed_operations=("compile",),
             approval_provenance=None,
+            project_scope="/approved/project",
         )
         with pytest.raises(ValueError, match="provenance"):
             registry.register_approved(registration)
@@ -128,14 +130,14 @@ class TestExecutionRequest:
             capability="future-compiler",
             executable_names=("futurecc",),
             allowed_operations=("compile",),
-            approval_provenance=ApprovalProvenance("pi", "council", "chairman", "human"),
+            approval_provenance=ApprovalProvenance(str(project), "council", "chairman", "human"),
             project_scope=str(project),
         ))
         monkeypatch.setattr("app.execution._find_executable", lambda name: "/bin/true")
         wrong_operation = ExecutionRequest(("futurecc",), str(project), 10, "future-compiler", "test")
         wrong_scope = ExecutionRequest(("futurecc",), str(other), 10, "future-compiler", "compile")
         assert validate_request(wrong_operation, project, registry).status == INVALID_PLAN.value
-        assert validate_request(wrong_scope, other, registry).status == INVALID_PLAN.value
+        assert validate_request(wrong_scope, other, registry).status == UNSUPPORTED.value
 
     def test_revoked_registration_cannot_execute(self, tmp_path):
         registry = CapabilityRegistry()
@@ -143,9 +145,10 @@ class TestExecutionRequest:
             capability="future-compiler",
             executable_names=("futurecc",),
             allowed_operations=("compile",),
-            approval_provenance=ApprovalProvenance("pi", "council", "chairman", "human"),
+            approval_provenance=ApprovalProvenance(str(tmp_path), "council", "chairman", "human"),
+            project_scope=str(tmp_path),
         ))
-        registry.set_status("future-compiler", "revoked")
+        registry.set_status("future-compiler", "revoked", tmp_path)
         request = ExecutionRequest(("futurecc",), str(tmp_path), 10, "future-compiler", "compile")
         assert validate_request(request, tmp_path, registry).status == UNSUPPORTED.value
 

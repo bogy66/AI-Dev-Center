@@ -49,6 +49,7 @@ class WorkflowManager:
             "git_commit_results": {},
             "publish_approvals": {},
             "publish_results": {},
+            "capability_approvals": {},
             "execution_lifecycles": {},
         }
 
@@ -248,6 +249,63 @@ class WorkflowManager:
                 approvals[run_id] = record
                 self.save(state)
             return result_from_record(run_id, record)
+
+    def create_capability_approval(
+        self, request_id, project_id, project_intelligence_ref,
+        council_result_id, chairman_variant_id, capability,
+        executable_names, allowed_operations, project_scope,
+    ):
+        """Persist a separate pending Human Approval for one capability request."""
+        with self._lock:
+            state = self.load()
+            approvals = state.setdefault("capability_approvals", {})
+            record = approvals.get(request_id)
+            if record is None:
+                record = {
+                    "id": request_id,
+                    "status": "pending",
+                    "project_id": project_id,
+                    "project_intelligence_ref": project_intelligence_ref,
+                    "council_result_id": council_result_id,
+                    "chairman_variant_id": chairman_variant_id,
+                    "capability": capability,
+                    "executable_names": list(executable_names),
+                    "allowed_operations": list(allowed_operations),
+                    "project_scope": project_scope,
+                    "approved_by": None,
+                    "approved_at": None,
+                    "comment": None,
+                }
+                approvals[request_id] = record
+                self.save(state)
+            return dict(record)
+
+    def decide_capability_approval(self, request_id, decision, approved_by=None, comment=None):
+        """Apply an explicit terminal Human Approval to a capability request."""
+        if decision not in {"approved", "rejected"}:
+            raise ValueError("Capability approval decision must be approved or rejected")
+        with self._lock:
+            state = self.load()
+            record = state.get("capability_approvals", {}).get(request_id)
+            if record is None:
+                raise ValueError("Capability approval request is missing")
+            current = record.get("status")
+            if current == decision:
+                return dict(record)
+            if current != "pending":
+                raise ValueError(f"Cannot change capability approval from {current!r} to {decision!r}")
+            record.update({
+                "status": decision,
+                "approved_by": approved_by,
+                "approved_at": datetime.now(timezone.utc).isoformat(),
+                "comment": comment,
+            })
+            self.save(state)
+            return dict(record)
+
+    def get_capability_approval(self, request_id):
+        record = self.load().get("capability_approvals", {}).get(request_id)
+        return dict(record) if isinstance(record, dict) else None
 
     def decide_publish_approval(self, run_id, decision, approved_by=None, comment=None):
         """Apply one explicit, terminal publish approval decision."""
