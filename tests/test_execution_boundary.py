@@ -8,7 +8,8 @@ import pytest
 from app.execution import (
     ExecutionRequest, validate_request, execute_controlled,
     execute_step_controlled, _controlled_env,
-    CapabilityRegistration, CapabilityRegistry, _DENIED_ARGS,
+    ApprovalProvenance, CapabilityRegistration, CapabilityRegistry,
+    _DENIED_ARGS,
 )
 from app.verification import (
     INVALID_PLAN, UNSUPPORTED, TOOL_UNAVAILABLE, PASS, FAIL, BLOCKED,
@@ -88,10 +89,65 @@ class TestExecutionRequest:
 
     def test_future_capability_name_can_be_registered(self, tmp_path, monkeypatch):
         registry = CapabilityRegistry()
-        registry.register_approved(CapabilityRegistration("future-compiler", ("futurecc",)))
+        registry.register_approved(CapabilityRegistration(
+            capability="future-compiler",
+            executable_names=("futurecc",),
+            allowed_operations=("compile",),
+            approval_provenance=ApprovalProvenance(
+                project_intelligence_ref="inspection-1",
+                engineering_council_ref="council-1",
+                chairman_approval_ref="chairman-1",
+                human_approval_ref="human-1",
+            ),
+        ))
         monkeypatch.setattr("app.execution._find_executable", lambda name: "/bin/true" if name == "futurecc" else None)
-        req = ExecutionRequest(("futurecc", "--check"), str(tmp_path), 10, "future-compiler")
+        req = ExecutionRequest(
+            ("futurecc", "--check"), str(tmp_path), 10,
+            "future-compiler", "compile",
+        )
         assert validate_request(req, tmp_path, registry) is None
+
+    def test_dynamic_registration_requires_complete_provenance(self):
+        registry = CapabilityRegistry()
+        registration = CapabilityRegistration(
+            capability="future-compiler",
+            executable_names=("futurecc",),
+            allowed_operations=("compile",),
+            approval_provenance=None,
+        )
+        with pytest.raises(ValueError, match="provenance"):
+            registry.register_approved(registration)
+
+    def test_registered_operation_and_project_scope_are_enforced(self, tmp_path, monkeypatch):
+        project = tmp_path / "approved"
+        other = tmp_path / "other"
+        project.mkdir()
+        other.mkdir()
+        registry = CapabilityRegistry()
+        registry.register_approved(CapabilityRegistration(
+            capability="future-compiler",
+            executable_names=("futurecc",),
+            allowed_operations=("compile",),
+            approval_provenance=ApprovalProvenance("pi", "council", "chairman", "human"),
+            project_scope=str(project),
+        ))
+        monkeypatch.setattr("app.execution._find_executable", lambda name: "/bin/true")
+        wrong_operation = ExecutionRequest(("futurecc",), str(project), 10, "future-compiler", "test")
+        wrong_scope = ExecutionRequest(("futurecc",), str(other), 10, "future-compiler", "compile")
+        assert validate_request(wrong_operation, project, registry).status == INVALID_PLAN.value
+        assert validate_request(wrong_scope, other, registry).status == INVALID_PLAN.value
+
+    def test_revoked_registration_cannot_execute(self, tmp_path):
+        registry = CapabilityRegistry()
+        registry.register_approved(CapabilityRegistration(
+            capability="future-compiler",
+            executable_names=("futurecc",),
+            allowed_operations=("compile",),
+            approval_provenance=ApprovalProvenance("pi", "council", "chairman", "human"),
+        ))
+        registry.set_status("future-compiler", "revoked")
+        request = ExecutionRequest(("futurecc",), str(tmp_path), 10, "future-compiler", "compile")
+        assert validate_request(request, tmp_path, registry).status == UNSUPPORTED.value
 
 
 class TestExecuteControlled:

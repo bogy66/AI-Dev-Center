@@ -47,7 +47,7 @@ docker compose build
 docker compose up -d
 ```
 
-The core container runs without privileged mode, without Docker‑socket access and without device mounts. Project code and build tool invocations are treated as untrusted and execute behind a controlled boundary: central approval-based capability registration bound to executable identity, denied‑argument patterns, timeout and output limits. Future toolchains enter through Project Intelligence → Engineering Council → Chairman approval → Human Approval → controlled capability registration → controlled execution; approval never authorizes arbitrary shell commands, images, argv, mounts or devices.
+The core container runs without privileged mode, without Docker‑socket access and without device mounts. Project code and build tool invocations are treated as untrusted and execute behind a controlled boundary: central approval-aware capability registration binds capability and executable identity, allowed operation type, approval provenance, optional project scope and active registration status. Future toolchain names can be registered without extending a fixed tool list. Today's registrations are compatibility defaults, not the architectural source of truth. Dynamic registrations enter through Project Intelligence → Engineering Council → Chairman approval → Human Approval → controlled capability registration → controlled execution. Registration cannot authorize arbitrary shell commands, argv policies, images, mounts, devices, host access or automatic installation; denied-argument checks, timeout and output limits remain enforced.
 
 ## Web local (development)
 

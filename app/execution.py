@@ -11,17 +11,55 @@ import sys
 from app.verification import INVALID_PLAN, TOOL_UNAVAILABLE, UNSUPPORTED, VerificationStep, VerificationStepResult
 
 
+ACTIVE = "active"
+SUSPENDED = "suspended"
+REVOKED = "revoked"
+_REGISTRATION_STATUSES = frozenset({ACTIVE, SUSPENDED, REVOKED})
+_SAFE_OPERATION_TYPES = frozenset({
+    "verification", "validate", "compile", "build", "test", "configure",
+})
+
+
+@dataclass(frozen=True)
+class ApprovalProvenance:
+    """References proving the complete authority chain for a registration."""
+    project_intelligence_ref: str
+    engineering_council_ref: str
+    chairman_approval_ref: str
+    human_approval_ref: str
+
+    def is_complete(self) -> bool:
+        return all((
+            self.project_intelligence_ref,
+            self.engineering_council_ref,
+            self.chairman_approval_ref,
+            self.human_approval_ref,
+        ))
+
+
 @dataclass(frozen=True)
 class CapabilityRegistration:
-    """Approved executable identities for one narrowly named capability."""
+    """Approval-aware executable capability; never an argv or host policy."""
     capability: str
     executable_names: tuple[str, ...]
+    allowed_operations: tuple[str, ...]
+    approval_provenance: ApprovalProvenance | None
+    project_scope: str | None = None
+    status: str = ACTIVE
+    bootstrap_compatibility: bool = False
 
     def __post_init__(self) -> None:
-        if not self.capability or not self.executable_names:
-            raise ValueError("Capability and executable identities are required")
+        if not self.capability or not self.executable_names or not self.allowed_operations:
+            raise ValueError("Capability, executable identities and operations are required")
         if any(not name or "\x00" in name for name in self.executable_names):
             raise ValueError("Executable identities must be non-empty paths or names")
+        if self.status not in _REGISTRATION_STATUSES:
+            raise ValueError(f"Unknown registration status: {self.status}")
+        unsupported = set(self.allowed_operations) - _SAFE_OPERATION_TYPES
+        if unsupported:
+            raise ValueError(f"Unsafe or unknown operation types: {sorted(unsupported)}")
+        if self.project_scope is not None:
+            object.__setattr__(self, "project_scope", str(Path(self.project_scope).resolve()))
 
 
 class CapabilityRegistry:
@@ -32,7 +70,22 @@ class CapabilityRegistry:
             self.register_approved(registration)
 
     def register_approved(self, registration: CapabilityRegistration) -> None:
-        """Consume an approved registration; the approval workflow owns the decision."""
+        """Consume a complete approval decision, without accepting command policy."""
+        if registration.capability in self._registrations:
+            raise ValueError(f"Capability already registered: {registration.capability}")
+        if registration.status != ACTIVE:
+            raise ValueError("Only active capability registrations may be registered")
+        if registration.bootstrap_compatibility:
+            raise ValueError("Bootstrap compatibility entries cannot use the approval API")
+        provenance = registration.approval_provenance
+        if provenance is None or not provenance.is_complete():
+            raise ValueError("Complete approval provenance is required")
+        self._registrations[registration.capability] = registration
+
+    def _register_bootstrap(self, registration: CapabilityRegistration) -> None:
+        """Internal compatibility path for the fixed runners shipped today."""
+        if not registration.bootstrap_compatibility:
+            raise ValueError("Bootstrap registration must be marked as compatibility")
         if registration.capability in self._registrations:
             raise ValueError(f"Capability already registered: {registration.capability}")
         self._registrations[registration.capability] = registration
@@ -40,19 +93,46 @@ class CapabilityRegistry:
     def get(self, capability: str) -> CapabilityRegistration | None:
         return self._registrations.get(capability)
 
+    def set_status(self, capability: str, status: str) -> None:
+        """Suspend or revoke a registration without replacing its provenance."""
+        if status not in (SUSPENDED, REVOKED):
+            raise ValueError("An existing registration may only be suspended or revoked")
+        current = self._registrations.get(capability)
+        if current is None:
+            raise KeyError(capability)
+        self._registrations[capability] = CapabilityRegistration(
+            capability=current.capability,
+            executable_names=current.executable_names,
+            allowed_operations=current.allowed_operations,
+            approval_provenance=current.approval_provenance,
+            project_scope=current.project_scope,
+            status=status,
+            bootstrap_compatibility=current.bootstrap_compatibility,
+        )
+
 
 # Bootstrap registrations for today's runners, not a closed validation allowlist.
-DEFAULT_CAPABILITY_REGISTRY = CapabilityRegistry((
-    CapabilityRegistration("python", (sys.executable, "python", "python3")),
-    CapabilityRegistration("esphome", ("esphome",)),
-    CapabilityRegistration("platformio", ("platformio", "pio")),
-    CapabilityRegistration("cmake", ("cmake",)),
-    CapabilityRegistration("ctest", ("ctest",)),
-    CapabilityRegistration("make", ("make",)),
-    CapabilityRegistration("npm", ("npm",)),
-    CapabilityRegistration("pnpm", ("pnpm",)),
-    CapabilityRegistration("yarn", ("yarn",)),
-))
+def _bootstrap(capability: str, executables: tuple[str, ...], operations: tuple[str, ...]) -> CapabilityRegistration:
+    return CapabilityRegistration(
+        capability, executables, operations, approval_provenance=None,
+        bootstrap_compatibility=True,
+    )
+
+
+DEFAULT_CAPABILITY_REGISTRY = CapabilityRegistry()
+for _registration in (
+    _bootstrap("python", (sys.executable, "python", "python3"), ("verification", "test")),
+    _bootstrap("esphome", ("esphome",), ("validate", "compile")),
+    _bootstrap("platformio", ("platformio", "pio"), ("build", "test")),
+    _bootstrap("cmake", ("cmake",), ("configure", "build")),
+    _bootstrap("ctest", ("ctest",), ("test",)),
+    _bootstrap("make", ("make",), ("build", "test")),
+    _bootstrap("npm", ("npm",), ("build", "test")),
+    _bootstrap("pnpm", ("pnpm",), ("build", "test")),
+    _bootstrap("yarn", ("yarn",), ("build", "test")),
+):
+    DEFAULT_CAPABILITY_REGISTRY._register_bootstrap(_registration)
+del _registration
 
 _DENIED_ARGS = frozenset({
     "shell=True", "shell = True", "rm -rf", "shutdown", "reboot",
@@ -70,6 +150,7 @@ class ExecutionRequest:
     cwd: str
     timeout: int
     tool_name: str
+    operation_type: str = "verification"
 
 
 def _error(status, diagnostics: str) -> VerificationStepResult:
@@ -101,6 +182,12 @@ def validate_request(
     registration = capability_registry.get(request.tool_name)
     if registration is None:
         return _error(UNSUPPORTED, f"Capability not registered: {request.tool_name}")
+    if registration.status != ACTIVE:
+        return _error(UNSUPPORTED, f"Capability registration is {registration.status}: {request.tool_name}")
+    if request.operation_type not in registration.allowed_operations:
+        return _error(INVALID_PLAN, f"Operation {request.operation_type} is not approved for capability {request.tool_name}")
+    if registration.project_scope is not None and root != Path(registration.project_scope):
+        return _error(INVALID_PLAN, f"Capability is not registered for project scope: {root}")
     if not request.args:
         return _error(INVALID_PLAN, "Execution argv must not be empty")
 
@@ -159,6 +246,7 @@ def execute_step_controlled(
     step: VerificationStep, project_root: str | Path, args: tuple[str, ...],
     tool_name: str, timeout: int,
     capability_registry: CapabilityRegistry = DEFAULT_CAPABILITY_REGISTRY,
+    operation_type: str | None = None,
 ) -> VerificationStepResult:
     """Full boundary check and controlled execution for one verification step."""
     from app.verification import _build_step_result, _resolve_cwd
@@ -166,7 +254,10 @@ def execute_step_controlled(
     cwd, err = _resolve_cwd(root, step)
     if err is not None:
         return err
-    request = ExecutionRequest(args, str(cwd), timeout, tool_name)
+    request = ExecutionRequest(
+        args, str(cwd), timeout, tool_name,
+        operation_type or step.verification_kind,
+    )
     violation = validate_request(request, root, capability_registry)
     if violation is not None:
         return VerificationStepResult(

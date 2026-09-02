@@ -339,12 +339,14 @@ def _safe_exec(
     cwd: Path,
     timeout: int = _DEFAULT_TIMEOUT,
     tool_name: str = "python",
+    operation_type: str = "verification",
 ) -> subprocess.CompletedProcess | None:
     """Controlled subprocess execution with registered capability validation."""
     from app.execution import execute_controlled, ExecutionRequest
     try:
         req = ExecutionRequest(
             args=args, cwd=str(cwd), timeout=timeout, tool_name=tool_name,
+            operation_type=operation_type,
         )
         return execute_controlled(req, cwd)
     except ValueError:
@@ -391,7 +393,7 @@ class PytestRunner(VerificationRunner):
 
         python = sys.executable
         args = (python, "-m", "pytest", "-q")
-        result = _safe_exec(args, cwd, self._timeout)
+        result = _safe_exec(args, cwd, self._timeout, operation_type="test")
 
         if result is None:
             return VerificationStepResult(
@@ -464,7 +466,7 @@ class PythonUnittestRunner(VerificationRunner):
         python = sys.executable
         args = (python, "-m", "unittest", "discover", "-s", cwd.name, "-v")
         result = _safe_exec(args, cwd.parent if cwd.name == "tests" else cwd,
-                            self._timeout)
+                            self._timeout, operation_type="test")
 
         if result is None:
             return VerificationStepResult(
@@ -723,7 +725,10 @@ class ESPHomeCheckRunner(VerificationRunner):
                 diagnostics=f"ESPHome operation not supported: {step.verification_kind}",
             )
 
-        result = _safe_exec(args, cwd, self._timeout, tool_name="esphome")
+        result = _safe_exec(
+            args, cwd, self._timeout, tool_name="esphome",
+            operation_type=step.verification_kind,
+        )
         if result is None:
             return VerificationStepResult(
                 step_id=step.step_id, area=step.area,
@@ -791,7 +796,10 @@ class PlatformIORunner(VerificationRunner):
                 diagnostics=f"PlatformIO operation not supported: {step.verification_kind}",
             )
 
-        result = _safe_exec(args, cwd, self._timeout, tool_name="platformio")
+        result = _safe_exec(
+            args, cwd, self._timeout, tool_name="platformio",
+            operation_type=step.verification_kind,
+        )
         if result is None:
             return VerificationStepResult(
                 step_id=step.step_id, area=step.area,
@@ -865,7 +873,10 @@ class CMakeRunner(VerificationRunner):
             )
 
         tool_name = "ctest" if step.verification_kind == "test" else "cmake"
-        result = _safe_exec(args, cwd, self._timeout, tool_name=tool_name)
+        result = _safe_exec(
+            args, cwd, self._timeout, tool_name=tool_name,
+            operation_type=step.verification_kind,
+        )
         if result is None:
             return VerificationStepResult(
                 step_id=step.step_id, area=step.area,
