@@ -311,7 +311,11 @@ function updateFromState(state) {
         .sort((left, right) => String(left.timestamp).localeCompare(String(right.timestamp)));
     appendTrace(liveTrace);
     if (state.error_message) {
-        setLiveStatus(`Error: ${state.error_message}`);
+        setLiveStatus(
+            state.workflow_status === 'blocked'
+                ? `Blocked: ${state.error_message}`
+                : `Error: ${state.error_message}`
+        );
     }
 }
 

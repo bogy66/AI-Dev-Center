@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.diagnostic_trace import DiagnosticTraceRecorder, TraceEvent, TraceLevel
+from app.dev_workflow import WorkflowBlockedError, WorkflowExecutionError
 from app.web_api import (
     app, sessions, get_directory_selector, get_web_config_path, get_workflow_components,
     get_web_setup_components, TracingMCPServerWrapper,
@@ -328,6 +329,13 @@ def test_detailed_trace_preserves_ordinary_event_fallback():
     assert "container.textContent" in script
 
 
+def test_browser_preserves_blocked_terminal_label_for_safe_reason():
+    script = Path("web/app.js").read_text(encoding="utf-8")
+
+    assert "state.workflow_status === 'blocked'" in script
+    assert "`Blocked: ${state.error_message}`" in script
+
+
 def test_readme_documents_port_8010():
     readme = Path("README.md").read_text(encoding="utf-8")
 
@@ -423,8 +431,51 @@ def test_planning_value_error_retains_safe_failed_session(client, tmp_path):
     assert response.json()["session_id"] == "rejected-project"
     state = _wait_for_workflow_state(client, "rejected-project")
     assert state["error_message"] == "Project or planning request was rejected."
-    assert state["trace"][-1]["event"] == "workflow_start_failed"
+    assert state["workflow_status"] == "failed"
+    assert state["blocked"] is False
+    assert state["trace"][-1]["event"] == "workflow_planning_failed"
     assert "/private/project" not in str(state)
+
+
+def test_controlled_planning_block_remains_blocked_in_web_state(client, tmp_path):
+    components = _set_override()
+    components.service.plan_project_setup.side_effect = WorkflowBlockedError(
+        "Engineering Council did not reach a complete decision; planning was blocked."
+    )
+
+    response = client.post("/api/workflow/start", json={
+        "project_name": "blocked-project",
+        "project_directory": str(tmp_path),
+        "task_description": "inspect",
+    })
+
+    assert response.status_code == 202
+    state = _wait_for_workflow_state(client, "blocked-project", terminal=("blocked",))
+    assert state["workflow_status"] == "blocked"
+    assert state["blocked"] is True
+    assert state["approval_required"] is False
+    assert state["trace"][-1]["event"] == "workflow_planning_blocked"
+    assert state["trace"][-1]["status"] == "blocked"
+    assert not any(event["event"] == "workflow_start_failed" for event in state["trace"])
+
+
+def test_unexpected_planning_error_remains_failed(client, tmp_path):
+    components = _set_override()
+    components.service.plan_project_setup.side_effect = WorkflowExecutionError(
+        "internal technical detail"
+    )
+
+    client.post("/api/workflow/start", json={
+        "project_name": "failed-project",
+        "project_directory": str(tmp_path),
+        "task_description": "inspect",
+    })
+    state = _wait_for_workflow_state(client, "failed-project")
+
+    assert state["workflow_status"] == "failed"
+    assert state["blocked"] is False
+    assert state["trace"][-1]["event"] == "workflow_planning_failed"
+    assert "internal technical detail" not in str(state)
 
 
 @pytest.mark.parametrize("path_kind", ["empty", "missing", "file"])

@@ -8,10 +8,12 @@ from app.ai_requirement_discovery import AIRequirementDiscovery
 from app.council_models import CouncilInput, CouncilResult
 from app.dev_workflow import (
     DevelopmentWorkflow,
+    WorkflowBlockedError,
     WorkflowExecutionError,
     WorkflowResult,
 )
 from app.engineering_council import EngineeringCouncil
+from app.diagnostic_trace import DiagnosticTrace, DiagnosticTraceStore
 from app.python_package_executor import PythonPackageExecutor
 from app.requirement_model import (
     DiscoveryResult,
@@ -436,8 +438,8 @@ class TestDevelopmentWorkflow:
         )
 
         with pytest.raises(
-            WorkflowExecutionError,
-            match="Requirement discovery fallback was used",
+            WorkflowBlockedError,
+            match="planning was blocked",
         ):
             workflow.run(
                 {"name": "test"},
@@ -482,21 +484,33 @@ class TestDevelopmentWorkflow:
 
         council.evaluate.assert_not_called()
 
-    def test_incomplete_council_result_blocks_before_materialization(self):
+    def test_incomplete_council_result_blocks_before_materialization(self, tmp_path):
         discovery, validator, preflight, planner, council, materializer, *_ = _make_components()
         council.evaluate.return_value = CouncilResult(
             id="council-incomplete", project_id="proj-1",
             council_complete=False, agent_errors=("A2 unavailable",),
         )
+        trace = DiagnosticTrace(DiagnosticTraceStore(tmp_path / "trace.jsonl"))
         workflow = DevelopmentWorkflow(
             discovery, validator, preflight, planner,
             council=council, materializer=materializer,
+            diagnostic_trace=trace,
         )
 
-        with pytest.raises(WorkflowExecutionError, match="Council result is incomplete"):
+        with pytest.raises(WorkflowBlockedError, match="planning was blocked"):
             workflow.run({"name": "test"}, "proj-1")
 
         materializer.materialize.assert_not_called()
+        events = trace.get_trace("proj-1")
+        assert any(
+            event.phase == "engineering_council" and event.status == "incomplete"
+            for event in events
+        )
+        assert any(
+            event.phase == "workflow_end" and event.status == "blocked"
+            for event in events
+        )
+        assert not any(event.phase == "toolchain_materialization" for event in events)
 
 
     def test_intermediate_objects_are_not_mutated(self):

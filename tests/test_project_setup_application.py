@@ -4,7 +4,8 @@ from unittest.mock import Mock
 import pytest
 
 from app.common_request import RequestIntent
-from app.dev_workflow import WorkflowExecutionError
+from app.dev_workflow import WorkflowBlockedError, WorkflowExecutionError
+from app.diagnostic_trace import DiagnosticTrace, DiagnosticTraceStore
 from app.project_intelligence import (
     ProjectIntelligence,
     ProjectArea,
@@ -12,6 +13,7 @@ from app.project_intelligence import (
     Evidence,
 )
 from app.project_setup_application import ProjectSetupApplicationService
+from app.workflow_manager import WorkflowManager
 
 
 def _mock_intelligence(project_id, project_path, kind="existing"):
@@ -98,6 +100,39 @@ def test_service_does_not_swallow_workflow_errors(tmp_path):
 
     with pytest.raises(WorkflowExecutionError, match="council unavailable"):
         service.plan_project_setup("demo", tmp_path)
+
+
+def test_service_preserves_existing_central_block_without_failed_terminal(tmp_path):
+    inspector = Mock()
+    intelligence = _mock_intelligence("demo", tmp_path)
+    inspector.build_intelligence.return_value = intelligence
+    inspector.inspect_managed.return_value = (
+        {"project_id": "demo", "project_path": str(tmp_path), "files": []},
+        intelligence,
+    )
+    workflow = Mock()
+    trace = DiagnosticTrace(DiagnosticTraceStore(tmp_path / "trace.jsonl"))
+
+    def blocked(*_args, **_kwargs):
+        trace.record(
+            "demo", "workflow_end", "blocked", "blocked",
+            "Central planning policy blocked the workflow",
+            related_result_id="workflow-end:demo:blocked",
+        )
+        raise WorkflowBlockedError("Planning was blocked safely.")
+
+    workflow.run.side_effect = blocked
+    service = ProjectSetupApplicationService(
+        workflow, inspector,
+        workflow_manager=WorkflowManager(tmp_path / "workflow-state.json"),
+        diagnostic_trace=trace,
+    )
+
+    with pytest.raises(WorkflowBlockedError):
+        service.plan_project_setup("demo", tmp_path)
+
+    terminal = [event for event in trace.get_trace("demo") if event.phase == "workflow_end"]
+    assert [event.status for event in terminal] == ["blocked"]
 
 
 def test_service_has_no_direct_planner_council_materializer_or_executor_dependencies():

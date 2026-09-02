@@ -27,6 +27,14 @@ class WorkflowExecutionError(Exception):
     """Raised when the workflow cannot continue safely."""
 
 
+class WorkflowBlockedError(WorkflowExecutionError):
+    """Raised after central policy intentionally records a blocked outcome."""
+
+    def __init__(self, safe_reason: str):
+        super().__init__(safe_reason)
+        self.safe_reason = safe_reason
+
+
 @dataclass(frozen=True)
 class WorkflowResult:
     """Immutable result of discovery through Council-based planning."""
@@ -141,9 +149,8 @@ class DevelopmentWorkflow:
 
         if discovery_result.fallback_used:
             self._trace(run_id, "requirement_discovery", "blocked", "blocked", "Requirement discovery fallback blocked planning")
-            raise WorkflowExecutionError(
-                "Requirement discovery fallback was used; "
-                "workflow planning is blocked."
+            raise WorkflowBlockedError(
+                "Requirement discovery could not produce a valid structured result; planning was blocked."
             )
 
         self._trace(run_id, "requirement_validation", "started", "started", "Requirement validation started")
@@ -218,8 +225,8 @@ class DevelopmentWorkflow:
                 details={"end_state": "engineering_council_incomplete"},
                 related_result_id=f"workflow-end:{council_result.id}:incomplete",
             )
-            raise WorkflowExecutionError(
-                "Engineering Council result is incomplete; planning is blocked."
+            raise WorkflowBlockedError(
+                "Engineering Council did not reach a complete decision; planning was blocked."
             )
 
         self._trace(run_id, "toolchain_materialization", "started", "started", "Toolchain materialization started")

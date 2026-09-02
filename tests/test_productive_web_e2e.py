@@ -89,14 +89,16 @@ def disposable_productive_web(tmp_path, monkeypatch, request):
     original_cwd = Path.cwd()
     monkeypatch.chdir(owned_root)
 
-    def compose(fail_discovery=False):
+    def compose(fail_discovery=False, fail_council_role=None):
         monkeypatch.setattr(
             "app.canonical_composition.create_llm_provider",
             lambda *_args, **_kwargs: DeterministicProvider(fail=fail_discovery),
         )
         monkeypatch.setattr(
             "app.engineering_council.create_council_provider",
-            lambda config, *_args, **_kwargs: DeterministicProvider(config.role),
+            lambda config, *_args, **_kwargs: DeterministicProvider(
+                config.role, fail=config.role == fail_council_role,
+            ),
         )
         components = build_canonical_components(str(config_path))
         return WebSetupComponents(
@@ -163,11 +165,11 @@ def test_productive_web_planning_reaches_real_approval_boundary(
     assert (owned_root / ".workflow-plans").exists()
 
 
-def test_productive_provider_failure_retains_safe_inspectable_session(
+def test_productive_incomplete_council_retains_blocked_inspectable_session(
     disposable_productive_web,
 ):
     owned_root, project, compose = disposable_productive_web
-    components = compose(fail_discovery=True)
+    components = compose(fail_council_role="toolchain_integrator")
     app.dependency_overrides[get_web_setup_components] = lambda: components
 
     with TestClient(app) as client:
@@ -183,20 +185,59 @@ def test_productive_provider_failure_retains_safe_inspectable_session(
             planning_task.result(timeout=5)
         state = client.get(f"/api/state/{session_id}").json()
 
-    assert state["workflow_status"] == "failed"
+    assert state["workflow_status"] == "blocked"
     assert state["blocked"] is True
     assert state["approval_required"] is False
     assert state["plan_id"] is None
-    assert any(
+    assert state["trace"][-1]["event"] == "workflow_planning_blocked"
+    assert state["trace"][-1]["status"] == "blocked"
+    assert not any(
+        event["event"] == "workflow_start_failed" for event in state["trace"]
+    )
+    discovery_completed = next(
+        index for index, event in enumerate(state["central_trace"])
+        if event["action"] == "requirement_discovery"
+        and event["event"] == "completed"
+        and event["status"] == "completed"
+    )
+    agent_failed = next(
+        index for index, event in enumerate(state["central_trace"])
+        if event.get("metadata", {}).get("actor") == "Agent A2"
+        and event.get("metadata", {}).get("runtime_state") == "failed"
+        and event.get("metadata", {}).get("model")
+    )
+    council_incomplete = next(
+        index for index, event in enumerate(state["central_trace"])
+        if event["action"] == "engineering_council"
+        and event["event"] == "completed"
+        and event["status"] == "incomplete"
+    )
+    council_blocked = next(
+        index for index, event in enumerate(state["central_trace"])
+        if event["action"] == "engineering_council"
+        and event["event"] == "blocked"
+        and event["status"] == "blocked"
+    )
+    assert discovery_completed < agent_failed < council_incomplete < council_blocked
+    assert not any(
         event["action"] == "requirement_discovery"
         and event["status"] in {"failed", "blocked"}
         for event in state["central_trace"]
     )
-    assert any(
-        event.get("metadata", {}).get("error_category") == "provider_failure"
-        and event.get("metadata", {}).get("model")
+    assert not any(
+        event["action"] == "setup_approval"
         for event in state["central_trace"]
     )
+    assert not any(
+        event["action"] == "toolchain_materialization"
+        for event in state["central_trace"]
+    )
+    workflow_end_statuses = [
+        event["status"] for event in state["central_trace"]
+        if event["action"] == "workflow_end"
+    ]
+    assert workflow_end_statuses
+    assert set(workflow_end_statuses) == {"blocked"}
     serialized = json.dumps(state)
     assert "deterministic provider failure" not in serialized
     assert not any(path for path in owned_root.parent.iterdir() if path != owned_root)

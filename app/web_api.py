@@ -12,7 +12,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from app.dev_workflow import DevelopmentWorkflow, WorkflowExecutionError
+from app.dev_workflow import (
+    DevelopmentWorkflow, WorkflowBlockedError, WorkflowExecutionError,
+)
 from app.diagnostic_trace import DiagnosticTraceRecorder, TraceEvent, TraceLevel
 from app.project_setup_application import ProjectSetupApplicationService
 from app.canonical_execution import (
@@ -521,12 +523,16 @@ async def start_workflow(
 
 
 def _run_initial_planning(session: Session, components: WebSetupComponents):
+    terminal_kind = "failed"
     try:
         result = components.service.plan_project_setup(
             session.project_id, session.project_path,
         )
         plan = result.setup_plan
         components.plan_store.save(plan)
+    except WorkflowBlockedError as error:
+        safe_error = error.safe_reason
+        terminal_kind = "blocked"
     except (ValueError, FileNotFoundError, NotADirectoryError):
         safe_error = "Project or planning request was rejected."
     except WorkflowExecutionError:
@@ -552,12 +558,17 @@ def _run_initial_planning(session: Session, components: WebSetupComponents):
 
     if safe_error:
         session.error_message = safe_error
-        session.blocked = True
-        session.workflow_status = "failed"
+        session.blocked = terminal_kind == "blocked"
+        session.workflow_status = terminal_kind
         session.recorder.record(
-            level=TraceLevel.ERROR, component="Workflow",
-            event="workflow_start_failed", action="plan_project_setup",
-            status="failed", result_summary=safe_error,
+            level=TraceLevel.WARNING if terminal_kind == "blocked" else TraceLevel.ERROR,
+            component="Workflow",
+            event=(
+                "workflow_planning_blocked"
+                if terminal_kind == "blocked" else "workflow_planning_failed"
+            ),
+            action="plan_project_setup", status=terminal_kind,
+            result_summary=safe_error,
         )
 
 

@@ -9,6 +9,7 @@ from app.development_stage import DevelopmentRequest
 from app.dev_workflow import (
     DevelopmentWorkflow,
     SetupDevelopmentTestingResult,
+    WorkflowBlockedError,
     WorkflowResult,
 )
 from app.project_inspector import ProjectInspector
@@ -509,6 +510,10 @@ class ProjectSetupApplicationService:
                 request.project_info, request.project_id, run_id,
                 project_context=project_context,
             )
+        except WorkflowBlockedError:
+            # The central workflow already persisted the authoritative blocked
+            # terminal event. Do not append a contradictory failed ending.
+            raise
         except Exception as error:
             self._trace(trace_run_id, "workflow_end", "failed", "failed", f"Planning workflow failed: {type(error).__name__}", details={"end_state": "failed"}, related_result_id=f"planning:{trace_run_id}:failed")
             raise
