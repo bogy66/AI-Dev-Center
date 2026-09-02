@@ -1,0 +1,23 @@
+# AI-Dev-Center runtime — single-process local deployment.
+# No privileged mode, no Docker socket, no device mounts.
+# Toolchains are not preinstalled; verification reports TOOL_UNAVAILABLE
+# when a required tool is missing.
+services:
+  ai-dev-center:
+    image: ai-dev-center:latest
+    build: .
+    ports:
+      - "8010:8010"
+    volumes:
+      - ./workflow_state.json:/app/workflow_state.json
+      - ./.diagnostic-traces:/app/.diagnostic-traces
+      - ./.workflow-plans:/app/.workflow-plans
+      - ./data:/data
+      - ./projects:/projects:ro
+    environment:
+      - AI_DEV_CENTER_CONFIG=config/ai-dev-center.yml
+    restart: unless-stopped
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true

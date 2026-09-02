@@ -8,7 +8,7 @@ Ein Engineering Council bewertet mehrere Lösungsvarianten, bevor der ausgewähl
 
 Nach dem kontrollierten Setup kann die Development Stage strukturierte Entwicklungsänderungen erzeugen. Der Developer Agent liefert dabei deklarative Changes statt Shell-Aktionen; ausschließlich ein separater File Applier setzt validierte Änderungen innerhalb des Projekt-Roots um.
 
-Teständerungen und Testausführung bleiben ebenfalls getrennt: Ein Generator liefert strukturierte Test-Changes, während ein Git-freier, allowlist-basierter Runner nur die vorgesehene Testaktion ausführt. Der kanonische Development-Testing-Ablauf verbindet Entwicklungsänderungen, Teständerungen, kontrolliertes Anwenden, reale Testausführung und Diagnose in dieser Reihenfolge. AI-Dev-Center führt dabei keine beliebigen LLM-generierten Shell-Kommandos aus.
+Teständerungen und Testausführung bleiben ebenfalls getrennt: Ein Generator liefert strukturierte Test-Changes, während ein Git-freier Runner nur eine zentral registrierte Test-Capability ausführt. Der kanonische Development-Testing-Ablauf verbindet Entwicklungsänderungen, Teständerungen, kontrolliertes Anwenden, reale Testausführung und Diagnose in dieser Reihenfolge. AI-Dev-Center führt dabei keine beliebigen LLM-generierten Shell-Kommandos aus.
 
 **Generalized Verification** leitet aus der Project Intelligence automatisch einen strukturierten, area-spezifischen VerificationPlan ab. Für erkannte Firmware-/Embedded-Bereiche werden kontrollierte, hardwarefreie Verification-Schritte angeboten: ESPHome Config-Validierung und Compile; PlatformIO Build und native Hardware-freie Tests; CMake Configure und Build. Kein Runner führt Flash, Upload, OTA, Serial Monitor oder Device-Provisioning aus. PlatformIO `extra_scripts` und andere Build-Code-Trust-Grenzen werden erkannt und blockieren die automatische Ausführung — der VerificationStep wird `unsupported` statt blind gestartet. Fehlende Toolchains (ESPHome, PlatformIO, CMake) führen zu `tool_unavailable` — Verification installiert niemals selbst Tools. Dependency-Ordering (z.B. validate→compile, configure→build) blockiert abhängige Steps, wenn Vorgänger fehlschlagen. `tool_unavailable` und `unsupported` sind kein `PASS`.
 
@@ -36,13 +36,26 @@ User Input → Adapter → Application Service → Project Inspection → Common
 
 Der Council empfiehlt, der Materializer erzeugt den Plan, und nur die getrennte Execution nach Approval kann Installationen ausführen. Die drei Grenzen Setup Approval, Final Approval und Publish Approval bleiben voneinander unabhängig. Legacy-Agentklassen bleiben für Tests und Kompatibilität erhalten, sind jedoch kein produktiver alternativer Orchestrierungspfad.
 
-## Web lokal starten
+## Docker runtime
 
-Nach Installation von `requirements.txt`:
+Docker is the intended production runtime. The core image provides AI‑Dev‑Center with healthcheck, non‑root execution and persistent volumes for workflow state, diagnostic traces and plan storage.
+
+Toolchains (ESPHome, PlatformIO, CMake) are **not** preinstalled in the core image. Verification reports `tool_unavailable` when a required tool is missing; tool installation follows the central SetupPlan–Human‑Approval–Execution path.
+
+```bash
+docker compose build
+docker compose up -d
+```
+
+The core container runs without privileged mode, without Docker‑socket access and without device mounts. Project code and build tool invocations are treated as untrusted and execute behind a controlled boundary: central approval-based capability registration bound to executable identity, denied‑argument patterns, timeout and output limits. Future toolchains enter through Project Intelligence → Engineering Council → Chairman approval → Human Approval → controlled capability registration → controlled execution; approval never authorizes arbitrary shell commands, images, argv, mounts or devices.
+
+## Web local (development)
 
 ```bash
 python -m uvicorn app.web_api:app --host 127.0.0.1 --port 8010
 ```
+
+## Web (Docker)
 
 ## Web-API-Beispiel
 

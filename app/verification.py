@@ -177,7 +177,7 @@ def _aggregate(steps: tuple[VerificationStepResult, ...]) -> str:
 def _resolve_cwd(root: Path, step: VerificationStep) -> tuple[Path, VerificationStepResult | None]:
     """Validate and resolve working directory. Returns (cwd, None) or (root, error)."""
     cwd = (root / step.working_directory).resolve()
-    if not str(cwd).startswith(str(root)):
+    if not cwd.is_relative_to(root):
         return root, VerificationStepResult(
             step_id=step.step_id, area=step.area,
             status=INVALID_PLAN.value,
@@ -203,7 +203,7 @@ def _resolve_cwd(root: Path, step: VerificationStep) -> tuple[Path, Verification
 # ---------------------------------------------------------------------------
 
 class VerificationRunner(ABC):
-    """Base class for allowlisted controlled verification runners."""
+    """Base class for controlled verification runners."""
 
     @property
     @abstractmethod
@@ -222,7 +222,7 @@ class VerificationRunner(ABC):
 
 
 class ControlledRunnerRegistry:
-    """Allowlist-based registry mapping test_system/kind → runner."""
+    """Central registry mapping test_system/kind to controlled runners."""
 
     def __init__(self, runners: list[VerificationRunner] | None = None):
         self._runners: list[VerificationRunner] = list(runners or [])
@@ -334,25 +334,20 @@ class ControlledRunnerRegistry:
 _MAX_OUTPUT = 50_000
 _DEFAULT_TIMEOUT = 120
 
-
 def _safe_exec(
     args: tuple[str, ...],
     cwd: Path,
     timeout: int = _DEFAULT_TIMEOUT,
+    tool_name: str = "python",
 ) -> subprocess.CompletedProcess | None:
+    """Controlled subprocess execution with registered capability validation."""
+    from app.execution import execute_controlled, ExecutionRequest
     try:
-        return subprocess.run(
-            list(args), cwd=str(cwd),
-            capture_output=True, text=True,
-            timeout=timeout, check=False,
-            env={k: v for k, v in os.environ.items()
-                 if k.startswith(("PATH", "HOME", "USER", "LANG", "PYTHON", "VIRTUAL_ENV", "CONDA"))},
+        req = ExecutionRequest(
+            args=args, cwd=str(cwd), timeout=timeout, tool_name=tool_name,
         )
-    except subprocess.TimeoutExpired as exc:
-        result = subprocess.CompletedProcess(list(args), -1, exc.stdout or "", exc.stderr or "")
-        result.timed_out = True
-        return result
-    except OSError:
+        return execute_controlled(req, cwd)
+    except ValueError:
         return None
 
 import os as _os_module
@@ -375,7 +370,7 @@ class PytestRunner(VerificationRunner):
     ) -> VerificationStepResult:
         root = Path(project_root).resolve()
         cwd = (root / step.working_directory).resolve()
-        if not str(cwd).startswith(str(root)):
+        if not cwd.is_relative_to(root):
             return VerificationStepResult(
                 step_id=step.step_id, area=step.area,
                 status=INVALID_PLAN.value,
@@ -394,7 +389,7 @@ class PytestRunner(VerificationRunner):
                 diagnostics=f"Working directory does not exist: {step.working_directory}",
             )
 
-        python = shutil.which("python") or shutil.which("python3") or sys.executable
+        python = sys.executable
         args = (python, "-m", "pytest", "-q")
         result = _safe_exec(args, cwd, self._timeout)
 
@@ -456,7 +451,7 @@ class PythonUnittestRunner(VerificationRunner):
     ) -> VerificationStepResult:
         root = Path(project_root).resolve()
         cwd = (root / step.working_directory).resolve()
-        if not str(cwd).startswith(str(root)):
+        if not cwd.is_relative_to(root):
             return VerificationStepResult(
                 step_id=step.step_id, area=step.area,
                 status=INVALID_PLAN.value,
@@ -466,7 +461,7 @@ class PythonUnittestRunner(VerificationRunner):
                 diagnostics=f"Working directory escapes project root: {cwd}",
             )
 
-        python = shutil.which("python") or shutil.which("python3") or sys.executable
+        python = sys.executable
         args = (python, "-m", "unittest", "discover", "-s", cwd.name, "-v")
         result = _safe_exec(args, cwd.parent if cwd.name == "tests" else cwd,
                             self._timeout)
@@ -728,7 +723,7 @@ class ESPHomeCheckRunner(VerificationRunner):
                 diagnostics=f"ESPHome operation not supported: {step.verification_kind}",
             )
 
-        result = _safe_exec(args, cwd, self._timeout)
+        result = _safe_exec(args, cwd, self._timeout, tool_name="esphome")
         if result is None:
             return VerificationStepResult(
                 step_id=step.step_id, area=step.area,
@@ -796,7 +791,7 @@ class PlatformIORunner(VerificationRunner):
                 diagnostics=f"PlatformIO operation not supported: {step.verification_kind}",
             )
 
-        result = _safe_exec(args, cwd, self._timeout)
+        result = _safe_exec(args, cwd, self._timeout, tool_name="platformio")
         if result is None:
             return VerificationStepResult(
                 step_id=step.step_id, area=step.area,
@@ -869,8 +864,8 @@ class CMakeRunner(VerificationRunner):
                 diagnostics=f"CMake operation not supported: {step.verification_kind}",
             )
 
-        result = _safe_exec(args, cwd.parent if step.verification_kind == "configure" else cwd,
-                            self._timeout)
+        tool_name = "ctest" if step.verification_kind == "test" else "cmake"
+        result = _safe_exec(args, cwd, self._timeout, tool_name=tool_name)
         if result is None:
             return VerificationStepResult(
                 step_id=step.step_id, area=step.area,

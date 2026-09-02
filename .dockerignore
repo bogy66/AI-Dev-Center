@@ -1,0 +1,12 @@
+__pycache__
+*.pyc
+.venv
+venv
+.git
+.pytest_cache
+.diagnostic-traces
+.workflow-plans
+workflow_state.json
+data
+node_modules
+*.egg-info
