@@ -1,6 +1,7 @@
 import json
 import os
 import tempfile
+from hashlib import sha256
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -52,6 +53,7 @@ class WorkflowManager:
             "capability_approvals": {},
             "missing_toolchain_setups": {},
             "execution_lifecycles": {},
+            "communication_requests": {},
         }
 
     def _merge_with_defaults(self, default, state):
@@ -506,3 +508,70 @@ class WorkflowManager:
             })
             self.save(state)
             return dict(record)
+
+    def begin_communication_request(
+        self, transport, message_id, sender_id, conversation_id, *, limit=1000,
+    ):
+        """Atomically claim one transport message without storing its content."""
+        key = self._communication_request_key(
+            transport, message_id, sender_id, conversation_id,
+        )
+        with self._lock:
+            state = self.load()
+            requests = state.setdefault("communication_requests", {})
+            existing = requests.get(key)
+            if existing is not None:
+                if (
+                    existing.get("sender_id") != sender_id
+                    or existing.get("conversation_id") != conversation_id
+                ):
+                    raise ValueError("Transport message identity does not match")
+                return False, dict(existing)
+            while len(requests) >= limit:
+                completed = [
+                    item for item in requests.items()
+                    if item[1].get("status") == "completed"
+                ]
+                if not completed:
+                    raise ValueError("Communication request capacity is exhausted")
+                oldest_key = min(
+                    completed,
+                    key=lambda item: item[1].get("received_at", ""),
+                )[0]
+                del requests[oldest_key]
+            record = {
+                "transport": transport,
+                "message_id": message_id,
+                "sender_id": sender_id,
+                "conversation_id": conversation_id,
+                "status": "processing",
+                "received_at": datetime.now(timezone.utc).isoformat(),
+            }
+            requests[key] = record
+            self.save(state)
+            return True, dict(record)
+
+    def complete_communication_request(
+        self, transport, message_id, sender_id, conversation_id, response,
+    ):
+        """Persist a safe adapter response for deterministic redelivery."""
+        key = self._communication_request_key(
+            transport, message_id, sender_id, conversation_id,
+        )
+        with self._lock:
+            state = self.load()
+            record = state.setdefault("communication_requests", {}).get(key)
+            if record is None or record.get("status") != "processing":
+                raise ValueError("Communication request is not processing")
+            record.update({
+                "status": "completed",
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "response": dict(response),
+            })
+            self.save(state)
+            return dict(record)
+
+    @staticmethod
+    def _communication_request_key(transport, message_id, sender_id, conversation_id):
+        identity = "\0".join((transport, sender_id, conversation_id, message_id))
+        return f"{transport}:{sha256(identity.encode('utf-8')).hexdigest()}"

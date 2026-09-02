@@ -26,6 +26,8 @@ from app.execution import DEFAULT_CAPABILITY_REGISTRY
 from app.missing_toolchain_setup import StructuredInstallerRegistration, StructuredInstallerRegistry
 from app.workflow_plan_store import WorkflowPlanStore
 from app.project_context import ProjectDefinitionStore
+from app.signal_adapter import SignalCommunicationAdapter
+from app.workflow_manager import WorkflowManager
 
 
 @dataclass(frozen=True)
@@ -34,6 +36,7 @@ class CanonicalComponents:
     plan_store: WorkflowPlanStore
     approval: object
     development_workflow: DevelopmentWorkflow
+    signal_adapter: SignalCommunicationAdapter
 
 
 def build_canonical_components(config_path="config/ai-dev-center.yml"):
@@ -71,14 +74,18 @@ def build_canonical_components(config_path="config/ai-dev-center.yml"):
     installers = StructuredInstallerRegistry()
     installers.register(StructuredInstallerRegistration("pip", package_executor))
     installers.register(StructuredInstallerRegistration("python_package", package_executor))
+    workflow_manager = WorkflowManager()
+    plan_store = WorkflowPlanStore(".workflow-plans")
+    service = ProjectSetupApplicationService(
+        workflow, ProjectInspector(),
+        workflow_manager=workflow_manager,
+        capability_registry=DEFAULT_CAPABILITY_REGISTRY,
+        structured_installers=installers,
+        verification_registry=verification_registry,
+        project_definition_store=ProjectDefinitionStore(),
+        technical_config=config,
+    )
     return CanonicalComponents(
-        ProjectSetupApplicationService(
-            workflow, ProjectInspector(),
-            capability_registry=DEFAULT_CAPABILITY_REGISTRY,
-            structured_installers=installers,
-            verification_registry=verification_registry,
-            project_definition_store=ProjectDefinitionStore(),
-            technical_config=config,
-        ),
-        WorkflowPlanStore(".workflow-plans"), SetupApproval, workflow,
+        service, plan_store, SetupApproval, workflow,
+        SignalCommunicationAdapter(service, plan_store, workflow_manager),
     )

@@ -680,7 +680,7 @@ const helpSlides = [
         html: () => `
             <p>AI Dev Center is not intended to be just one chatbot producing code.</p>
             <p>It is an orchestrated development workspace in which specialized AI roles contribute to one common canonical project workflow.</p>
-            <p>Web, API, CLI and MCP are adapters to that workflow, not separate business pipelines. Legacy compatibility classes may remain without being productive alternatives.</p>
+            <p>Web, API, CLI, MCP and Signal are adapters to that central workflow, not separate business pipelines. Signal sender identity and approval-like text never satisfy Human Approval, and Signal chat is not stored as Project Definitions. Legacy compatibility classes may remain without being productive alternatives.</p>
             <p>For an existing project, its architecture, conventions, frameworks, build systems, tests and toolchains remain authoritative; AI Dev Center does not force it into a preferred architecture.</p>
             <p>The user interacts primarily through Chat.</p>
             <p>The system handles:</p>
