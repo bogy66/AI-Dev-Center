@@ -1,4 +1,5 @@
 from pathlib import PurePosixPath
+import json
 
 
 class DeveloperChanges:
@@ -40,6 +41,104 @@ class DeveloperChanges:
             return False
 
         return True
+
+    @staticmethod
+    def parse_structured(response: str) -> dict[str, object]:
+        """Parse and validate a structured JSON Developer response.
+
+        The contract is:
+
+            {
+              "changes": [
+                {
+                  "file": "relative/path",
+                  "action": "create|update|delete",
+                  "content": "complete file content"
+                }
+              ],
+              "tests": ["test description or command"]
+            }
+
+        Any structural or semantic violation in any change entry causes
+        rejection of the entire response — no partial application.
+        """
+        if not response or not isinstance(response, str) or not response.strip():
+            raise ValueError(
+                "Invalid developer response: empty or non-string"
+            )
+        try:
+            parsed = json.loads(response)
+        except json.JSONDecodeError:
+            raise ValueError(
+                "Invalid developer response: not valid JSON"
+            ) from None
+
+        if not isinstance(parsed, dict):
+            raise ValueError(
+                "Invalid developer response: root must be a JSON object"
+            )
+
+        raw_changes = parsed.get("changes")
+        if not isinstance(raw_changes, list):
+            raise ValueError(
+                "Invalid developer response: 'changes' must be an array"
+            )
+
+        raw_tests = parsed.get("tests")
+        if not isinstance(raw_tests, list):
+            raise ValueError(
+                "Invalid developer response: 'tests' must be an array"
+            )
+        tests: list[str] = []
+        for test_entry in raw_tests:
+            if not isinstance(test_entry, str):
+                raise ValueError(
+                    "Invalid developer response: 'tests' entries must be strings"
+                )
+            tests.append(test_entry.strip())
+
+        changes: list[dict[str, str]] = []
+        for entry in raw_changes:
+            if not isinstance(entry, dict):
+                raise ValueError(
+                    "Invalid developer response: each change must be an object"
+                )
+
+            file_path = entry.get("file")
+            if not isinstance(file_path, str) or not DeveloperChanges._valid_path(file_path):
+                raise ValueError(
+                    f"Invalid developer response: "
+                    f"invalid or unsafe file path: {file_path!r}"
+                )
+
+            action = entry.get("action")
+            if action not in DeveloperChanges.ALLOWED_ACTIONS:
+                raise ValueError(
+                    f"Invalid developer response: "
+                    f"unsupported action: {action!r}"
+                )
+
+            if "content" not in entry:
+                raise ValueError(
+                    f"Invalid developer response: "
+                    f"change entry missing required 'content' field"
+                )
+            content = entry["content"]
+            if not isinstance(content, str):
+                raise ValueError(
+                    "Invalid developer response: 'content' must be a string"
+                )
+
+            changes.append({
+                "file": file_path,
+                "action": action,
+                "content": content,
+            })
+
+        return {
+            "changes": changes,
+            "tests": tests,
+        }
 
     @staticmethod
     def parse(response):

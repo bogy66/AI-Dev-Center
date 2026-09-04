@@ -13,6 +13,12 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 
+SHARED_ADC_CONTEXT = (
+    "AI-Dev-Center is a controlled engineering system for developing and "
+    "maintaining software, firmware, and hardware-related projects."
+)
+
+
 # Existing developer/provider trace contract retained for compatibility.
 SENSITIVE_KEYS = {"api_key", "apikey", "secret", "token", "password", "credential", "bearer"}
 
@@ -142,7 +148,8 @@ STATUSES = EVENT_TYPES | frozenset({"accepted", "passed", "success", "incomplete
 DETAIL_KEYS = frozenset({
     "project_id", "project_type_count", "file_count", "warning_count",
     "requirement_count", "error_count", "missing_count", "result_count",
-    "variant_count", "recommendation", "council_complete", "plan_id",
+    "variant_count", "recommendation", "council_complete", "council_degraded",
+    "plan_id",
     "step_count", "controlled_path_count", "applied_path_count",
     "skipped_path_count", "runner", "passed", "timed_out", "return_code",
     "passed_count", "failed_count", "skipped_count", "duration_seconds",
@@ -158,6 +165,7 @@ DETAIL_KEYS = frozenset({
     "council_output",
     "interface_data", "interface_stage", "upstream_stage", "downstream_stage",
     "execution_identity",
+    "effective_prompt",
 })
 
 COUNCIL_OUTPUT_KEYS = frozenset({
@@ -170,7 +178,8 @@ COUNCIL_OUTPUT_KEYS = frozenset({
     "disadvantages", "confidence", "feasibility", "scores",
     "would_recommend", "reviews", "rejected_variants", "preferred_variants",
     "merge_decisions", "merged_variant_ids", "resulting_variant_id", "reason",
-    "council_complete", "error_count", "total_llm_calls", "result_id",
+    "council_complete", "council_degraded", "error_count", "total_llm_calls",
+    "result_id",
     "plausibility", "completeness", "complexity", "risk", "ci_cd_fitness",
     "maintainability", "cost_efficiency",
     "normal", "x", "y", "input", "output", "intent", "user_request",
@@ -189,6 +198,7 @@ COUNCIL_OUTPUT_KEYS = frozenset({
     "implementation_version", "provider", "model", "model_version",
     "actor", "actor_role", "phase", "council_phase", "dependencies",
     "interface", "data", "task_description",
+    "effective_prompt",
 })
 FORBIDDEN_COUNCIL_OUTPUT_KEYS = frozenset({
     "prompt", "system_prompt", "raw_response", "raw_llm_response",
@@ -242,6 +252,28 @@ class DiagnosticTraceEvent:
     def from_record(cls, record: dict) -> "DiagnosticTraceEvent":
         return cls(**record)
 
+
+class DiagnosticDetailLevel(str, Enum):
+    """Presentation depth for safe central DiagnosticTrace projections.
+
+    NONE suppresses diagnostic presentation without affecting required
+    business/audit trace collection. Workflow behaviour is unchanged.
+    """
+
+    NONE = "NONE"
+    NORMAL = "NORMAL"
+    INFO = "INFO"
+    VERBOSE = "VERBOSE"
+    VERY_VERBOSE = "VERY_VERBOSE"
+
+
+_DIAGNOSTIC_DETAIL_RANK = {
+    DiagnosticDetailLevel.NONE: -1,
+    DiagnosticDetailLevel.NORMAL: 0,
+    DiagnosticDetailLevel.INFO: 1,
+    DiagnosticDetailLevel.VERBOSE: 2,
+    DiagnosticDetailLevel.VERY_VERBOSE: 3,
+}
 
 class DiagnosticTraceStore:
     """Append-only JSONL persistence with process/thread consistency."""
@@ -359,7 +391,7 @@ class DiagnosticTrace:
     @staticmethod
     def _safe_value(value):
         if isinstance(value, str):
-            return _redact(value)[:500]
+            return _redact(value)[:3000]
         if isinstance(value, (bool, int, float)) or value is None:
             return value
         if isinstance(value, (list, tuple)):
@@ -383,7 +415,145 @@ class DiagnosticTrace:
                 for item in value[:50]
             ]
         if isinstance(value, str):
-            return _redact(value)[:1000]
+            return _redact(value)[:3000]
         if isinstance(value, (bool, int, float)) or value is None:
             return value
         return "[UNSUPPORTED]"
+
+
+_COUNCIL_PHASE_LABELS = {
+    "phase1": "Phase 1 — Proposals",
+    "phase2": "Phase 2 — Reviews",
+    "phase3": "Phase 3 — Chairman",
+}
+
+
+def _terminal_safe_details(details: dict) -> dict:
+    """Reapply the central allowlists; never serialize an unrestricted mapping."""
+    safe = {}
+    for key, value in details.items():
+        if key not in DETAIL_KEYS:
+            continue
+        safe[key] = (
+            DiagnosticTrace._safe_council_output(value)
+            if key in {"council_output", "interface_data", "execution_identity"}
+            else DiagnosticTrace._safe_value(value)
+        )
+    return safe
+
+
+def _terminal_projection(mapping: dict, level: DiagnosticDetailLevel) -> dict:
+    preferred = {
+        DiagnosticDetailLevel.INFO: ("info", "normal"),
+        DiagnosticDetailLevel.VERBOSE: ("verbose", "info", "normal"),
+        DiagnosticDetailLevel.VERY_VERBOSE: (
+            "very_verbose", "verbose", "info", "normal",
+        ),
+    }.get(level, ())
+    for key in preferred:
+        value = mapping.get(key)
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def _terminal_fields(mapping: dict, keys: tuple[str, ...]) -> str:
+    parts = []
+    for key in keys:
+        if key not in mapping or mapping[key] is None or mapping[key] == "":
+            continue
+        value = mapping[key]
+        if isinstance(value, (dict, list)):
+            rendered = json.dumps(value, ensure_ascii=False, sort_keys=True)
+        else:
+            rendered = str(value)
+        parts.append(f"{key}={rendered}")
+    return " ".join(parts)
+
+
+def render_diagnostic_trace_event(
+    event: DiagnosticTraceEvent,
+    detail_level: DiagnosticDetailLevel | str = DiagnosticDetailLevel.NORMAL,
+) -> str:
+    """Return a non-persisting, human-readable projection of one safe event."""
+    try:
+        level = (
+            detail_level
+            if isinstance(detail_level, DiagnosticDetailLevel)
+            else DiagnosticDetailLevel(str(detail_level).upper())
+        )
+    except ValueError as error:
+        raise ValueError("Unsupported diagnostic detail level") from error
+
+    if level == DiagnosticDetailLevel.NONE:
+        return ""
+
+    details = _terminal_safe_details(event.details or {})
+    base = [event.phase]
+    council_phase = details.get("council_phase")
+    if council_phase in _COUNCIL_PHASE_LABELS:
+        base.append(_COUNCIL_PHASE_LABELS[council_phase])
+    actor = details.get("actor")
+    if actor:
+        role = details.get("actor_role")
+        base.append(f"{actor} ({role})" if role else str(actor))
+    base.append(f"status={event.status}")
+    runtime_state = details.get("runtime_state")
+    if runtime_state:
+        base.append(f"activity={runtime_state}")
+    base.append(_redact(event.summary)[:500])
+    lines = ["[TRACE] " + " | ".join(base)]
+
+    if _DIAGNOSTIC_DETAIL_RANK[level] >= _DIAGNOSTIC_DETAIL_RANK[DiagnosticDetailLevel.INFO]:
+        interface = details.get("interface_data")
+        projection = _terminal_projection(interface, level) if isinstance(interface, dict) else {}
+        endpoint_keys = ("type", "interface")
+        if _DIAGNOSTIC_DETAIL_RANK[level] >= _DIAGNOSTIC_DETAIL_RANK[DiagnosticDetailLevel.VERBOSE]:
+            endpoint_keys += ("source", "destination", "data")
+        for key, label in (("x", "x — Input"), ("f", "f — Processor"), ("y", "y — Output")):
+            value = projection.get(key)
+            if not isinstance(value, dict):
+                continue
+            keys = endpoint_keys if key != "f" else (
+                "entity", "entity_version", "implementation_version",
+                "provider", "model", "model_version", "actor", "phase",
+            )
+            rendered = _terminal_fields(value, keys)
+            if rendered:
+                lines.append(f"[TRACE]   {label}: {rendered}")
+
+    if _DIAGNOSTIC_DETAIL_RANK[level] >= _DIAGNOSTIC_DETAIL_RANK[DiagnosticDetailLevel.VERBOSE]:
+        context = _terminal_fields(
+            details,
+            ("provider", "model", "duration_ms", "actor_role", "council_phase"),
+        )
+        if context:
+            lines.append(f"[TRACE]   Context: {context}")
+        identity = details.get("execution_identity")
+        if isinstance(identity, dict):
+            rendered = _terminal_fields(
+                identity,
+                ("entity", "entity_version", "implementation_version", "provider",
+                 "model", "model_version", "actor", "phase"),
+            )
+            if rendered:
+                lines.append(f"[TRACE]   Execution: {rendered}")
+
+    council_output = details.get("council_output")
+    if isinstance(council_output, dict) and level != DiagnosticDetailLevel.NORMAL:
+        projection = _terminal_projection(council_output, level)
+        if projection:
+            lines.append(
+                "[TRACE]   Council: "
+                + json.dumps(projection, ensure_ascii=False, sort_keys=True)
+            )
+
+    if _DIAGNOSTIC_DETAIL_RANK[level] >= _DIAGNOSTIC_DETAIL_RANK[DiagnosticDetailLevel.VERY_VERBOSE]:
+        effective_prompt = details.get("effective_prompt")
+        if isinstance(effective_prompt, str) and effective_prompt.strip():
+            lines.append(
+                "[TRACE]   Effective-Prompt: "
+                + _redact(effective_prompt)[:3000]
+            )
+
+    return "\n".join(lines)

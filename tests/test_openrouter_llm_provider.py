@@ -126,3 +126,31 @@ class TestOpenRouterLLMProvider:
         # structural check: has complete method
         assert hasattr(provider, "complete")
         assert callable(provider.complete)
+
+    def test_max_tokens_included_in_payload(self):
+        mock_session = MagicMock()
+        mock_response = MagicMock()
+        mock_response.ok = True
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": "OK"}}]
+        }
+        mock_session.post.return_value = mock_response
+
+        provider = OpenRouterLLMProvider(api_key="key", session=mock_session)
+        provider.complete("prompt", max_tokens=512)
+        payload = mock_session.post.call_args.kwargs["json"]
+        assert payload["max_tokens"] == 512
+
+    def test_max_tokens_omitted_when_none(self):
+        mock_session = MagicMock()
+        mock_response = MagicMock()
+        mock_response.ok = True
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": "OK"}}]
+        }
+        mock_session.post.return_value = mock_response
+
+        provider = OpenRouterLLMProvider(api_key="key", session=mock_session)
+        provider.complete("prompt")
+        payload = mock_session.post.call_args.kwargs["json"]
+        assert "max_tokens" not in payload

@@ -29,8 +29,27 @@ class DeveloperAgent:
         self._executor = executor
 
     def generate_changes(self, request: DevelopmentRequest) -> dict[str, Any]:
-        response = self._executor.run("developer", request.task, "", "developer", 0)
-        return DeveloperChanges.parse(response)
+        response = self._executor.run("developer", request.task, "", "developer")
+        try:
+            return DeveloperChanges.parse_structured(response)
+        except ValueError as structured_error:
+            repair_response = self._executor.run(
+                "developer",
+                (
+                    "Your previous response violated the required output format. "
+                    "Return ONLY a valid JSON object with exactly this structure: "
+                    '{"changes": [{"file": "relative/path", "action": "create|update|delete", '
+                    '"content": "complete file content"}], "tests": ["test"]}. '
+                    "Include all previously identified changes. "
+                    "No markdown, no commentary outside the JSON."
+                ),
+                "",
+                "developer",
+            )
+            try:
+                return DeveloperChanges.parse_structured(repair_response)
+            except ValueError:
+                raise structured_error
 
 
 class DevelopmentStage:

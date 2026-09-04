@@ -147,7 +147,7 @@ class CouncilConfig:
     toolchain_integrator: CouncilAgentConfig = field(default_factory=lambda: CouncilAgentConfig(
         role="toolchain_integrator",
         provider="openrouter",
-        model="google/gemini-2.0-flash-001",
+        model="google/gemini-2.5-flash",
         timeout_seconds=60.0,
         temperature=0.7,
     ))
@@ -161,7 +161,7 @@ class CouncilConfig:
     chairman: CouncilAgentConfig = field(default_factory=lambda: CouncilAgentConfig(
         role="chairman",
         provider="openrouter",
-        model="anthropic/claude-3.5-sonnet",
+        model="anthropic/claude-sonnet-4.5",
         timeout_seconds=90.0,
         temperature=0.2,
     ))

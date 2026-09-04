@@ -79,6 +79,7 @@
                         <option value="Workflow">Workflow</option>
                     </select>
                     <select id="trace-level-select">
+                        <option value="NONE">NONE</option>
                         <option value="NORMAL" selected>NORMAL</option>
                         <option value="INFO">INFO</option>
                         <option value="VERBOSE">VERBOSE</option>
@@ -97,7 +98,7 @@
             <div class="help-header">
                 <div>
                     <h2>AI Dev Center Help</h2>
-                    <div class="help-subtitle">Learn about the workspace and view the pitch deck.</div>
+                    <div class="help-subtitle">Learn about the workspace, view the pitch deck, or explore the ADC documentation.</div>
                 </div>
                 <div class="help-nav">
                     <button id="help-back-btn" class="back-button">← Back to project</button>
@@ -107,6 +108,7 @@
             <div class="help-section-tabs">
                 <button id="help-overview-btn" class="help-section-tab active">Overview / How it works</button>
                 <button id="help-pitch-btn" class="help-section-tab">Pitch Deck</button>
+                <button id="help-docs-btn" class="help-section-tab">ADC Documentation</button>
             </div>
 
             <div id="help-overview-content" class="help-section-content">
@@ -120,8 +122,8 @@
                         <li>Watch the current work and any problems in Diagnostic Trace.</li>
                         <li>Review each approval request before setup, capability use, final acceptance or publishing.</li>
                     </ol>
-                    <p><strong>Projects</strong> is your local list of project roots. The Web GUI currently opens existing projects; safe Web creation of a new greenfield directory is a product goal, not an implemented button.</p>
-                    <p><strong>Diagnostic Trace</strong> is the live progress and problem view. At central planning boundaries it presents what kind of input a stage received, which interface and source supplied it, which processor/version handled it, what kind of output it produced, and where that output went. NORMAL stays compact; INFO adds concise type/interface and processor identity; VERBOSE adds structured handoffs, engineering fields and safe provider/model context; VERY VERBOSE shows the fullest allowlisted x→f→y projection. Web, Signal, API, CLI and MCP are representable interface concepts, not claims that every complete adapter workflow exists today. No level reveals prompts, raw responses, credentials, private model reasoning or executable command payloads.</p>
+                    <p><strong>Projects</strong> is your local list of project roots. The Web GUI opens existing projects; greenfield project creation is available through the central workflow path and used by the Real-System E2E test.</p>
+                    <p><strong>Diagnostic Trace</strong> is the live progress and problem view. At central planning boundaries it presents what kind of input a stage received, which interface and source supplied it, which processor/version handled it, what kind of output it produced, and where that output went. NONE suppresses diagnostic presentation; NORMAL shows essential workflow progress and outcomes; INFO adds concise type/interface and processor identity; VERBOSE adds structured handoffs, engineering fields and safe provider/model context; VERY VERBOSE shows the fullest allowlisted x→f→y projection. At VERY_VERBOSE level, sanitized effective LLM prompts (after template substitution) are visible as diagnostic transparency — raw provider responses, credentials, private model reasoning and executable command payloads remain excluded at every level. NONE only affects presentation — required central audit trace data is preserved.</p>
                     <p><strong>Human Approval</strong> means the AI can propose a controlled next step, but approval remains a separate decision. Approving one boundary never approves setup, capabilities, Git, publish or hardware actions at another boundary.</p>
                     <h3>What the AI does</h3>
                     <p>It first observes the existing project without executing it, preserves its architecture and conventions, clarifies requirements, asks an Engineering Council to compare approaches, and prepares structured work for development and verification. Missing tools are reported rather than silently installed.</p>
@@ -134,7 +136,7 @@
                     <p>A tool_unavailable result remains a structured setup need in the central workflow and never installs anything automatically. Only a command-free SetupPlan materialized from Project Intelligence and the Chairman Council result, followed by separate Setup Human Approval, may invoke a registered structured installer. Availability is checked before and after setup, and only the persisted original VerificationPlan may be retried through the existing Verification architecture. Installation success never grants capability authority.</p>
                     <p>Docker is the intended runtime. The core container runs non‑root, without privileged mode and without Docker‑socket or device mounts. The central approval-aware capability registry binds capability and executable identity, allowed operation type, approval provenance, normalized project scope and active registration status. Future toolchain names can be registered without extending a fixed list; today's global registrations are compatibility defaults only. Dynamic registrations are always project-bound, while the same capability may be approved independently for multiple projects. Dynamic registrations follow Project Intelligence → Engineering Council → Chairman approval → Human Approval → controlled capability registration → controlled execution. Registration cannot authorize arbitrary shell commands, argv policies, images, mounts, devices, host access or automatic installation. Denied-argument checks, timeout and output limits remain enforced, and missing tools remain tool_unavailable.</p>
                     <p>The central application service opens a capability-specific Human Approval only for metadata present in the actual Project Intelligence and completed Chairman Council result. A matching persisted approval record is required before the existing registry accepts the registration. After restart, only complete approved registrations are restored through the same registry boundary; pending and rejected approvals are not restored. This approval remains separate from setup, Git, publish and physical-hardware approvals.</p>
-                    <p>Current execution support is deliberately bounded. Hardware flashing, OTA, device activation and other physical hardware actions are not presented as productive capabilities and will require their own separate human approval boundary.</p>
+                    <p>Current execution support is deliberately bounded. Hardware flashing, OTA, device activation and other physical hardware actions are not presented as productive capabilities and will require their own separate human approval boundary. A durable Real-System E2E test exercises the full productive central workflow including the Engineering Council, toolchain setup, ESPHome validation/compile, final approval and controlled Git commit with real external provider/model calls; it requires the explicit --real-system-e2e pytest flag and is never part of the normal test suite.</p>
 
                     <h3>Typical workflow</h3>
                     <p>The central process keeps planning, execution and human trust boundaries explicit:</p>
@@ -182,7 +184,7 @@
 
                     <h3>Chat and Trace</h3>
                     <p>The user interacts primarily through Chat. The system shows technical observability in the Trace panel.</p>
-                    <p>Trace levels: <strong>INFO</strong>, <strong>DEBUG</strong>, <strong>VERBOSE</strong>, <strong>VERY_VERBOSE</strong>. These control the detail threshold.</p>
+                    <p>Trace levels: <strong>NONE</strong>, <strong>NORMAL</strong>, <strong>INFO</strong>, <strong>VERBOSE</strong>, <strong>VERY_VERBOSE</strong>. These control the diagnostic detail threshold. NONE suppresses presentation without affecting required central audit collection.</p>
                     <p>Sensitive values such as secrets, API keys, passwords, prompts, chain-of-thought and sensitive raw arguments are never exposed.</p>
                 </div>
             </div>
@@ -193,6 +195,19 @@
                     <button id="help-prev-btn" class="back-button">Previous</button>
                     <span id="help-page-indicator">1 / 15</span>
                     <button id="help-next-btn" class="back-button">Next</button>
+                </div>
+            </div>
+
+            <div id="help-docs-content" class="help-section-content hidden">
+                <div class="docs-layout">
+                    <nav class="docs-sidebar" id="docs-sidebar">
+                        <div class="docs-sidebar-header">ADC Documentation</div>
+                        <div class="docs-toc" id="docs-toc"></div>
+                    </nav>
+                    <div class="docs-main">
+                        <div class="docs-breadcrumb" id="docs-breadcrumb"></div>
+                        <div class="docs-body" id="docs-body"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -313,6 +328,7 @@
     </div>
 </div>
 
+<script src="/static/docs/docs.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

@@ -79,7 +79,7 @@ class DeterministicProvider:
             "connection": None, "capabilities": [], "toolchain": [],
             "advantages": ["No setup"], "disadvantages": [], "risks": [],
             "confidence": 0.9, "feasibility": "high",
-            "verification": "unsafe-agent-check --run && next-command",
+            "verification": "verify-environment",
             "agent_reasoning": "Test fixture",
         }]})
 
@@ -335,9 +335,7 @@ def test_productive_web_planning_reaches_real_approval_boundary(
     assert "Inspect and plan this existing project." in json.dumps(discovery_interface)
     assert "not available at this boundary" not in serialized_interfaces
     serialized_council_outputs = json.dumps(council_outputs)
-    assert "unsafe-agent-check" not in serialized_council_outputs
-    assert "unsafe-chairman-check" not in serialized_council_outputs
-    assert "next-command" not in serialized_council_outputs
+    assert "verify-environment" in serialized_council_outputs
     assert components.service._workflow_manager.storage.resolve() == (
         owned_root / "workflow_state.json"
     ).resolve()
@@ -345,7 +343,7 @@ def test_productive_web_planning_reaches_real_approval_boundary(
     assert (owned_root / ".workflow-plans").exists()
 
 
-def test_productive_incomplete_council_retains_blocked_inspectable_session(
+def test_productive_degraded_council_continues_to_approval(
     disposable_productive_web,
 ):
     owned_root, project, compose = disposable_productive_web
@@ -354,9 +352,9 @@ def test_productive_incomplete_council_retains_blocked_inspectable_session(
 
     with TestClient(app) as client:
         response = client.post("/api/workflow/start", json={
-            "project_name": "disposable-failure",
+            "project_name": "disposable-degraded",
             "project_directory": str(project),
-            "task_description": "Exercise deterministic failure.",
+            "task_description": "Exercise deterministic degraded quorum.",
         })
         assert response.status_code == 202
         session_id = response.json()["session_id"]
@@ -365,14 +363,14 @@ def test_productive_incomplete_council_retains_blocked_inspectable_session(
             planning_task.result(timeout=5)
         state = client.get(f"/api/state/{session_id}").json()
 
-    assert state["workflow_status"] == "blocked"
-    assert state["blocked"] is True
-    assert state["approval_required"] is False
-    assert state["plan_id"] is None
-    assert state["trace"][-1]["event"] == "workflow_planning_blocked"
-    assert state["trace"][-1]["status"] == "blocked"
+    assert state["workflow_status"] == "pending_approval"
+    assert state["blocked"] is False
+    assert state["approval_required"] is True
+    assert state["approval_status"] == "pending_approval"
+    assert state["plan_id"] is not None
     assert not any(
-        event["event"] == "workflow_start_failed" for event in state["trace"]
+        event["event"] in {"workflow_start_failed", "workflow_planning_blocked"}
+        for event in state["trace"]
     )
     discovery_completed = next(
         index for index, event in enumerate(state["central_trace"])
@@ -386,30 +384,34 @@ def test_productive_incomplete_council_retains_blocked_inspectable_session(
         and event.get("metadata", {}).get("runtime_state") == "failed"
         and event.get("metadata", {}).get("model")
     )
-    council_incomplete = next(
+    council_completed = next(
         index for index, event in enumerate(state["central_trace"])
         if event["action"] == "engineering_council"
         and event["event"] == "completed"
-        and event["status"] == "incomplete"
+        and event["status"] == "completed"
+        and event.get("metadata", {}).get("council_complete") is True
+        and event.get("metadata", {}).get("council_degraded") is True
     )
-    council_blocked = next(
+    materialization_started = next(
         index for index, event in enumerate(state["central_trace"])
-        if event["action"] == "engineering_council"
-        and event["event"] == "blocked"
-        and event["status"] == "blocked"
+        if event["action"] == "toolchain_materialization"
+        and event["event"] == "started"
     )
-    assert discovery_completed < agent_failed < council_incomplete < council_blocked
+    assert discovery_completed < agent_failed < council_completed < materialization_started
+    degraded_interface = next(
+        event["metadata"]["interface_data"]
+        for event in state["central_trace"]
+        if event.get("metadata", {}).get("interface_stage") == "engineering_council"
+    )
+    assert degraded_interface["info"]["y"]["data"]["council_complete"] is True
+    assert degraded_interface["info"]["y"]["data"]["council_degraded"] is True
     assert not any(
         event["action"] == "requirement_discovery"
         and event["status"] in {"failed", "blocked"}
         for event in state["central_trace"]
     )
-    assert not any(
+    assert any(
         event["action"] == "setup_approval"
-        for event in state["central_trace"]
-    )
-    assert not any(
-        event["action"] == "toolchain_materialization"
         for event in state["central_trace"]
     )
     assert any(
@@ -447,10 +449,8 @@ def test_productive_incomplete_council_retains_blocked_inspectable_session(
         if event["action"] == "workflow_end"
     ]
     assert workflow_end_statuses
-    assert set(workflow_end_statuses) == {"blocked"}
+    assert "blocked" not in workflow_end_statuses
+    assert "failed" not in workflow_end_statuses
     serialized = json.dumps(state)
     assert "deterministic provider failure" not in serialized
-    assert "unsafe-agent-check" not in serialized
-    assert "unsafe-chairman-check" not in serialized
-    assert "next-command" not in serialized
     assert not any(path for path in owned_root.parent.iterdir() if path != owned_root)

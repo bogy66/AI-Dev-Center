@@ -6,15 +6,19 @@ from types import MappingProxyType
 from app.requirement_model import (
     RequirementEvidence,
     Requirement,
+    RequirementActivation,
     RequirementSet,
     DiscoveryResult,
     ValidationResult,
     PreflightRequirementResult,
     PreflightResult,
+    SetupEffect,
     SetupStep,
     SetupPlan,
     Status,
     RequirementType,
+    classify_setup_effect,
+    normalize_requirement_activations,
 )
 
 
@@ -34,6 +38,36 @@ def test_requirement_evidence_creation():
     assert ev.snippet == "tool:"
     assert ev.confidence_contribution == 0.5
     assert ev.url is None
+
+
+def test_requirement_activation_is_separate_from_durable_required_flag():
+    req = Requirement(
+        id="future-capability", name="future-capability", type="capability",
+        purpose="continued development", required=True, confidence=0.9,
+    )
+    activation = RequirementActivation(
+        requirement_id=req.id, active=False,
+        blocks_current_operation=False, reason="not used by this request",
+    )
+
+    assert req.required is True
+    assert activation.state == "inactive"
+    assert activation.requirement_id == req.id
+
+
+def test_inactive_activation_cannot_claim_to_block():
+    with pytest.raises(ValueError, match="inactive requirement"):
+        RequirementActivation("req-1", False, True)
+
+
+def test_activation_normalization_rejects_duplicate_requirement_ids():
+    req = Requirement(
+        id="same", name="future", type="future_capability_kind",
+        purpose="future", required=True, confidence=0.9,
+    )
+
+    with pytest.raises(ValueError, match="unique"):
+        normalize_requirement_activations((req, req))
 
 
 def test_requirement_creation_and_evidence_to_tuple():
@@ -369,3 +403,164 @@ def test_requirement_type_constants_are_strings():
     ]:
         assert hasattr(RequirementType, type_name)
         assert isinstance(getattr(RequirementType, type_name), str)
+
+
+def test_setup_plan_provided_requirement_ids_defaults_to_empty_tuple():
+    plan = SetupPlan(id="plan-1", project_id="proj")
+    assert plan.provided_requirement_ids == ()
+    assert isinstance(plan.provided_requirement_ids, tuple)
+
+
+def test_setup_plan_provided_requirement_ids_preserves_order_and_deduplication():
+    plan = SetupPlan(
+        id="plan-2", project_id="proj",
+        provided_requirement_ids=["req-a", "req-b", "req-a"],
+    )
+    assert plan.provided_requirement_ids == ("req-a", "req-b", "req-a")
+
+
+def test_setup_plan_provided_requirement_ids_is_immutable():
+    plan = SetupPlan(
+        id="plan-3", project_id="proj",
+        provided_requirement_ids=("req-a", "req-b"),
+    )
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        plan.provided_requirement_ids = ()
+
+
+# ---------------------------------------------------------------------------
+# SetupEffect / classify_setup_effect
+# ---------------------------------------------------------------------------
+
+def test_setup_effect_constants_are_semantic():
+    for attr in ("PYTHON_PACKAGE_INSTALL", "PROJECT_TOOL_INSTALL",
+                 "SYSTEM_PACKAGE_INSTALL", "CONTAINER_RUNTIME_SETUP",
+                 "SYSTEM_CONFIGURATION", "DEVICE_ACCESS", "MANUAL"):
+        assert hasattr(SetupEffect, attr)
+        assert isinstance(getattr(SetupEffect, attr), str)
+        val = getattr(SetupEffect, attr)
+        assert "sudo" not in val
+        assert "apt" not in val
+        assert "/" not in val
+        assert " " not in val
+
+
+def test_setup_effect_constants_are_not_commands():
+    for attr in dir(SetupEffect):
+        if attr.startswith("_"):
+            continue
+        val = getattr(SetupEffect, attr)
+        assert isinstance(val, str)
+        assert "\n" not in val
+        assert " && " not in val
+
+
+def test_python_package_maps_to_python_package_install():
+    assert classify_setup_effect(RequirementType.PYTHON_PACKAGE, "requests", "pip") == SetupEffect.PYTHON_PACKAGE_INSTALL
+    assert classify_setup_effect(RequirementType.PYTHON_PACKAGE, "build", "pip install build") == SetupEffect.PYTHON_PACKAGE_INSTALL
+
+
+def test_python_package_without_name_or_method_falls_back_to_manual():
+    assert classify_setup_effect(RequirementType.PYTHON_PACKAGE, None, "pip") == SetupEffect.MANUAL
+    assert classify_setup_effect(RequirementType.PYTHON_PACKAGE, "pkg", None) == SetupEffect.MANUAL
+    assert classify_setup_effect(RequirementType.PYTHON_PACKAGE, "", "pip") == SetupEffect.MANUAL
+    assert classify_setup_effect(RequirementType.PYTHON_PACKAGE, "pkg", "") == SetupEffect.MANUAL
+
+
+def test_sdk_with_install_method_maps_to_project_tool_install():
+    effect = classify_setup_effect(RequirementType.SDK, "esp-idf", "manual setup")
+    assert effect == SetupEffect.PROJECT_TOOL_INSTALL
+
+
+def test_toolchain_with_install_method_maps_to_project_tool_install():
+    effect = classify_setup_effect(RequirementType.TOOLCHAIN, "cmake", "apt install cmake")
+    assert effect == SetupEffect.PROJECT_TOOL_INSTALL
+
+
+def test_executable_with_install_method_maps_to_project_tool_install():
+    effect = classify_setup_effect(RequirementType.EXECUTABLE, "some-tool", "curl -sSL | sh")
+    assert effect == SetupEffect.PROJECT_TOOL_INSTALL
+
+
+def test_flasher_with_install_method_maps_to_project_tool_install():
+    effect = classify_setup_effect(RequirementType.FLASHER, "esptool", "pip install esptool")
+    assert effect == SetupEffect.PROJECT_TOOL_INSTALL
+
+
+def test_system_package_with_install_method_maps_to_system_package_install():
+    effect = classify_setup_effect(RequirementType.SYSTEM_PACKAGE, "libusb-dev", "apt install libusb-dev")
+    assert effect == SetupEffect.SYSTEM_PACKAGE_INSTALL
+
+
+def test_unknown_types_map_to_manual():
+    for t in (RequirementType.UNKNOWN, RequirementType.CAPABILITY,
+              RequirementType.BUILD_COMMAND, RequirementType.CONFIG_FILE):
+        effect = classify_setup_effect(t, "name", "method")
+        assert effect == SetupEffect.MANUAL
+
+
+def test_classification_is_not_affected_by_install_method_text():
+    assert classify_setup_effect(RequirementType.SDK, "sdk", "manual") == SetupEffect.PROJECT_TOOL_INSTALL
+    assert classify_setup_effect(RequirementType.SDK, "sdk", "pip install sdk") == SetupEffect.PROJECT_TOOL_INSTALL
+    assert classify_setup_effect(RequirementType.SDK, "sdk", "https://example.com/setup.sh") == SetupEffect.PROJECT_TOOL_INSTALL
+    assert classify_setup_effect(RequirementType.SDK, "sdk", "apt-get install sdk") == SetupEffect.PROJECT_TOOL_INSTALL
+
+
+def test_arbitrary_install_method_text_does_not_change_effect():
+    pip_effect = classify_setup_effect(RequirementType.PYTHON_PACKAGE, "pkg", "pip")
+    sh_effect = classify_setup_effect(RequirementType.PYTHON_PACKAGE, "pkg", "curl | sh")
+    assert pip_effect == sh_effect == SetupEffect.PYTHON_PACKAGE_INSTALL
+
+
+def test_setup_effect_is_not_a_command_or_path():
+    for attr in dir(SetupEffect):
+        if attr.startswith("_"):
+            continue
+        val = getattr(SetupEffect, attr)
+        assert not val.startswith("/")
+        assert not val.startswith("sudo")
+
+    for req_type in (RequirementType.PYTHON_PACKAGE, RequirementType.SYSTEM_PACKAGE,
+                     RequirementType.SDK, RequirementType.TOOLCHAIN):
+        effect = classify_setup_effect(req_type, "name", "method")
+        assert isinstance(effect, str)
+        assert not effect.startswith("/")
+        assert "sudo" not in effect
+
+
+def test_none_type_returns_manual():
+    assert classify_setup_effect(None, "name", "method") == SetupEffect.MANUAL
+    assert classify_setup_effect("", "name", "method") == SetupEffect.MANUAL
+
+
+def test_unsupported_backend_effects_defaults_to_empty_tuple():
+    plan = SetupPlan(id="plan-1", project_id="proj")
+    assert plan.unsupported_backend_effects == ()
+    assert isinstance(plan.unsupported_backend_effects, tuple)
+
+
+def test_unsupported_backend_effects_is_immutable():
+    plan = SetupPlan(
+        id="plan-2", project_id="proj",
+        unsupported_backend_effects=("project_tool_install",),
+    )
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        plan.unsupported_backend_effects = ()
+
+
+def test_setup_step_setup_effect_default_is_none():
+    step = SetupStep(
+        id="step-1", requirement_id="1", action="install",
+        install_method="pip", package="somepkg",
+    )
+    assert step.setup_effect is None
+
+
+def test_setup_step_with_explicit_setup_effect():
+    step = SetupStep(
+        id="step-1", requirement_id="1", action="install",
+        install_method="pip", package="somepkg",
+        setup_effect=SetupEffect.PYTHON_PACKAGE_INSTALL,
+    )
+    assert step.setup_effect == SetupEffect.PYTHON_PACKAGE_INSTALL
+    assert "sudo" not in (step.setup_effect or "")

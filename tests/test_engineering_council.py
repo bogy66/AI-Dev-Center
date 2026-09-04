@@ -38,6 +38,17 @@ from app.council_models import (
     ProposalSet,
     ToolchainItem,
 )
+from app.council_prompts import (
+    AGENT_ROLE_ENV_ARCHITECT,
+    AGENT_ROLE_ENV_ARCHITECT_REVIEW,
+    AGENT_ROLE_RISK,
+    AGENT_ROLE_RISK_REVIEW,
+    AGENT_ROLE_TOOLCHAIN,
+    AGENT_ROLE_TOOLCHAIN_REVIEW,
+    CHAIRMAN_SYSTEM_PROMPT,
+    build_phase1_prompt,
+    build_chairman_prompt,
+)
 from app.engineering_council import EngineeringCouncil, _AgentTask
 from app.requirement_model import (
     PreflightRequirementResult,
@@ -349,7 +360,8 @@ def _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp):
 
 
 def _run_council_with_fakes(council_config, fake_providers, tmp_path,
-                             trace_dir=None, capture_configs=None):
+                             trace_dir=None, capture_configs=None,
+                             capture_results=None):
     """Run council with fake providers patched in. Returns result."""
     factory = None
     if capture_configs is not None:
@@ -374,6 +386,10 @@ def _run_council_with_fakes(council_config, fake_providers, tmp_path,
             secret_resolver=SimpleSecretResolver({"openrouter-api": "test"}),
             trace_dir=trace_dir,
         )
+        if capture_results is not None:
+            council.set_result_callback(
+                lambda **result: capture_results.append(result)
+            )
         return council.evaluate(_make_council_input())
 
 
@@ -584,6 +600,46 @@ class TestPhase1DataIsolation:
         assert "A3-var-" not in p1_a1, "A1 must not see A3 proposals"
         assert "AgentProposal" not in p1_a1, "A1 must not see AgentProposal references"
 
+    def test_phase1_receives_requirement_correlated_preflight(self, tmp_path):
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, _ = _setup_standard_responses()
+        fake_providers = _build_standard_providers(
+            a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp
+        )
+
+        _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path
+        )
+
+        prompt = fake_providers["model-ea"].calls[0]
+        preflight_section = prompt.split(
+            "PREFLIGHT (was ist bereits installiert?):", 1
+        )[1].split("ADAPTER INFORMATION", 1)[0]
+        assert '"requirement_id": "req-1"' in preflight_section
+        assert '"present": true' in preflight_section
+        assert '"satisfied": true' in preflight_section
+        assert '"detected_version": "3.12"' in preflight_section
+        assert '"requirement_id": "req-2"' in preflight_section
+
+    def test_phase1_defines_requirement_reference_semantics(self, tmp_path):
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, _ = _setup_standard_responses()
+        fake_providers = _build_standard_providers(
+            a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp
+        )
+
+        _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path
+        )
+
+        prompt = fake_providers["model-ea"].calls[0]
+        assert "ToolchainItem.requirement_ref" in prompt
+        assert "technische Realisierung" in prompt
+        assert "kein Platzhalter" in prompt
+        assert "Erfinde keine Requirement IDs" in prompt
+        assert 'satisfied=true' in prompt
+        assert 'state="needs_install"' in prompt
+        assert "unpassenden requirement_ref" in prompt
+        assert "limitation, disadvantage oder risk" in prompt
+
     def test_a2_sees_only_council_input(self, tmp_path):
         a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, all_ids = _setup_standard_responses()
         fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp)
@@ -730,7 +786,8 @@ def test_stuck_agent_is_bounded_and_completed_results_are_retained(tmp_path):
     finally:
         release_stuck_provider.set()
 
-    assert result.council_complete is False
+    assert result.council_complete is True
+    assert result.council_degraded is True
     assert result.variants
     assert any("A1" in error and "deadline" in error for error in result.agent_errors)
     assert any(
@@ -831,6 +888,49 @@ class TestPhase3DataIsolation:
             assert vid in ch_prompt, f"Chairman prompt missing variant ID {vid}"
         assert "would_recommend" in ch_prompt, "Chairman prompt missing vote data"
         assert "scores" in ch_prompt, "Chairman prompt missing score data"
+
+    def test_chairman_receives_controlled_setup_feasibility(self, tmp_path):
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, _ = _setup_standard_responses()
+        fake_providers = _build_standard_providers(
+            a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp
+        )
+
+        _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path
+        )
+
+        chairman_prompt = fake_providers["model-ch"].calls[0]
+        assert '"install_method": "pip install esphome"' in chairman_prompt
+        assert '"state": "needs_install"' in chairman_prompt
+        assert '"environment_constraint": null' in chairman_prompt
+        assert '"version": null' in chairman_prompt
+        assert '"controlled_setup"' in chairman_prompt
+        assert '"status": "satisfied"' in chairman_prompt
+        assert '"status": "materializable"' in chairman_prompt
+        assert '"automatically_materializable": true' in chairman_prompt
+        assert '"selection_guidance": "required_when_available"' in chairman_prompt
+
+    def test_chairman_receives_requirement_and_preflight_contract(self, tmp_path):
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, _ = _setup_standard_responses()
+        fake_providers = _build_standard_providers(
+            a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp
+        )
+
+        _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path
+        )
+
+        prompt = fake_providers["model-ch"].calls[0]
+        assert "VALIDIERTE REQUIREMENTS" in prompt
+        assert "AUTHORITATIVE PREFLIGHT BY REQUIREMENT ID" in prompt
+        assert '"id": "req-1"' in prompt
+        assert '"requirement_id": "req-1"' in prompt
+        assert '"satisfied": true' in prompt
+        assert "Bewahre die Bedeutung jeder requirement_ref" in prompt
+        assert "verschiebe kein ToolchainItem" in prompt
+        assert "keine neuen" in prompt
+        assert "nicht modellierte Voraussetzungen" in prompt
+        assert "unter einer anderen" in prompt
 
     def test_chairman_does_not_see_phase1_internals(self, tmp_path):
         a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, all_ids = _setup_standard_responses()
@@ -1027,6 +1127,76 @@ class TestModelIsolation:
 
 
 class TestErrorHandling:
+    @pytest.mark.parametrize("requirement_ref", [None, "", "   ", "req-unknown"])
+    def test_phase1_rejects_invalid_toolchain_requirement_ref(
+        self, tmp_path, requirement_ref
+    ):
+        a1_data = json.loads(_make_phase1_response("A1", 1))
+        a1_data["variants"][0]["toolchain"][0]["requirement_ref"] = requirement_ref
+        a1_resp = json.dumps(a1_data)
+        a2_resp = _make_phase1_response("A2", 1)
+        a3_resp = _make_phase1_response("A3", 1)
+        all_ids = _all_variant_ids([a2_resp, a3_resp])
+        ph2_resp = _make_phase2_response("x", all_ids)
+        ch_resp = _make_chairman_response(all_ids)
+        fake_providers = _build_standard_providers(
+            a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp
+        )
+
+        result = _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path
+        )
+
+        assert result.council_complete
+        assert result.council_degraded
+        assert any("A1" in error and "requirement_ref" in error
+                   for error in result.agent_errors)
+        assert all(variant.id != "A1-var-1" for variant in result.variants)
+
+    @pytest.mark.parametrize("requirement_ref", [None, "", "   ", "req-unknown"])
+    def test_chairman_rejects_invalid_toolchain_requirement_ref(
+        self, tmp_path, requirement_ref
+    ):
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, _ = _setup_standard_responses()
+        chairman_data = json.loads(ch_resp)
+        chairman_data["variants"][0]["toolchain"] = [{
+            "requirement_ref": requirement_ref,
+            "name": "python",
+            "type": "executable",
+        }]
+        fake_providers = _build_standard_providers(
+            a1_resp, a2_resp, a3_resp, ph2_resp, json.dumps(chairman_data)
+        )
+
+        result = _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path
+        )
+
+        assert not result.council_complete
+        assert result.chairman_error is not None
+        assert "requirement_ref" in result.chairman_error
+        assert result.variants == ()
+        assert result.recommendation is None
+
+    def test_chairman_accepts_current_input_requirement_ref(self, tmp_path):
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, _ = _setup_standard_responses()
+        chairman_data = json.loads(ch_resp)
+        chairman_data["variants"][0]["toolchain"] = [{
+            "requirement_ref": "req-1",
+            "name": "python",
+            "type": "executable",
+        }]
+        fake_providers = _build_standard_providers(
+            a1_resp, a2_resp, a3_resp, ph2_resp, json.dumps(chairman_data)
+        )
+
+        result = _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path
+        )
+
+        assert result.council_complete
+        assert result.variants[0].toolchain[0].requirement_ref == "req-1"
+
     def test_invalid_json_triggers_retry(self, tmp_path):
         a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, all_ids = _setup_standard_responses()
 
@@ -1042,7 +1212,7 @@ class TestErrorHandling:
         assert result.council_complete
         assert result.total_llm_calls == 8  # +1 for retry
 
-    def test_a1_failure_marks_council_incomplete(self, tmp_path):
+    def test_a1_failure_uses_degraded_quorum(self, tmp_path):
         a2_resp = _make_phase1_response("A2", 1)
         a3_resp = _make_phase1_response("A3", 1)
         all_ids = _all_variant_ids([a2_resp, a3_resp])
@@ -1058,11 +1228,12 @@ class TestErrorHandling:
 
         result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
 
-        assert not result.council_complete
+        assert result.council_complete
+        assert result.council_degraded
         assert result.agent_errors
         assert any("A1" in err for err in result.agent_errors)
 
-    def test_a2_failure_marks_council_incomplete(self, tmp_path):
+    def test_a2_failure_uses_degraded_quorum(self, tmp_path):
         a1_resp = _make_phase1_response("A1", 1)
         a3_resp = _make_phase1_response("A3", 1)
         all_ids = _all_variant_ids([a1_resp, a3_resp])
@@ -1078,11 +1249,12 @@ class TestErrorHandling:
 
         result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
 
-        assert not result.council_complete
+        assert result.council_complete
+        assert result.council_degraded
         assert result.agent_errors
         assert any("A2" in err for err in result.agent_errors)
 
-    def test_a3_failure_marks_council_incomplete(self, tmp_path):
+    def test_a3_failure_uses_degraded_quorum(self, tmp_path):
         a1_resp = _make_phase1_response("A1", 1)
         a2_resp = _make_phase1_response("A2", 1)
         all_ids = _all_variant_ids([a1_resp, a2_resp])
@@ -1098,7 +1270,8 @@ class TestErrorHandling:
 
         result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
 
-        assert not result.council_complete
+        assert result.council_complete
+        assert result.council_degraded
         assert result.agent_errors
         assert any("A3" in err for err in result.agent_errors)
 
@@ -1115,7 +1288,7 @@ class TestErrorHandling:
         assert len(result.agent_errors) >= 3
         assert not result.variants
 
-    def test_incomplete_council_not_reported_as_success(self, tmp_path):
+    def test_degraded_council_retains_agent_error(self, tmp_path):
         a1_resp = _make_phase1_response("A1", 1)
         a2_resp = _make_phase1_response("A2", 1)
         all_ids = _all_variant_ids([a1_resp, a2_resp])
@@ -1131,7 +1304,8 @@ class TestErrorHandling:
 
         result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
 
-        assert not result.council_complete
+        assert result.council_complete
+        assert result.council_degraded
         assert result.agent_errors
         assert any("A3" in err for err in result.agent_errors)
 
@@ -1220,6 +1394,392 @@ class TestESPHomeExample:
 
         assert result.council_complete
         assert isinstance(result, CouncilResult)
+
+
+# =========================================================================
+# Test: Council completion and same-phase recovery semantics
+# =========================================================================
+
+
+class RecoveringProvider:
+    """Fails the first N calls, then succeeds on subsequent calls."""
+
+    def __init__(self, recover_response: str, failures: int = 1,
+                 error_message: str = "transient provider error"):
+        self._recover = recover_response
+        self._failures = failures
+        self._error = error_message
+        self._calls = 0
+
+    def complete(self, prompt: str) -> str:
+        self._calls += 1
+        if self._calls <= self._failures:
+            raise RuntimeError(self._error)
+        return self._recover
+
+
+class TestCouncilCompletionRecovery:
+    """Verifies that same-phase retry resolves transient errors while
+    unresolved failures remain visible under the explicit quorum policy."""
+
+    def test_council_result_degraded_flag_defaults_false(self):
+        result = CouncilResult(id="council-default", project_id="project-1")
+
+        assert result.council_degraded is False
+
+    def test_same_phase_transient_recovery_succeeds(self, tmp_path):
+        """Phase-1 provider fails once → retried within same phase →
+        succeeds → council_complete=True."""
+        a1_recover_resp = _make_phase1_response("A1", 1)
+        a2_resp = _make_phase1_response("A2", 1)
+        a3_resp = _make_phase1_response("A3", 1)
+        all_ids = _all_variant_ids([a1_recover_resp, a2_resp, a3_resp])
+        ph2_resp = _make_phase2_response("x", all_ids)
+        ch_resp = _make_chairman_response(all_ids)
+
+        fake_providers = {
+            "model-ea": RecoveringProvider(a1_recover_resp, failures=1,
+                                           error_message="connection reset"),
+            "model-ti": FakeLLMProvider([a2_resp, ph2_resp]),
+            "model-ra": FakeLLMProvider([a3_resp, ph2_resp]),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+
+        result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
+
+        assert result.council_complete, (
+            f"Council should be complete after same-phase recovery; "
+            f"errors={result.agent_errors}"
+        )
+        assert not result.agent_errors, (
+            f"Recovered transient error must not appear in final agent_errors; "
+            f"got {result.agent_errors}"
+        )
+        assert result.variants
+        assert result.recommendation is not None
+
+    def test_same_phase_exhausted_retries_use_degraded_quorum(self, tmp_path):
+        """Phase-1 provider fails on both initial attempt and retry →
+        the remaining independent quorum produces a degraded Council."""
+        a2_resp = _make_phase1_response("A2", 1)
+        a3_resp = _make_phase1_response("A3", 1)
+        all_ids = _all_variant_ids([a2_resp, a3_resp])
+        ph2_resp = _make_phase2_response("x", all_ids)
+        ch_resp = _make_chairman_response(all_ids)
+
+        fake_providers = {
+            "model-ea": RecoveringProvider("unused", failures=10,
+                                           error_message="persistent failure"),
+            "model-ti": FakeLLMProvider([a2_resp, ph2_resp]),
+            "model-ra": FakeLLMProvider([a3_resp, ph2_resp]),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+
+        result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
+
+        assert result.council_complete
+        assert result.council_degraded
+        assert any("A1" in err for err in result.agent_errors)
+
+    def test_phase1_failure_with_review_quorum_is_degraded(self, tmp_path):
+        """A1 fails Phase 1 while the two remaining agents satisfy quorum."""
+        a2_resp = _make_phase1_response("A2", 1)
+        a3_resp = _make_phase1_response("A3", 1)
+        all_ids = _all_variant_ids([a2_resp, a3_resp])
+        ph2_resp = _make_phase2_response("x", all_ids)
+        ch_resp = _make_chairman_response(all_ids)
+
+        fake_providers = {
+            "model-ea": FailingLLMProvider("A1 phase1 timeout"),
+            "model-ti": FakeLLMProvider([a2_resp, ph2_resp]),
+            "model-ra": FakeLLMProvider([a3_resp, ph2_resp]),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+
+        result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
+
+        assert result.council_complete
+        assert result.council_degraded
+        assert any("A1" in err for err in result.agent_errors)
+
+    def test_chairman_failure_council_incomplete(self, tmp_path):
+        """All agents succeed in both phases, but Chairman fails →
+        Council remains incomplete."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, _ch, all_ids = _setup_standard_responses()
+
+        fake_providers = {
+            "model-ea": FakeLLMProvider([a1_resp, ph2_resp]),
+            "model-ti": FakeLLMProvider([a2_resp, ph2_resp]),
+            "model-ra": FakeLLMProvider([a3_resp, ph2_resp]),
+            "model-ch": FailingLLMProvider("Chairman failure"),
+        }
+
+        result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
+
+        assert not result.council_complete
+        assert result.chairman_error is not None
+
+    def test_successful_complete_council(self, tmp_path):
+        """All agents succeed in both phases and Chairman succeeds →
+        council_complete=True."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, all_ids = _setup_standard_responses()
+        fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp)
+
+        result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
+
+        assert result.council_complete
+        assert not result.council_degraded
+        assert not result.agent_errors
+        assert result.chairman_error is None
+        assert result.variants
+        assert result.recommendation is not None
+
+    def test_two_phase1_agents_and_three_review_agents_are_degraded(self, tmp_path):
+        a2_resp = _make_phase1_response("A2", 1)
+        a3_resp = _make_phase1_response("A3", 1)
+        all_ids = _all_variant_ids([a2_resp, a3_resp])
+        ph2_resp = _make_phase2_response("x", all_ids)
+        ch_resp = _make_chairman_response(all_ids)
+        fake_providers = {
+            "model-ea": FakeLLMProvider(["invalid", "invalid", ph2_resp]),
+            "model-ti": FakeLLMProvider([a2_resp, ph2_resp]),
+            "model-ra": FakeLLMProvider([a3_resp, ph2_resp]),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+
+        structured_results = []
+        result = _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path,
+            capture_results=structured_results,
+        )
+
+        assert result.council_complete
+        assert result.council_degraded
+        assert any("A1" in error for error in result.agent_errors)
+        chairman_result = next(
+            item for item in structured_results
+            if item["result_kind"] == "chairman_decision"
+        )
+        assert chairman_result["council_output"]["info"]["status"] == "degraded"
+        assert chairman_result["council_output"]["info"]["council_degraded"] is True
+
+    def test_one_phase1_agent_is_incomplete(self, tmp_path):
+        a1_resp = _make_phase1_response("A1", 1)
+        all_ids = _all_variant_ids([a1_resp])
+        ph2_resp = _make_phase2_response("x", all_ids)
+        fake_providers = {
+            "model-ea": FakeLLMProvider([a1_resp, ph2_resp]),
+            "model-ti": FailingLLMProvider("A2 failed"),
+            "model-ra": FailingLLMProvider("A3 failed"),
+            "model-ch": FakeLLMProvider([_make_chairman_response(all_ids)]),
+        }
+
+        result = _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path
+        )
+
+        assert not result.council_complete
+        assert not result.council_degraded
+
+    def test_one_phase2_vote_agent_is_incomplete(self, tmp_path):
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, _ = _setup_standard_responses()
+        fake_providers = {
+            "model-ea": FakeLLMProvider([a1_resp, ph2_resp]),
+            "model-ti": FakeLLMProvider([a2_resp]),
+            "model-ra": FakeLLMProvider([a3_resp]),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+
+        result = _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path
+        )
+
+        assert not result.council_complete
+        assert not result.council_degraded
+
+    @pytest.mark.parametrize("recommendation", [None, "unknown-variant"])
+    def test_invalid_chairman_recommendation_is_incomplete(
+        self, tmp_path, recommendation
+    ):
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, _ = _setup_standard_responses()
+        chairman_data = json.loads(ch_resp)
+        chairman_data["recommendation"] = recommendation
+        fake_providers = _build_standard_providers(
+            a1_resp, a2_resp, a3_resp, ph2_resp, json.dumps(chairman_data)
+        )
+
+        result = _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path
+        )
+
+        assert not result.council_complete
+        assert not result.council_degraded
+        assert result.chairman_error is not None
+        assert result.recommendation is None
+        assert result.variants == ()
+
+    def test_recovered_transient_not_in_final_errors(self, tmp_path):
+        """Same-phase recovery clears the transient error from
+        final unresolved agent_errors."""
+        a1_recover_resp = _make_phase1_response("A1", 1)
+        a2_resp = _make_phase1_response("A2", 1)
+        a3_resp = _make_phase1_response("A3", 1)
+        all_ids = _all_variant_ids([a1_recover_resp, a2_resp, a3_resp])
+        ph2_resp = _make_phase2_response("x", all_ids)
+        ch_resp = _make_chairman_response(all_ids)
+
+        fake_providers = {
+            "model-ea": RecoveringProvider(a1_recover_resp, failures=1),
+            "model-ti": FakeLLMProvider([a2_resp, ph2_resp]),
+            "model-ra": FakeLLMProvider([a3_resp, ph2_resp]),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+
+        result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
+
+        assert result.council_complete
+        assert not result.agent_errors, (
+            f"Same-phase retry success must leave agent_errors empty; "
+            f"got {result.agent_errors}"
+        )
+
+
+# =========================================================================
+# Test: Outer deadline budget alignment with same-phase retry
+# =========================================================================
+
+
+class TestDeadlineRetryBudget:
+    """Verifies that the outer _execute_parallel deadline covers the
+    full bounded retry budget."""
+
+    def test_outer_deadline_accounts_for_all_retry_attempts(self, tmp_path):
+        """A1 times out on Phase 1 attempt 0, same-phase retry succeeds,
+        and the outer deadline does NOT expire prematurely."""
+        from app.engineering_council import _TIMEOUT_GRACE_SECONDS, _MAX_RETRIES
+
+        a1_timeout = 5.0
+        a1_recover_resp = _make_phase1_response("A1", 1)
+        a2_resp = _make_phase1_response("A2", 1)
+        a3_resp = _make_phase1_response("A3", 1)
+        all_ids = _all_variant_ids([a1_recover_resp, a2_resp, a3_resp])
+        ph2_resp = _make_phase2_response("x", all_ids)
+        ch_resp = _make_chairman_response(all_ids)
+
+        fake_providers = {
+            "model-ea": RecoveringProvider(a1_recover_resp, failures=1),
+            "model-ti": FakeLLMProvider([a2_resp, ph2_resp]),
+            "model-ra": FakeLLMProvider([a3_resp, ph2_resp]),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+
+        cfg = _make_council_config()
+        cfg = replace(
+            cfg,
+            environment_architect=replace(
+                cfg.environment_architect, timeout_seconds=a1_timeout,
+            ),
+        )
+
+        result = _run_council_with_fakes(cfg, fake_providers, tmp_path)
+
+        assert result.council_complete, (
+            f"Council must complete after same-phase retry within budget; "
+            f"errors={result.agent_errors}"
+        )
+        assert not result.agent_errors
+
+    def test_exhausted_retries_use_degraded_quorum(self, tmp_path):
+        """Provider retry exhaustion retains its error in a degraded Council."""
+        a2_resp = _make_phase1_response("A2", 1)
+        a3_resp = _make_phase1_response("A3", 1)
+        all_ids = _all_variant_ids([a2_resp, a3_resp])
+        ph2_resp = _make_phase2_response("x", all_ids)
+        ch_resp = _make_chairman_response(all_ids)
+
+        fake_providers = {
+            "model-ea": RecoveringProvider("unused", failures=100),
+            "model-ti": FakeLLMProvider([a2_resp, ph2_resp]),
+            "model-ra": FakeLLMProvider([a3_resp, ph2_resp]),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+
+        config = _make_council_config()
+        config = replace(
+            config,
+            environment_architect=replace(
+                config.environment_architect, timeout_seconds=0.5,
+            ),
+        )
+
+        result = _run_council_with_fakes(config, fake_providers, tmp_path)
+
+        assert result.council_complete
+        assert result.council_degraded
+        assert any(
+            "A1" in err for err in result.agent_errors
+        ), f"Expected A1 error in agent_errors, got {result.agent_errors}"
+
+    def test_stuck_agent_exceeds_full_retry_budget(self, tmp_path):
+        """A truly stuck provider that never returns is still bounded by
+        the full retry-aware outer deadline."""
+        release_stuck = threading.Event()
+        activities = []
+
+        class NeverReturnsProvider:
+            def complete(self, _prompt):
+                release_stuck.wait()
+                return _make_phase1_response("A1", 1)
+
+        a2_resp = _make_phase1_response("A2", 1)
+        a3_resp = _make_phase1_response("A3", 1)
+        all_ids = _all_variant_ids([a2_resp, a3_resp])
+        ph2_resp = _make_phase2_response("x", all_ids)
+        ch_resp = _make_chairman_response(all_ids)
+
+        def provider_factory(agent_config, _resolver, ollama_url=None):
+            model = agent_config.model
+            if model == "model-ea":
+                return NeverReturnsProvider()
+            if model == "model-ch":
+                return FakeLLMProvider([ch_resp])
+            if model == "model-ti":
+                return FakeLLMProvider([a2_resp, ph2_resp])
+            return FakeLLMProvider([a3_resp, ph2_resp])
+
+        config = _make_council_config()
+        config = replace(
+            config,
+            environment_architect=replace(
+                config.environment_architect, timeout_seconds=0.01,
+            ),
+        )
+
+        try:
+            with patch("app.engineering_council._TIMEOUT_GRACE_SECONDS", 0), patch(
+                "app.engineering_council.create_council_provider",
+                side_effect=provider_factory,
+            ):
+                council = EngineeringCouncil(
+                    council_config=config,
+                    secret_resolver=SimpleSecretResolver({"openrouter-api": "test"}),
+                    trace_dir=tmp_path,
+                )
+                council.set_activity_callback(lambda **a: activities.append(a))
+                result = council.evaluate(_make_council_input())
+        finally:
+            release_stuck.set()
+
+        assert result.council_complete
+        assert result.council_degraded
+        assert any(
+            "A1" in e and "deadline" in e for e in result.agent_errors
+        ), f"Stuck agent must hit deadline; got: {result.agent_errors}"
+        assert any(
+            a.get("actor") == "Agent A1"
+            and a.get("runtime_state") == "failed"
+            for a in activities
+        )
 
 
 # =========================================================================
@@ -1384,7 +1944,8 @@ def test_failing_agent_still_produces_errors_in_call_records(tmp_path):
 
     result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
 
-    assert not result.council_complete
+    assert result.council_complete
+    assert result.council_degraded
     assert any("A3" in err for err in result.agent_errors)
 
 
@@ -1455,3 +2016,394 @@ def test_toolchain_items_preserved_in_proposals(tmp_path):
 
     assert result.council_complete
     assert len(result.variants) > 0
+
+
+def _make_auto_materializable_toolchain() -> list[dict]:
+    return [
+        {
+            "requirement_ref": "req-1",
+            "name": "python",
+            "type": "executable",
+            "install_method": None,
+            "version": None,
+            "purpose": "Runtime",
+            "depends_on": [],
+            "state": "already_installed",
+            "environment_constraint": None,
+            "provided_by": None,
+        },
+        {
+            "requirement_ref": "req-2",
+            "name": "esphome",
+            "type": "python_package",
+            "install_method": "pip install esphome",
+            "version": "2024.1",
+            "purpose": "Build tool",
+            "depends_on": ["python"],
+            "state": "needs_install",
+            "environment_constraint": None,
+            "provided_by": None,
+        },
+    ]
+
+
+def _make_manual_review_toolchain() -> list[dict]:
+    return [
+        {
+            "requirement_ref": "req-1",
+            "name": "python",
+            "type": "executable",
+            "install_method": None,
+            "version": None,
+            "purpose": "Runtime",
+            "depends_on": [],
+            "state": "already_installed",
+            "environment_constraint": None,
+            "provided_by": None,
+        },
+        {
+            "requirement_ref": "req-3",
+            "name": "docker",
+            "type": "system_package",
+            "install_method": None,
+            "version": None,
+            "purpose": "Container runtime",
+            "depends_on": [],
+            "state": "needs_install",
+            "environment_constraint": None,
+            "provided_by": None,
+        },
+    ]
+    """Tests verifying explicit functional roles in Council prompts."""
+
+    def test_agent_a1_phase1_prompt_contains_role(self):
+        prompt = build_phase1_prompt(
+            _make_council_input(), AGENT_ROLE_ENV_ARCHITECT, 3,
+        )
+        assert "Engineering Council Agent A1" in prompt
+        assert "Environment Architect" in prompt
+        assert "AI-Dev-Center" in prompt
+        assert "führst keine Änderungen aus" in prompt
+        assert "erteilst keine Human Approval" in prompt
+
+    def test_agent_a2_phase1_prompt_contains_role(self):
+        prompt = build_phase1_prompt(
+            _make_council_input(), AGENT_ROLE_TOOLCHAIN, 3,
+        )
+        assert "Engineering Council Agent A2" in prompt
+        assert "Toolchain Integrator" in prompt
+        assert "AI-Dev-Center" in prompt
+        assert "führst keine Änderungen aus" in prompt
+
+    def test_agent_a3_phase1_prompt_contains_role(self):
+        prompt = build_phase1_prompt(
+            _make_council_input(), AGENT_ROLE_RISK, 3,
+        )
+        assert "Engineering Council Agent A3" in prompt
+        assert "Risk & Feasibility Assessor" in prompt
+        assert "AI-Dev-Center" in prompt
+        assert "führst keine Änderungen aus" in prompt
+
+    def test_agent_a1_review_prompt_contains_role(self):
+        assert "Engineering Council Agent A1" in AGENT_ROLE_ENV_ARCHITECT_REVIEW
+        assert "AI-Dev-Center" in AGENT_ROLE_ENV_ARCHITECT_REVIEW
+        assert "führst keine Änderungen aus" in AGENT_ROLE_ENV_ARCHITECT_REVIEW
+
+    def test_agent_a2_review_prompt_contains_role(self):
+        assert "Engineering Council Agent A2" in AGENT_ROLE_TOOLCHAIN_REVIEW
+        assert "AI-Dev-Center" in AGENT_ROLE_TOOLCHAIN_REVIEW
+
+    def test_agent_a3_review_prompt_contains_role(self):
+        assert "Engineering Council Agent A3" in AGENT_ROLE_RISK_REVIEW
+        assert "AI-Dev-Center" in AGENT_ROLE_RISK_REVIEW
+
+    def test_chairman_prompt_contains_role(self):
+        assert "Chairman des AI-Dev-Center Engineering Council" in CHAIRMAN_SYSTEM_PROMPT
+        assert "führst keine Änderungen aus" in CHAIRMAN_SYSTEM_PROMPT
+        assert "erteilst keine Human Approval" in CHAIRMAN_SYSTEM_PROMPT
+
+    def test_council_roles_do_not_grant_approval_authority(self):
+        for role_prompt in (
+            AGENT_ROLE_ENV_ARCHITECT, AGENT_ROLE_TOOLCHAIN,
+            AGENT_ROLE_RISK, CHAIRMAN_SYSTEM_PROMPT,
+        ):
+            assert "erteilst keine Human Approval" in role_prompt
+
+    def test_chairman_role_does_not_grant_execution_authority(self):
+        chairman_prompt = build_chairman_prompt(
+            json.dumps([{"variant_id": "v1", "name": "Test"}]), json.dumps([]),
+            _make_council_input(),
+        )
+        assert "führst keine Änderungen aus" in chairman_prompt
+
+    def test_built_chairman_effective_prompt_contains_role(self):
+        prompt = build_chairman_prompt(
+            json.dumps([{"variant_id": "v1", "name": "Test"}]),
+            json.dumps([]),
+            _make_council_input(),
+        )
+        assert "Chairman des AI-Dev-Center Engineering Council" in prompt
+
+    def test_a1_phase1_contains_compact_adc_context(self):
+        prompt = build_phase1_prompt(
+            _make_council_input(), AGENT_ROLE_ENV_ARCHITECT, 3,
+        )
+        assert "kontrolliertes Engineering-System" in prompt
+
+    def test_a2_phase1_contains_compact_adc_context(self):
+        prompt = build_phase1_prompt(
+            _make_council_input(), AGENT_ROLE_TOOLCHAIN, 3,
+        )
+        assert "kontrolliertes Engineering-System" in prompt
+
+    def test_a3_phase1_contains_compact_adc_context(self):
+        prompt = build_phase1_prompt(
+            _make_council_input(), AGENT_ROLE_RISK, 3,
+        )
+        assert "kontrolliertes Engineering-System" in prompt
+
+    def test_chairman_contains_compact_adc_context(self):
+        assert "kontrolliertes Engineering-System" in CHAIRMAN_SYSTEM_PROMPT
+        assert "Software-, Firmware- und Hardware-Projekten" in CHAIRMAN_SYSTEM_PROMPT
+
+    def test_oc_010_roles_and_authority_boundaries_remain_intact(self):
+        for role in (AGENT_ROLE_ENV_ARCHITECT, AGENT_ROLE_TOOLCHAIN, AGENT_ROLE_RISK):
+            assert "erteilst keine Human Approval" in role
+            assert "führst keine Änderungen aus" in role
+        assert "erteilst keine Human Approval" in CHAIRMAN_SYSTEM_PROMPT
+        assert "führst keine Änderungen aus" in CHAIRMAN_SYSTEM_PROMPT
+
+    def test_oc_009_discovery_contract_unchanged(self):
+        from app.ai_requirement_discovery import AIRequirementDiscovery
+        disc = AIRequirementDiscovery()
+        prompt = disc._build_prompt({"project_id": "test"}, "test")
+        assert prompt.strip().startswith(
+            'Return a JSON object with the single key "requirements"'
+        )
+
+
+# =========================================================================
+# Test: Controlled Setup Eligibility Policy (OC-024)
+# =========================================================================
+
+
+class TestControlledSetupEligibility:
+    """Deterministic Chairman recommendation validation for controlled setup."""
+
+    def _make_chairman_with_toolchains(
+        self, variant_toolchains: list[list[dict]],
+        recommendation: str | None = None,
+    ) -> str:
+        variants = []
+        for i, tc in enumerate(variant_toolchains):
+            vid = f"final-var-{i + 1}"
+            variants.append({
+                "id": vid, "name": f"Final Variant {i + 1}",
+                "description": f"Desc {i + 1}",
+                "origin_agents": ["A1"], "merged_from": [],
+                "rank": i + 1,
+                "total_score": 5.0 - i * 0.5,
+                "consensus_level": "strong_consensus",
+                "minority_opinions": [], "environment": "host",
+                "hardware_target": None, "connection": None,
+                "capabilities": ["build"],
+                "toolchain": tc,
+                "advantages": [], "disadvantages": [], "risks": [],
+                "confidence": 0.9, "feasibility": "high",
+                "verification": "test",
+            })
+        return json.dumps({
+            "merge_decisions": [],
+            "variants": variants, "rejected_variants": [],
+            "recommendation": recommendation or variants[0]["id"],
+            "reasoning": "Test",
+        })
+
+    def test_auto_materializable_recommendation_accepted_when_alternatives_exist(
+        self, tmp_path,
+    ):
+        a1_resp = _make_phase1_response("A1", 1)
+        a2_resp = _make_phase1_response("A2", 1)
+        a3_resp = _make_phase1_response("A3", 1)
+        all_ids = _all_variant_ids([a1_resp, a2_resp, a3_resp])
+        ph2_resp = _make_phase2_response("x", all_ids)
+
+        ch_resp = self._make_chairman_with_toolchains(
+            [_make_auto_materializable_toolchain(),
+             _make_auto_materializable_toolchain()],
+            recommendation="final-var-1",
+        )
+
+        fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp)
+        result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
+
+        assert result.council_complete
+        assert result.recommendation == "final-var-1"
+        assert not result.chairman_error
+
+    def test_manual_review_recommendation_rejected_when_auto_alternative_exists(
+        self, tmp_path,
+    ):
+        a1_resp = _make_phase1_response("A1", 1)
+        a2_resp = _make_phase1_response("A2", 1)
+        a3_resp = _make_phase1_response("A3", 1)
+        all_ids = _all_variant_ids([a1_resp, a2_resp, a3_resp])
+        ph2_resp = _make_phase2_response("x", all_ids)
+
+        ch_resp = self._make_chairman_with_toolchains(
+            [_make_auto_materializable_toolchain(),
+             _make_manual_review_toolchain()],
+            recommendation="final-var-2",
+        )
+
+        fake_providers = _build_standard_providers(
+            a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp,
+        )
+        result = _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path,
+        )
+
+        assert not result.council_complete
+        assert result.chairman_error is not None
+        assert "automatically materializable" in result.chairman_error
+        assert result.recommendation is None
+
+    def test_all_manual_review_recommendation_accepted(self, tmp_path):
+        a1_resp = _make_phase1_response("A1", 1)
+        a2_resp = _make_phase1_response("A2", 1)
+        a3_resp = _make_phase1_response("A3", 1)
+        all_ids = _all_variant_ids([a1_resp, a2_resp, a3_resp])
+        ph2_resp = _make_phase2_response("x", all_ids)
+
+        ch_resp = self._make_chairman_with_toolchains(
+            [_make_manual_review_toolchain(),
+             _make_manual_review_toolchain()],
+            recommendation="final-var-1",
+        )
+
+        fake_providers = _build_standard_providers(
+            a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp,
+        )
+        result = _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path,
+        )
+
+        assert result.council_complete
+        assert result.recommendation == "final-var-1"
+        assert result.chairman_error is None
+
+    def test_merged_variant_assessed_by_final_toolchain_not_phase1_metadata(
+        self, tmp_path,
+    ):
+        a1_resp = _make_phase1_response("A1", 1)
+        a2_resp = _make_phase1_response("A2", 1)
+        a3_resp = _make_phase1_response("A3", 1)
+        all_ids = _all_variant_ids([a1_resp, a2_resp, a3_resp])
+        ph2_resp = _make_phase2_response("x", all_ids)
+
+        ch_data = {
+            "merge_decisions": [{
+                "merged_variant_ids": ["A1-var-1", "A2-var-1"],
+                "resulting_variant_id": "merged-1",
+                "reason": "Same environment",
+            }],
+            "variants": [{
+                "id": "merged-1", "name": "Merged",
+                "description": "", "origin_agents": ["A1", "A2"],
+                "merged_from": ["A1-var-1", "A2-var-1"], "rank": 1,
+                "total_score": 4.5, "consensus_level": "strong_consensus",
+                "minority_opinions": [], "environment": "host",
+                "hardware_target": None, "connection": None,
+                "capabilities": ["build"],
+                "toolchain": _make_auto_materializable_toolchain(),
+                "advantages": [], "disadvantages": [], "risks": [],
+                "confidence": 0.9, "feasibility": "high", "verification": "test",
+            }],
+            "rejected_variants": [],
+            "recommendation": "merged-1",
+            "reasoning": "Beste Variante",
+        }
+        ch_resp = json.dumps(ch_data)
+
+        fake_providers = _build_standard_providers(
+            a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp,
+        )
+        result = _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path,
+        )
+
+        assert result.council_complete
+        assert result.recommendation == "merged-1"
+        assert result.chairman_error is None
+
+    def test_recommendation_id_validation_still_enforced(self, tmp_path):
+        a1_resp = _make_phase1_response("A1", 1)
+        a2_resp = _make_phase1_response("A2", 1)
+        a3_resp = _make_phase1_response("A3", 1)
+        all_ids = _all_variant_ids([a1_resp, a2_resp, a3_resp])
+        ph2_resp = _make_phase2_response("x", all_ids)
+
+        ch_resp = self._make_chairman_with_toolchains(
+            [_make_auto_materializable_toolchain()],
+            recommendation="nonexistent-variant",
+        )
+
+        fake_providers = _build_standard_providers(
+            a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp,
+        )
+        result = _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path,
+        )
+
+        assert not result.council_complete
+        assert result.chairman_error is not None
+        assert "final Council variant" in result.chairman_error
+
+    def test_preflight_satisfied_requirement_is_auto_materializable(
+        self, tmp_path,
+    ):
+        a1_resp = _make_phase1_response("A1", 1)
+        a2_resp = _make_phase1_response("A2", 1)
+        a3_resp = _make_phase1_response("A3", 1)
+        all_ids = _all_variant_ids([a1_resp, a2_resp, a3_resp])
+        ph2_resp = _make_phase2_response("x", all_ids)
+
+        ch_resp = self._make_chairman_with_toolchains(
+            [[{
+                "requirement_ref": "req-1",
+                "name": "python",
+                "type": "executable",
+                "install_method": None,
+                "version": None,
+                "purpose": "Runtime",
+                "depends_on": [],
+                "state": "already_installed",
+                "environment_constraint": None,
+                "provided_by": None,
+            }]],
+            recommendation="final-var-1",
+        )
+
+        fake_providers = _build_standard_providers(
+            a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp,
+        )
+        result = _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path,
+        )
+
+        assert result.council_complete
+        assert result.recommendation == "final-var-1"
+        assert result.chairman_error is None
+
+    def test_chairman_prompt_expresses_eligibility_rule_not_preference(self):
+        prompt = build_chairman_prompt(
+            json.dumps([{"variant_id": "v1", "name": "Test"}]),
+            json.dumps([]),
+            _make_council_input(),
+        )
+        assert "ZULASSUNGSREGEL" in prompt
+        assert "MUSS die Empfehlung aus dieser Menge stammen" in prompt
+        assert "keine Präferenz" in prompt
+        assert "Bestimme zuerst die Menge der zulässigen finalen Varianten" in CHAIRMAN_SYSTEM_PROMPT
+        assert "Vote-Ranking gilt" in CHAIRMAN_SYSTEM_PROMPT
+        assert "innerhalb der zulässigen Menge" in CHAIRMAN_SYSTEM_PROMPT

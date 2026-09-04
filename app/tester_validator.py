@@ -11,12 +11,12 @@ class TesterValidator:
 
     def validate(self, project_root: str, changes: list, level: str = "unit", environment: str = "host") -> dict:
         """
-        Validate the tester changes using the detected adapter.
+        Validate tester changes using the detected adapter.
 
         Args:
             project_root: Absolute path to the project (or workspace) root.
-            changes: List of change dicts as returned by DeveloperChanges.parse().
-                     Each dict has keys "file", "action", "content".
+            changes: List of change dicts. Each must have keys
+                     "file", "action", "content".
             level: Test level (default "unit").
             environment: Test environment (default "host").
 

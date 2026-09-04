@@ -1,6 +1,7 @@
 from app.requirement_model import (
     PreflightResult,
     Requirement,
+    RequirementActivation,
     RequirementType,
 )
 from app.setup_planner import SetupPlanner
@@ -196,6 +197,39 @@ def test_already_installed_requirement_not_in_plan():
 
     assert len(plan.steps) == 1
     assert plan.steps[0].requirement_id == "R1"
+
+
+def test_inactive_requirement_is_retained_as_deferred_without_a_step():
+    req = _requirement(id="future-capability", type=RequirementType.CAPABILITY)
+    activation = RequirementActivation(req.id, False, False)
+    preflight = PreflightResult(
+        id="preflight", project_id="proj", overall_ready=True,
+        activations=(activation,), inactive_requirements=(req,),
+        project_requirements=(req,),
+    )
+
+    plan = SetupPlanner().plan([req], preflight, "proj")
+
+    assert plan.steps == ()
+    assert plan.requirement_activations == (activation,)
+    assert plan.deferred_requirement_ids == (req.id,)
+    assert plan.deferred_requirements == (req,)
+
+
+def test_active_non_blocking_manual_requirement_is_deferred():
+    req = _requirement(id="manual-future", type=RequirementType.CAPABILITY)
+    activation = RequirementActivation(req.id, True, False)
+    preflight = PreflightResult(
+        id="preflight", project_id="proj", overall_ready=True,
+        missing_requirements=(req,), activations=(activation,),
+        project_requirements=(req,),
+    )
+
+    plan = SetupPlanner().plan([req], preflight, "proj")
+
+    assert plan.steps == ()
+    assert plan.deferred_requirement_ids == (req.id,)
+    assert plan.deferred_requirements == (req,)
 
 
 def test_requirement_id_forwarded():

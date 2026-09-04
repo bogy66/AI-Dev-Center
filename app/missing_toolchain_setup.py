@@ -73,6 +73,7 @@ def serialize_setup_plan(plan: SetupPlan) -> dict:
         "id": plan.id, "project_id": plan.project_id, "status": plan.status,
         "requires_user_approval": plan.requires_user_approval,
         "steps": [asdict(step) for step in plan.steps],
+        "provided_requirement_ids": list(plan.provided_requirement_ids),
     }
 
 
@@ -82,6 +83,7 @@ def deserialize_setup_plan(data: dict) -> SetupPlan:
         steps=tuple(SetupStep(**step) for step in data["steps"]),
         requires_user_approval=data.get("requires_user_approval", True),
         status=data["status"],
+        provided_requirement_ids=tuple(data.get("provided_requirement_ids", ())),
     )
 
 

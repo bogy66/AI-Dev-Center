@@ -315,6 +315,39 @@ class TestAIRequirementDiscoveryLLMJson:
         assert req.required_version == "1.2.3"
         assert req.confidence == 0.9
 
+    def test_forward_requirement_has_separate_current_request_activation(self):
+        provider = self._make_llm(json.dumps({"requirements": [{
+            "id": "future-capability",
+            "name": "future-capability",
+            "type": "capability",
+            "purpose": "continued project development",
+            "required": True,
+            "active_for_current_request": False,
+            "blocks_current_operation": False,
+            "activation_reason": "not used by this operation",
+            "confidence": "high",
+            "evidence": ["project target metadata"],
+        }]}))
+
+        result = AIRequirementDiscovery(llm_provider=provider).discover(
+            {"project_id": "future-project"},
+            user_request="perform the current operation",
+        )
+
+        assert result.requirements[0].required is True
+        assert result.activations[0].requirement_id == result.requirements[0].id
+        assert result.activations[0].active is False
+        assert result.activations[0].blocks_current_operation is False
+
+    def test_discovery_prompt_defines_type_by_required_kind_not_install_mechanism(self):
+        discovery = AIRequirementDiscovery(llm_provider=self._make_llm("[]"))
+
+        prompt = discovery._build_prompt({}, "current operation")
+
+        assert "describes what kind of thing is required, not how it is installed" in prompt
+        assert "merely because one installation option" in prompt
+        assert "active_for_current_request" in prompt
+
     def test_multiple_requirements(self):
         json_obj = json.dumps(
             {
@@ -701,3 +734,494 @@ class TestStructuredDiscoveryResponses:
 
         assert result.fallback_used is False
         assert provider.called_with is not None
+
+
+class MultiResponseProvider:
+    """Provider that returns a different response for each call."""
+
+    def __init__(self, *responses):
+        self.responses = list(responses)
+        self.calls = 0
+        self.last_prompts = []
+
+    def complete(self, prompt):
+        self.last_prompts.append(prompt)
+        resp = self.responses[min(self.calls, len(self.responses) - 1)]
+        self.calls += 1
+        return resp
+
+    def complete_structured(self, prompt):
+        return self.complete(prompt)
+
+
+class TestStructuralRepair:
+    """Tests for the bounded structural repair path."""
+
+    @staticmethod
+    def _requirements_payload():
+        return json.dumps({"requirements": [
+            {"name": "tool", "type": "executable", "purpose": "build",
+             "required": True, "confidence": "high"},
+        ]})
+
+    @staticmethod
+    def _wrong_structure_payload():
+        return json.dumps({"unexpected": []})
+
+    # 1. valid {"requirements": [...]} succeeds without repair
+    def test_valid_structure_succeeds_without_repair(self):
+        provider = MultiResponseProvider(self._requirements_payload())
+        result = AIRequirementDiscovery(
+            llm_provider=provider, require_json=True,
+        ).discover({"project_id": "p"})
+
+        assert result.fallback_used is False
+        assert len(result.requirements) == 1
+        assert result.requirements[0].name == "tool"
+        assert provider.calls == 1
+
+    # 2. valid JSON with wrong root structure triggers exactly one repair
+    def test_wrong_structure_triggers_exactly_one_repair(self):
+        provider = MultiResponseProvider(
+            self._wrong_structure_payload(),
+            self._requirements_payload(),
+        )
+        result = AIRequirementDiscovery(
+            llm_provider=provider, require_json=True,
+        ).discover({"project_id": "p"})
+
+        assert result.fallback_used is False
+        assert len(result.requirements) == 1
+        assert result.requirements[0].name == "tool"
+        assert provider.calls == 2
+
+    # 3. successful repair returns normal requirements/activations
+    def test_successful_repair_returns_requirements_and_activations(self):
+        payload = json.dumps({"requirements": [{
+            "name": "repaired-tool",
+            "type": "capability",
+            "purpose": "repaired",
+            "required": True,
+            "confidence": "high",
+            "active_for_current_request": True,
+            "blocks_current_operation": True,
+            "activation_reason": "needed now",
+        }]})
+        provider = MultiResponseProvider(
+            json.dumps({}), payload,
+        )
+        result = AIRequirementDiscovery(
+            llm_provider=provider, require_json=True,
+        ).discover({"project_id": "p"})
+
+        assert result.fallback_used is False
+        assert result.requirements[0].name == "repaired-tool"
+        assert result.activations[0].active is True
+        assert result.activations[0].blocks_current_operation is True
+        assert result.activations[0].reason == "needed now"
+
+    # 4. repair cannot cause an unbounded retry
+    def test_repair_is_exactly_one_attempt_not_unbounded(self):
+        provider = MultiResponseProvider(
+            self._wrong_structure_payload(),
+            self._wrong_structure_payload(),
+            self._requirements_payload(),
+        )
+        result = AIRequirementDiscovery(
+            llm_provider=provider, require_json=True,
+        ).discover({"project_id": "p"})
+
+        assert result.fallback_used is True
+        assert provider.calls == 2
+
+    # 5. failed repair preserves fallback/blocking behavior
+    def test_failed_repair_preserves_fallback(self):
+        provider = MultiResponseProvider(
+            self._wrong_structure_payload(),
+            self._wrong_structure_payload(),
+        )
+        result = AIRequirementDiscovery(
+            llm_provider=provider, require_json=True,
+        ).discover({"project_id": "p"})
+
+        assert result.fallback_used is True
+        assert len(result.requirements) == 0
+        assert any("parse" in w.lower() for w in result.warnings)
+        assert provider.calls == 2
+
+    # 6. arbitrary alternative root keys are not silently accepted by parser
+    def test_arbitrary_root_keys_not_silently_accepted(self):
+        provider = TestStructuredDiscoveryResponses.StructuredFake(
+            json.dumps({"result": [], "data": {"items": []}}),
+        )
+        activity = []
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        discovery.set_activity_callback(
+            lambda **details: activity.append(details),
+        )
+
+        result = discovery.discover({"project_id": "p"})
+
+        assert result.fallback_used is True
+        assert activity[-1]["error_category"] == "invalid_response_structure"
+
+    # 7. raw provider response not exposed
+    def test_raw_provider_response_not_in_warnings_or_activity(self):
+        raw_content = "some-proprietary-key-abc123"
+        provider = MultiResponseProvider(
+            json.dumps({"wrong_root": raw_content}),
+            json.dumps({"wrong_root": raw_content}),
+        )
+        activity = []
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        discovery.set_activity_callback(
+            lambda **details: activity.append(details),
+        )
+
+        result = discovery.discover({"project_id": "p"})
+
+        assert result.fallback_used is True
+        for warning in result.warnings:
+            assert raw_content not in warning
+        for entry in activity:
+            serialized = str(entry)
+            assert raw_content not in serialized
+
+    def test_raw_provider_response_not_exposed_in_activity_details(self):
+        provider = MultiResponseProvider(
+            json.dumps({"data": "secret-value"}),
+            json.dumps({"requirements": []}),
+        )
+        activity = []
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        discovery.set_activity_callback(
+            lambda **details: activity.append(details),
+        )
+
+        result = discovery.discover({"project_id": "p"})
+
+        assert result.fallback_used is False
+        for entry in activity:
+            serialized = str(entry)
+            assert "secret-value" not in serialized
+            assert '"data"' not in serialized
+
+    # 8. successful discovery retains normal completed milestone
+    def test_successful_discovery_activity_ends_with_completed(self):
+        provider = MultiResponseProvider(self._requirements_payload())
+        activity = []
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        discovery.set_activity_callback(
+            lambda **details: activity.append(details),
+        )
+
+        discovery.discover({"project_id": "p"})
+
+        assert activity[-1]["runtime_state"] == "completed"
+
+    # 9. fallback discovery has failure activity state
+    def test_fallback_discovery_activity_ends_with_failed(self):
+        provider = MultiResponseProvider(
+            self._wrong_structure_payload(),
+            self._wrong_structure_payload(),
+        )
+        activity = []
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        discovery.set_activity_callback(
+            lambda **details: activity.append(details),
+        )
+
+        discovery.discover({"project_id": "p"})
+
+        assert activity[-1]["runtime_state"] == "failed"
+
+    # 10. existing RequirementActivation behavior remains intact
+    def test_forward_looking_activation_preserved_through_repair(self):
+        forward_payload = json.dumps({"requirements": [{
+            "name": "future-tool",
+            "type": "executable",
+            "purpose": "future needs",
+            "required": True,
+            "confidence": "high",
+            "active_for_current_request": False,
+            "blocks_current_operation": False,
+            "activation_reason": "forward-looking only",
+            "evidence": ["project roadmap"],
+        }]})
+        provider = MultiResponseProvider(
+            json.dumps({}), forward_payload,
+        )
+
+        result = AIRequirementDiscovery(llm_provider=provider).discover(
+            {"project_id": "p"},
+            user_request="current operation",
+        )
+
+        assert result.fallback_used is False
+        assert result.requirements[0].required is True
+        assert result.activations[0].active is False
+        assert result.activations[0].blocks_current_operation is False
+        assert result.activations[0].reason == "forward-looking only"
+
+    def test_provider_exception_during_repair_triggers_fallback(self):
+        class RepairExceptionProvider:
+            def complete_structured(self, prompt):
+                raise RuntimeError("repair failed")
+
+            def complete(self, prompt):
+                raise RuntimeError("repair failed")
+
+        provider = MultiResponseProvider(self._wrong_structure_payload())
+        # Replace original response list to include our exception provider
+        # Actually use the MultiResponseProvider's first response for primary
+        # then a failing provider for repair won't work because _attempt_repair
+        # uses self._provider directly.
+        # Use a separate test approach: simulate repair exception.
+        class FailOnSecondCall:
+            def __init__(self):
+                self.calls = 0
+
+            def complete(self, _prompt):
+                self.calls += 1
+                return json.dumps({"wrong": "shape"})
+
+            def complete_structured(self, _prompt):
+                self.calls += 1
+                if self.calls == 1:
+                    return json.dumps({"wrong": "shape"})
+                raise RuntimeError("repair provider failure")
+
+        provider = FailOnSecondCall()
+        activity = []
+        discovery = AIRequirementDiscovery(
+            llm_provider=provider, require_json=True,
+        )
+        discovery.set_activity_callback(
+            lambda **details: activity.append(details),
+        )
+
+        result = discovery.discover({"project_id": "p"})
+
+        assert result.fallback_used is True
+        assert len(result.requirements) == 0
+
+    def test_repair_prompt_does_not_contain_raw_response(self):
+        payload = json.dumps({"not": "requirements", "secret": "abc123"})
+        provider = MultiResponseProvider(
+            payload, json.dumps({"requirements": []}),
+        )
+
+        AIRequirementDiscovery(
+            llm_provider=provider, require_json=True,
+        ).discover({"project_id": "p"})
+
+        for prompt_text in provider.last_prompts:
+            assert "abc123" not in prompt_text
+            assert '"secret"' not in prompt_text
+
+    def test_prompt_leads_with_output_format_instruction(self):
+        discovery = AIRequirementDiscovery(
+            llm_provider=MultiResponseProvider("[]"),
+        )
+        prompt = discovery._build_prompt({}, "test request")
+
+        assert prompt.strip().startswith(
+            'Return a JSON object with the single key "requirements"'
+        )
+        assert "No other top-level keys" in prompt
+        assert "No commentary outside the JSON" in prompt
+
+    def test_repair_prompt_requires_exact_structure(self):
+        discovery = AIRequirementDiscovery(
+            llm_provider=MultiResponseProvider("[]"),
+        )
+        prompt = discovery._build_repair_prompt({}, "test")
+
+        assert '"requirements"' in prompt
+        assert "exactly this format" in prompt.lower() or "exact" in prompt.lower()
+        assert "Do NOT invent" in prompt
+        assert "Preserve every requirement" in prompt
+
+    def test_repair_not_attempted_when_provider_is_none(self):
+        discovery = AIRequirementDiscovery(
+            llm_provider=None, require_json=True,
+        )
+        result = discovery.discover({"project_id": "p"})
+
+        assert result.fallback_used is True
+        assert len(result.requirements) == 0
+
+    def test_repair_response_empty_requirements_is_not_fallback(self):
+        provider = MultiResponseProvider(
+            json.dumps({"wrong": "key"}),
+            json.dumps({"requirements": []}),
+        )
+        result = AIRequirementDiscovery(
+            llm_provider=provider, require_json=True,
+        ).discover({"project_id": "p"})
+
+        assert result.fallback_used is False
+        assert result.requirements == ()
+
+    def test_repair_response_with_single_requirement_shape_accepted(self):
+        provider = MultiResponseProvider(
+            json.dumps({}),
+            json.dumps({"name": "single-tool", "type": "executable",
+                         "purpose": "test"}),
+        )
+        result = AIRequirementDiscovery(
+            llm_provider=provider, require_json=True,
+        ).discover({"project_id": "p"})
+
+        assert result.fallback_used is False
+        assert result.requirements[0].name == "single-tool"
+
+
+class TestDiscoveryPromptRoles:
+    """Tests verifying the explicit functional role in discovery prompts."""
+
+    def test_discovery_prompt_contains_explicit_role(self):
+        discovery = AIRequirementDiscovery(
+            llm_provider=MultiResponseProvider("[]"),
+        )
+        prompt = discovery._build_prompt({"project_id": "p"}, "test request")
+
+        assert "Requirement Discovery Analyst of AI-Dev-Center" in prompt
+        assert "not approve or execute changes" in prompt
+
+    def test_repair_prompt_contains_explicit_role(self):
+        discovery = AIRequirementDiscovery(
+            llm_provider=MultiResponseProvider("[]"),
+        )
+        prompt = discovery._build_repair_prompt({"project_id": "p"}, "test request")
+
+        assert "Requirement Discovery Analyst of AI-Dev-Center" in prompt
+        assert "not approve or execute changes" in prompt
+
+    def test_discovery_prompt_role_does_not_grant_execution_authority(self):
+        discovery = AIRequirementDiscovery(
+            llm_provider=MultiResponseProvider("[]"),
+        )
+        prompt = discovery._build_prompt({}, "test")
+
+        assert "not approve or execute changes" in prompt
+
+    def test_effective_prompt_stored_after_discover(self):
+        provider = MultiResponseProvider(
+            json.dumps({"requirements": [{"name": "x", "type": "executable",
+             "purpose": "test", "required": True, "confidence": "high"}]}),
+        )
+        discovery = AIRequirementDiscovery(
+            llm_provider=provider, require_json=True,
+        )
+        discovery.discover({"project_id": "p"})
+
+        assert discovery.effective_prompt is not None
+        assert "Requirement Discovery Analyst" in discovery.effective_prompt
+
+    def test_effective_repair_prompt_stored_after_repair(self):
+        provider = MultiResponseProvider(
+            json.dumps({"wrong": "shape"}),
+            json.dumps({"requirements": [{"name": "x", "type": "executable",
+             "purpose": "test", "required": True, "confidence": "high"}]}),
+        )
+        discovery = AIRequirementDiscovery(
+            llm_provider=provider, require_json=True,
+        )
+        discovery.discover({"project_id": "p"})
+
+        assert discovery.effective_repair_prompt is not None
+        assert "Requirement Discovery Analyst" in discovery.effective_repair_prompt
+
+    def test_oc_009_behaviour_remains_intact(self):
+        provider = MultiResponseProvider(
+            json.dumps({"not_requirements": []}),
+            json.dumps({"not_requirements": []}),
+        )
+        discovery = AIRequirementDiscovery(
+            llm_provider=provider, require_json=True,
+        )
+        result = discovery.discover({"project_id": "p"})
+
+        assert result.fallback_used is True
+        assert len(result.requirements) == 0
+        assert any("parse" in w.lower() for w in result.warnings)
+
+    def test_discovery_prompt_contains_compact_adc_context(self):
+        discovery = AIRequirementDiscovery(
+            llm_provider=MultiResponseProvider("[]"),
+        )
+        prompt = discovery._build_prompt({"project_id": "p"}, "test")
+
+        assert "controlled engineering system" in prompt
+        assert "software, firmware, and hardware-related" in prompt
+
+    def test_repair_prompt_contains_compact_adc_context(self):
+        discovery = AIRequirementDiscovery(
+            llm_provider=MultiResponseProvider("[]"),
+        )
+        prompt = discovery._build_repair_prompt({"project_id": "p"}, "test")
+
+        assert "controlled engineering system" in prompt
+        assert "software, firmware, and hardware-related" in prompt
+
+
+class TestVerificationExecutableDiscovery:
+    """Tests for the structured verification_executable discovery contract."""
+
+    def test_verification_executable_is_preserved(self):
+        provider = MultiResponseProvider(
+            '{"requirements": [{"name": "Python 3", "type": "system_package", '
+            '"purpose": "runtime", "required": true, "confidence": "high", '
+            '"verification_executable": "python3"}]}'
+        )
+        result = AIRequirementDiscovery(
+            llm_provider=provider, require_json=True,
+        ).discover({"project_id": "p"})
+
+        assert result.fallback_used is False
+        assert result.requirements[0].name == "Python 3"
+        assert result.requirements[0].verification_executable == "python3"
+
+    def test_verification_executable_omitted_stays_none(self):
+        provider = MultiResponseProvider(
+            '{"requirements": [{"name": "without-exec", "type": "system_package", '
+            '"purpose": "runtime", "required": true, "confidence": "high"}]}'
+        )
+        result = AIRequirementDiscovery(
+            llm_provider=provider, require_json=True,
+        ).discover({"project_id": "p"})
+
+        assert result.fallback_used is False
+        assert result.requirements[0].verification_executable is None
+
+    def test_verification_executable_null_is_none(self):
+        provider = MultiResponseProvider(
+            '{"requirements": [{"name": "null-exec", "type": "system_package", '
+            '"purpose": "runtime", "required": true, "confidence": "high", '
+            '"verification_executable": null}]}'
+        )
+        result = AIRequirementDiscovery(
+            llm_provider=provider, require_json=True,
+        ).discover({"project_id": "p"})
+
+        assert result.fallback_used is False
+        assert result.requirements[0].verification_executable is None
+
+    def test_prompt_documents_verification_executable_field(self):
+        discovery = AIRequirementDiscovery(
+            llm_provider=MultiResponseProvider("[]"),
+        )
+        prompt = discovery._build_prompt({}, "test")
+
+        assert "verification_executable" in prompt
+
+    def test_prompt_still_leads_with_output_contract(self):
+        discovery = AIRequirementDiscovery(
+            llm_provider=MultiResponseProvider("[]"),
+        )
+        prompt = discovery._build_prompt({}, "test")
+
+        assert prompt.strip().startswith(
+            'Return a JSON object with the single key "requirements"'
+        )

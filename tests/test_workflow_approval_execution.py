@@ -11,6 +11,7 @@ from app.requirement_model import (
     Requirement,
     RequirementEvidence,
     RequirementType,
+    SetupEffect,
     SetupPlan,
     SetupStep,
     Status,
@@ -93,6 +94,7 @@ def _make_workflow(executor):
         command=None,
         verification_after="import example_package",
         is_approved=False,
+        setup_effect=SetupEffect.PYTHON_PACKAGE_INSTALL,
     )
 
     setup_plan = SetupPlan(
@@ -126,7 +128,10 @@ def _make_workflow(executor):
         materializer=materializer,
     )
 
-    return workflow, setup_plan, planner, council, materializer, council_result
+    return (
+        workflow, setup_plan, planner, council, materializer, council_result,
+        preflight_result,
+    )
 
 
 def test_run_to_approval_to_execution():
@@ -147,6 +152,7 @@ def test_run_to_approval_to_execution():
         council,
         materializer,
         council_result,
+        preflight_result,
     ) = _make_workflow(executor)
 
     workflow_result = workflow.run(
@@ -161,6 +167,7 @@ def test_run_to_approval_to_execution():
     materializer.materialize.assert_called_once_with(
         council_result,
         "workflow-integration",
+        preflight=preflight_result,
     )
     planner.plan.assert_not_called()
     executor.execute.assert_not_called()

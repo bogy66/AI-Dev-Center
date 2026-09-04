@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from app.requirement_model import PreflightResult, Requirement
+from app.requirement_model import PreflightResult, Requirement, RequirementActivation
 
 
 def _as_tuple(value):
@@ -51,11 +51,15 @@ class CouncilInput:
     platform: str = "linux"
     validation_warnings: tuple[str, ...] = ()
     project_intelligence: dict[str, Any] | None = None
+    requirement_activations: tuple[RequirementActivation, ...] = ()
 
     def __post_init__(self):
         object.__setattr__(self, "requirements", _as_tuple(self.requirements))
         object.__setattr__(self, "project_files", _as_tuple(self.project_files))
         object.__setattr__(self, "validation_warnings", _as_tuple(self.validation_warnings))
+        object.__setattr__(
+            self, "requirement_activations", _as_tuple(self.requirement_activations)
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +84,7 @@ class ToolchainItem:
     depends_on: tuple[str, ...] = ()
     state: str = "needs_install"
     environment_constraint: str | None = None
+    provided_by: str | None = None
 
     def __post_init__(self):
         object.__setattr__(self, "depends_on", _as_tuple(self.depends_on))
@@ -246,6 +251,7 @@ class CouncilResult:
     council_complete: bool = True
     total_llm_calls: int = 0
     generated_at: datetime = field(default_factory=datetime.now)
+    council_degraded: bool = False
 
     def __post_init__(self):
         object.__setattr__(self, "variants", _as_tuple(self.variants))

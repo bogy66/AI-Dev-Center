@@ -1,0 +1,95 @@
+Themenspeicher – Qualitätssicherung / Quality Governance
+
+Ziel
+
+AI-Dev-Center soll eine zentrale Qualitätssicherung erhalten, die
+Entwicklungs- und Qualitätsregeln definiert, projektspezifisch
+zusammenführt und deren Einhaltung überwacht.
+
+Die Qualitätssicherung umfasst nicht nur Tests, sondern verbindliche
+Engineering-Regeln für Entwicklung, Review, Freigabe und kontrollierte
+Versionsverwaltung.
+
+Kernbereiche
+
+-   Coding Rules: Formatierung, Naming, Typisierung, Fehlerbehandlung,
+    Logging, Dokumentation, Architekturgrenzen und verbotene bzw.
+    unerwünschte Patterns.
+-   Projektregeln: Bestehende Konventionen eines vorhandenen
+    Repositories erkennen und respektieren. AI-Dev-Center darf
+    bestehenden Projekten nicht ungefragt eigene Standards aufzwingen.
+-   Security Rules: Schutz von Secrets und Credentials, Regeln für
+    gefährliche Systemaktionen, sichere Abhängigkeiten sowie
+    Human-Approval- und Controlled-Execution-Grenzen.
+-   Test- und Quality Gates: Definieren, welche Prüfungen vor Review,
+    Commit, Release oder Deployment erfüllt sein müssen.
+-   Architecture Rules: Modulabhängigkeiten, zentrale Schnittstellen,
+    Vermeidung paralleler Sources of Truth und projektspezifische
+    Architekturvorgaben.
+-   Documentation Rules: Bei Funktionsänderungen Help, Pitch und weitere
+    relevante Dokumentation berücksichtigen.
+-   Git Rules: Keine unerwarteten Änderungen außerhalb des Auftrags,
+    kontrollierter Commit-/Publish-Prozess und Nachvollziehbarkeit.
+-   LLM-/Agent-Regeln: Developer, Tester, Reviewer und andere relevante
+    Agenten erhalten die für ihre Aufgabe geltenden Qualitätsregeln als
+    Teil ihres Arbeitskontexts.
+
+Zielarchitektur
+
+Project Intelligence ↓ Existing Project Conventions + ADC Quality
+Rules + Explicit Project Definitions ↓ Effective Quality Policy ↓
+Developer ↓ Quality Assurance / Reviewer ↓ Violations / Evidence ↓ Fix /
+Human Decision / Approval
+
+Effective Quality Policy
+
+Es soll keine starre globale Coding-Rules-Datei geben, die jedem Projekt
+dieselben Regeln aufzwingt.
+
+Stattdessen:
+
+ADC Baseline Rules + erkannte Repository-Regeln + explizite
+Projektregeln + technologie-/toolchain-spezifische Regeln = Effective
+Quality Policy für das konkrete Projekt
+
+Beispiele: - Ein bestehendes Python-Projekt behält seine vorhandenen
+Ruff-, Black-, mypy- oder vergleichbaren Regeln. - Ein ESPHome-, C- oder
+C++-Projekt kann vollständig andere Qualitätsregeln besitzen. -
+Bestehende Projektkonventionen dürfen nicht unnötig überschrieben
+werden.
+
+Einbindung in den Entwicklungsablauf
+
+Vor der Entwicklung: - relevante Qualitätsregeln bestimmen -
+projektspezifische Effective Quality Policy erzeugen
+
+Während der Entwicklung: - ausführender Agent kennt die relevanten
+Regeln - Änderungen sollen von Anfang an regelkonform erzeugt werden
+
+Nach der Entwicklung: - deterministische Qualitätsprüfungen ausführen -
+Verstöße mit konkreter Evidence erfassen
+
+Review: - Abweichungen bewerten - notwendige Korrekturen bestimmen -
+nicht automatisch lösbare Konflikte zur Human Decision eskalieren
+
+Vor Commit / Release: - definierte Quality Gates prüfen - Freigabe
+entsprechend der bestehenden Human-Approval- und
+Controlled-Execution-Architektur
+
+Grundsätze
+
+-   stack- und toolchain-neutral
+-   keine statische zukünftige Technologie-Allowlist
+-   bestehende Projektkonventionen respektieren
+-   Regeln müssen nachvollziehbar und überprüfbar sein
+-   Verstöße benötigen konkrete Evidence
+-   Quality Assurance besitzt keine unkontrollierte Ausführungsautorität
+-   Human Approval bleibt erhalten
+-   Quality Governance wird in den zentralen AI-Dev-Center-Workflow
+    integriert und bildet keinen parallelen Workflow
+
+Themenspeicher-Eintrag
+
+Zentrale Qualitätssicherung mit Coding Rules, projektspezifischen
+Effective Quality Policies, automatischer Compliance-Prüfung und Quality
+Gates.

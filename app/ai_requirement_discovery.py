@@ -5,6 +5,7 @@ from typing import Any, Callable, Protocol
 from app.requirement_model import (
     Requirement,
     RequirementEvidence,
+    RequirementActivation,
     DiscoveryResult,
     RequirementType,
     Status,
@@ -50,10 +51,21 @@ class AIRequirementDiscovery:
     """
 
     _DISCOVERY_PROMPT_TEMPLATE = """\
-You are an expert software project analyst.
-Given the following project information, list all technical requirements
-(external tools, packages, libraries, SDKs, hardware capabilities, etc.)
-that this project needs in order to build, test, flash, or run.
+Return a JSON object with the single key "requirements" that is an array of requirement objects.
+No other top-level keys. No commentary outside the JSON.
+
+AI-Dev-Center is a controlled engineering system for developing and
+maintaining software, firmware, and hardware-related projects.
+You are the Requirement Discovery Analyst of AI-Dev-Center.
+Your responsibility is to discover project requirements and current-request
+activation state. You do not approve or execute changes.
+
+Given the following project information, discover all durable technical
+requirements (external tools, packages, libraries, SDKs, hardware capabilities,
+etc.) that this project and its useful development environment need.
+
+Then for the current user request below, determine which of those requirements
+are needed right now and which can remain forward-looking project context.
 
 User request:
 {user_request}
@@ -61,24 +73,57 @@ User request:
 Observed project information:
 {project_info}
 
-Rules:
-- Only infer requirements from the provided information.
-- Do NOT invent facts, packages, or prerequisites you do not see.
-- For each requirement provide:
-  * name (string)
-  * type (one of {types})
+For each requirement provide these fields inside the "requirements" array:
+  * name (string — human/domain-facing requirement display name; may differ from the executable identity)
+  * type (one of {types}; describes what kind of thing is required, not how it is installed; do not classify something by an installation mechanism merely because one installation option can provide it)
   * purpose (short description)
-  * required (boolean)
+  * required (boolean — is this a durable project requirement?)
   * confidence (one of "high", "medium", "low")
-  * install_method (string or null – only if you can justify it from the evidence)
-  * verification_method (string or null – only if justifiable)
+  * evidence (string array — concrete file paths, snippets, or clues)
+  * active_for_current_request (boolean — is this requirement needed for the current user request above? Be conservative: a physical target, flasher, debugger or serial connection needed for later deployment is NOT active for configure/generate/compile.)
+  * blocks_current_operation (boolean — must the current operation stop if this requirement is absent? Must be false when active_for_current_request is false. A tool that is only needed for a later phase does not block configure/build/compile.)
+  * activation_reason (short string grounded in the current request)
+  * install_method (string or null — only if justified by evidence)
+  * verification_method (string or null — only if justified)
   * required_version (string or null)
-  * metadata (object – additional contextual data if available)
-  * evidence (string array – concrete file paths, snippets, or other clues that support the requirement)
-- If you cannot determine the type, use "unknown".
-- Return a JSON object with a single key "requirements" that is an array of requirement objects.
+  * verification_executable (string or null — only for executable-backed requirement types; a single executable name or path used only for deterministic availability detection, e.g. "python3", NOT a shell command like "python3 --version" or "which python3")
+  * metadata (object — additional contextual data if available)
 
-Return ONLY valid JSON, no additional commentary.
+Rules:
+- Only infer requirements from the provided information. Do NOT invent facts.
+- Discover forward-looking development requirements supported by project facts
+  even when they are not needed by the current user request.
+- Forward-looking requirements must have active_for_current_request=false,
+  blocks_current_operation=false.
+- Use "unknown" for the type if you cannot determine it.
+
+Return ONLY the JSON object described above. No markdown fences unless the
+provider requires them.
+"""
+
+    _REPAIR_PROMPT_TEMPLATE = """\
+AI-Dev-Center is a controlled engineering system for developing and
+maintaining software, firmware, and hardware-related projects.
+You are the Requirement Discovery Analyst of AI-Dev-Center.
+Your responsibility is to discover project requirements.
+You do not approve or execute changes.
+
+The previous attempt to discover requirements returned a JSON object that did
+not use the required structure.
+
+Restructure the already-gathered information into exactly this format:
+
+{{"requirements": [array of requirement objects]}}
+
+Context — the original task:
+User request: {user_request}
+Project information: {project_info}
+
+Rules:
+- Preserve every requirement you already identified. Do not omit any.
+- Do NOT invent new requirements or facts.
+- Return ONLY the JSON object with "requirements" as the single top-level key.
+- No other keys, no additional commentary.
 """
 
     def __init__(
@@ -91,9 +136,19 @@ Return ONLY valid JSON, no additional commentary.
         self._ai_model = ai_model
         self._require_json = require_json
         self._activity_callback: Callable[..., None] | None = None
+        self._effective_prompt: str | None = None
+        self._effective_repair_prompt: str | None = None
 
     def set_activity_callback(self, callback: Callable[..., None] | None) -> None:
         self._activity_callback = callback
+
+    @property
+    def effective_prompt(self) -> str | None:
+        return self._effective_prompt
+
+    @property
+    def effective_repair_prompt(self) -> str | None:
+        return self._effective_repair_prompt
 
     def _activity(self, state: str, error_category: str | None = None) -> None:
         if self._activity_callback is None:
@@ -106,6 +161,10 @@ Return ONLY valid JSON, no additional commentary.
         }
         if error_category:
             details["error_category"] = error_category
+        if state == "thinking" and self._effective_prompt:
+            details["effective_prompt"] = self._effective_prompt
+        if state == "repairing" and self._effective_repair_prompt:
+            details["effective_prompt"] = self._effective_repair_prompt
         try:
             self._activity_callback(**details)
         except Exception:
@@ -124,6 +183,32 @@ Return ONLY valid JSON, no additional commentary.
                 if not attr.startswith("_")
             ),
         )
+
+    def _build_repair_prompt(
+        self, project_info: dict[str, Any], user_request: str | None = None,
+    ) -> str:
+        serialized = json.dumps(project_info, indent=2, default=str)
+        return self._REPAIR_PROMPT_TEMPLATE.format(
+            project_info=serialized,
+            user_request=user_request or "No user request was supplied.",
+        )
+
+    def _attempt_repair(
+        self,
+        project_info: dict[str, Any],
+        user_request: str | None = None,
+    ) -> str | None:
+        if self._provider is None:
+            return None
+        repair_prompt = self._build_repair_prompt(project_info, user_request)
+        self._effective_repair_prompt = repair_prompt
+        self._activity("repairing")
+        structured_completion = getattr(
+            self._provider, "complete_structured", None
+        )
+        if self._require_json and callable(structured_completion):
+            return structured_completion(repair_prompt)
+        return self._provider.complete(repair_prompt)
 
     def _parse_confidence(self, raw: Any) -> float:
         if isinstance(raw, (int, float)):
@@ -162,8 +247,28 @@ Return ONLY valid JSON, no additional commentary.
             required_version=data.get("required_version"),
             install_method=data.get("install_method"),
             verification_method=data.get("verification_method"),
+            verification_executable=data.get("verification_executable"),
             status=Status.DISCOVERED,
             metadata=metadata,
+        )
+
+    @staticmethod
+    def _build_activation(
+        data: dict[str, Any], requirement: Requirement,
+    ) -> RequirementActivation:
+        active = data.get("active_for_current_request", requirement.required)
+        if not isinstance(active, bool):
+            active = requirement.required
+        blocking = data.get("blocks_current_operation", active and requirement.required)
+        if not isinstance(blocking, bool):
+            blocking = active and requirement.required
+        blocking = blocking and active
+        reason = data.get("activation_reason", "")
+        return RequirementActivation(
+            requirement_id=requirement.id,
+            active=active,
+            blocks_current_operation=blocking,
+            reason=str(reason) if reason is not None else "",
         )
 
     def _parse_response(self, response_text: str) -> list[dict[str, Any]]:
@@ -226,7 +331,10 @@ Return ONLY valid JSON, no additional commentary.
         warnings: list[str] = []
         fallback_used = False
         requirements: list[Requirement] = []
+        activations: list[RequirementActivation] = []
         prompt = self._build_prompt(project_info, user_request)
+        self._effective_prompt = prompt
+        self._effective_repair_prompt = None
 
         if self._provider is None:
             self._activity("failed", "ProviderUnavailable")
@@ -261,10 +369,29 @@ Return ONLY valid JSON, no additional commentary.
                     warnings.append(f"Failed to parse LLM response: {exc}")
                     data = []
                 except InvalidDiscoveryResponseStructureError as exc:
-                    self._activity("failed", "invalid_response_structure")
-                    fallback_used = True
-                    warnings.append(f"Failed to parse LLM response: {exc}")
                     data = []
+                    repair_completed = False
+                    try:
+                        repair_response = self._attempt_repair(
+                            project_info, user_request,
+                        )
+                    except Exception:
+                        repair_response = None
+                    if repair_response is not None:
+                        try:
+                            data = self._parse_response(repair_response)
+                            repair_completed = True
+                        except (InvalidDiscoveryJSONError,
+                                InvalidDiscoveryResponseStructureError):
+                            pass
+                    if repair_completed:
+                        warnings.append(
+                            "Requirement discovery response was repaired successfully."
+                        )
+                    else:
+                        self._activity("failed", "invalid_response_structure")
+                        fallback_used = True
+                        warnings.append(f"Failed to parse LLM response: {exc}")
                 for item_data in data:
                     if not isinstance(item_data, dict):
                         warnings.append("Skipping non‑dict item in LLM response.")
@@ -275,6 +402,7 @@ Return ONLY valid JSON, no additional commentary.
                         warnings.append(f"Could not build requirement from item: {exc}")
                         continue
                     requirements.append(req)
+                    activations.append(self._build_activation(item_data, req))
                 if not fallback_used:
                     self._activity("completed")
 
@@ -284,6 +412,7 @@ Return ONLY valid JSON, no additional commentary.
             source="ai",
             project_id=project_id,
             requirements=tuple(requirements),
+            activations=tuple(activations),
             conversation_trace_id=conversation_trace_id,
             ai_model=self._ai_model,
             fallback_used=fallback_used,

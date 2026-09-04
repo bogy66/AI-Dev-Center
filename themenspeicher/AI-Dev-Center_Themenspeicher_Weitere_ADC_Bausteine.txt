@@ -1,0 +1,345 @@
+Themenspeicher – Weitere wichtige ADC-Bausteine
+
+Ziel
+
+Ergänzende Architekturthemen für AI-Dev-Center, die für ein
+kontrolliertes, zuverlässiges und langfristig autonomer arbeitendes
+Engineering-System wichtig sind.
+
+Diese Punkte ergänzen den separaten Themenspeicher-Eintrag zur Quality
+Governance.
+
+1. Definition of Done / Acceptance Criteria
+
+AI-Dev-Center soll aus einem Benutzerauftrag strukturierte und
+überprüfbare Akzeptanzkriterien ableiten.
+
+Zielablauf:
+
+User Request ↓ Requirement Discovery ↓ Acceptance Criteria ↓
+Implementation ↓ Verification ↓ Acceptance Evaluation ↓ DONE / NOT DONE
+
+Beispiele:
+
+AC-001 Projekt kompiliert erfolgreich AC-002 Konfiguration ist valide
+AC-003 bestehende Funktionalität bleibt erhalten AC-004 erforderliche
+Dokumentation wurde aktualisiert AC-005 keine relevanten
+Quality-Policy-Verstöße
+
+Ein bestandener Test allein bedeutet nicht automatisch, dass der
+eigentliche Benutzerauftrag vollständig erfüllt wurde.
+
+2. Change Impact Analysis
+
+Vor einer Änderung soll ADC bestimmen, welche Bereiche wahrscheinlich
+betroffen sind.
+
+Requested Change ↓ Impact Analysis ↓ affected files affected APIs
+affected tests affected configuration affected documentation affected
+hardware/firmware possible regressions ↓ Development Plan
+
+Die Impact Analysis soll besonders bei bestehenden und fremden
+Git-Repositories helfen, Änderungen kontrolliert einzugrenzen.
+
+Sie kann gleichzeitig Agentenlaufzeit und LLM-Kosten reduzieren, weil
+nachfolgende Agenten einen begründeten Arbeitsbereich erhalten, statt
+unnötig das gesamte Repository zu untersuchen.
+
+3. Regression Intelligence
+
+ADC soll aus einer Änderung ableiten können, welche Regressionen möglich
+sind und welche Tests bzw. Verifikationen dafür relevant sind.
+
+Ziele:
+
+-   relevante Tests anhand des Change Impacts auswählen
+-   unnötige Volltests vermeiden, wenn ein begründeter fokussierter Test
+    ausreichend ist
+-   bei risikoreichen oder weitreichenden Änderungen automatisch
+    breitere Prüfungen verlangen
+-   Testauswahl und Begründung nachvollziehbar dokumentieren
+-   Zusammenhang zwischen geänderten Komponenten, Risiken und Tests
+    herstellen
+
+Regression Intelligence ergänzt die Quality Governance und die Change
+Impact Analysis.
+
+4. Workflow Recovery / Resume / Checkpoints
+
+Lange ADC-Workflows müssen nach kontrollierbaren Unterbrechungen
+fortgesetzt werden können.
+
+Beispiele für Unterbrechungen:
+
+-   Provider nicht verfügbar
+-   API-/Rate-/Credit-Limit
+-   Prozessabbruch
+-   Rechner-/Service-Neustart
+-   Toolchain-Fehler
+-   Human Approval steht noch aus
+
+Beispielzustand:
+
+Run #471
+
+✓ Project Inspection ✓ Requirement Discovery ✓ Validation ✓ Preflight ✓
+Council ✓ Setup ✗ Provider unavailable
+
+Checkpoint: development_pending
+
+Nach Wiederaufnahme soll ADC den gültigen Zustand prüfen und möglichst
+ab dem letzten sicheren Checkpoint fortsetzen, statt bereits erfolgreich
+abgeschlossene und weiterhin gültige Schritte unnötig erneut
+auszuführen.
+
+Wichtig:
+
+-   Checkpoints dürfen keine Sicherheits- oder Approval-Grenzen umgehen.
+-   Vor Wiederaufnahme muss geprüft werden, ob sich relevante Eingaben,
+    Projektzustand oder Policies verändert haben.
+-   Veraltete Checkpoints müssen invalidiert werden können.
+-   Resume-Entscheidungen müssen im DiagnosticTrace nachvollziehbar
+    sein.
+-   Provider-Aufrufe und andere kostenpflichtige Arbeit sollen nicht
+    unnötig wiederholt werden.
+
+5. Dependency Governance
+
+ADC soll Projektabhängigkeiten kontrolliert verwalten und bewerten
+können.
+
+Dazu gehören:
+
+-   Versionen
+-   Versionskonflikte
+-   veraltete Dependencies
+-   bekannte Sicherheitsprobleme
+-   Lizenzinformationen
+-   Herkunft und Vertrauenswürdigkeit
+-   Auswirkungen eines Updates
+-   reproduzierbare Dependency-Auflösung
+
+Dependency Governance muss die vorhandene Human-Approval- und
+Controlled-Execution-Architektur respektieren.
+
+6. Architecture Knowledge
+
+Project Intelligence soll nicht nur Dateien und Technologien erkennen,
+sondern ein strukturiertes Architekturverständnis des Projekts aufbauen
+können.
+
+Mögliche Inhalte:
+
+-   Komponenten und Module
+-   öffentliche und interne Schnittstellen
+-   Abhängigkeiten
+-   Datenflüsse
+-   Hardware-/Firmware-Beziehungen
+-   Build-/Test-/Deployment-Struktur
+-   wichtige Architekturentscheidungen
+-   Architekturgrenzen
+
+ADC soll relevante Architekturänderungen erkennen und gegen explizite
+Project Definitions sowie Quality Policies prüfen können.
+
+7. Technical Debt Management
+
+ADC soll technische Schulden erkennen, dokumentieren und priorisierbar
+machen.
+
+Technical Debt darf nicht automatisch zu ungefragten Refactorings
+führen.
+
+Mögliche Zustände:
+
+-   erkannt
+-   bewertet
+-   akzeptiert
+-   geplant
+-   in Bearbeitung
+-   behoben
+-   bewusst zurückgestellt
+
+Evidence und Auswirkungen sollen nachvollziehbar gespeichert werden.
+
+8. Reproducibility
+
+Entwicklungs-, Test- und Buildumgebungen sollen reproduzierbar
+beschreibbar sein.
+
+Ziele:
+
+-   bekannte Toolchain-Versionen
+-   relevante Dependencies
+-   Konfiguration
+-   Build-/Testbedingungen
+-   kontrollierte Umgebungsinformationen
+-   Wiederherstellung einer geeigneten Entwicklungsumgebung
+
+Keine unnötige Bindung an eine einzelne Container-, VM- oder
+Package-Technologie.
+
+9. Release Management
+
+Langfristig soll ADC den Weg von einer geprüften Änderung zu einem
+kontrollierten Release unterstützen.
+
+Mögliche Bestandteile:
+
+-   Versionsstrategie
+-   Release Candidate
+-   Changelog
+-   Release Notes
+-   Quality Gates
+-   Freigabe
+-   Tagging
+-   Artefakte
+-   kontrollierte Veröffentlichung
+
+Human Approval und Controlled Publish bleiben Autoritätsgrenzen.
+
+10. ADC Observability / Health
+
+Neben dem projektspezifischen DiagnosticTrace benötigt ADC eine Sicht
+auf die Gesundheit des Systems selbst.
+
+Beispiele:
+
+-   Provider-Verfügbarkeit
+-   Modell-/Endpoint-Fehler
+-   Agentenlaufzeiten
+-   Workflow-Abbruchraten
+-   Tool-/Runner-Fehler
+-   Quality-Gate-Fehler
+-   Wiederholungen
+-   Ressourcenverbrauch
+-   Kosten
+
+Business-/Audit-Trace und System-Monitoring sollen konzeptionell sauber
+getrennt bleiben.
+
+11. Cost Governance
+
+Kosten sollen als Engineering-Ressource behandelt werden.
+
+Mögliche Funktionen:
+
+-   Kosten pro Workflow
+-   Kosten pro Projekt
+-   Kosten pro Provider/Modell/Endpoint
+-   Kosten pro Agent/Rolle
+-   Budgetgrenzen
+-   Warnschwellen
+-   Auswahl geeigneter Fähigkeiten unter Berücksichtigung von Kosten
+-   Erkennung unnötiger Wiederholungen
+-   Vergleich von Nutzen und erwarteten Kosten
+
+Kostenoptimierung darf Qualitäts- und Sicherheitsgrenzen nicht umgehen.
+
+12. Targeted Knowledge Acquisition
+
+Wenn Council oder andere kontrollierte Analysephasen eine Wissenslücke
+feststellen, soll ADC gezielt zusätzliche Evidence beschaffen können.
+
+Mögliche Quellen:
+
+-   offizielle Dokumentation
+-   Herstellerinformationen
+-   GitHub/Repository-Informationen
+-   Projektquellen
+-   MCP-basierte Informationsfähigkeiten
+-   weitere registrierte Read/Search/Fetch-Capabilities
+
+Zielablauf:
+
+Council ↓ KNOWLEDGE_GAP ↓ Targeted Knowledge Acquisition ↓ Evidence
+Package ↓ Council Round 2 ↓ Chairman
+
+MCP ist dabei Integrations-/Capability-Layer und keine eigene Autorität.
+
+13. Plugin / Capability Lifecycle
+
+Neue Tools, Runner, MCP-Server und andere Capabilities sollen nicht nur
+entdeckt und registriert, sondern über ihren Lebenszyklus kontrolliert
+werden.
+
+Mögliche Zustände:
+
+-   discovered
+-   classified
+-   reviewed
+-   approved
+-   registered
+-   active
+-   deprecated
+-   disabled
+-   removed
+
+Zu berücksichtigen:
+
+-   Capability-Typ und Effects
+-   Version
+-   Herkunft
+-   Berechtigungen
+-   Sicherheitsklassifikation
+-   Kompatibilität
+-   Health
+-   Auditierbarkeit
+
+Keine statische zukünftige Toolchain-, Technologie-, Provider- oder
+Capability-Allowlist.
+
+14. Backup / Disaster Recovery
+
+Wichtige ADC-Zustände müssen sicherbar und wiederherstellbar sein.
+
+Dazu können gehören:
+
+-   Project Definitions
+-   Konfiguration
+-   Quality Policies
+-   Capability Registry
+-   Workflow-/Checkpoint-Zustände
+-   Audit-/Diagnostic-Daten
+-   relevante Metadaten
+
+Projektquellcode und externe Repositories sind getrennt von ADC-internen
+Zuständen zu betrachten.
+
+Zusammenspiel der wichtigsten Bausteine
+
+Project Intelligence ↓ Project Definitions + Repository Rules ↓
+Effective Quality Policy ↓ User Request ↓ Requirements + Acceptance
+Criteria ↓ Change Impact Analysis ↓ Development Plan ↓ Developer ↓
+Regression Intelligence ↓ Verification Plan ↓ Functional Tests + Quality
+Checks ↓ Acceptance Review ↓ Human Approval ↓ Controlled Git / Release
+
+Workflow Recovery und Checkpoints begleiten den Ablauf übergreifend.
+
+DiagnosticTrace liefert nachvollziehbare Business-/Audit-Evidence.
+
+Cost Governance und ADC Health überwachen den Betrieb des
+Entwicklungssystems.
+
+Priorisierungsvorschlag
+
+P0: - Quality Governance - Definition of Done / Acceptance Criteria -
+Change Impact Analysis - Regression Intelligence - Workflow Recovery /
+Resume
+
+P1: - Dependency Governance - Architecture Knowledge - Technical Debt
+Management - Reproducibility - Release Management - ADC Observability /
+Health
+
+P2: - Cost Governance - Targeted Knowledge Acquisition - Backup /
+Disaster Recovery - Plugin / Capability Lifecycle
+
+Leitgedanke
+
+Die nächste Qualitätsstufe von AI-Dev-Center soll nicht primär durch
+immer mehr LLM-Agenten entstehen.
+
+Der größere Nutzen entsteht durch strukturierte Policies, überprüfbare
+Acceptance Criteria, Evidence, Impact Analysis, deterministische Quality
+Gates, gezielte Regressionstests und sichere Wiederaufnahme
+unterbrochener Workflows.

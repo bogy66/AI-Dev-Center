@@ -1,0 +1,749 @@
+# Themenspeicher – Controlling und Entwicklungskosten im AI-Dev-Center
+
+## Grundgedanke
+
+Entwicklungskosten sind für AI-Dev-Center ein zentrales Steuerungsziel.
+
+ADC soll nicht nur technisch richtige Lösungen erzeugen, sondern auch transparent machen:
+
+- welche Entwicklungskosten entstehen,
+- wodurch diese Kosten entstehen,
+- welche Schritte besonders teuer sind,
+- ob ein weiterer Agenten-/LLM-/Tool-Lauf wirtschaftlich sinnvoll ist,
+- ob ein günstigerer Weg mit vergleichbarer Qualität existiert,
+- ob vermeidbare Wiederholungen stattfinden,
+- wie sich Kosten auf Projekt, Workflow, Provider, Modell, Endpoint, Agent und Capability verteilen.
+
+Controlling darf Qualität, Sicherheit, Human Approval oder technische Korrektheit nicht aushebeln.
+
+Kostenoptimierung bedeutet deshalb nicht "billig um jeden Preis", sondern:
+
+    Zielerreichung
+    + Qualität
+    + Sicherheit
+    + nachvollziehbare Kosten
+    + wirtschaftlicher Ressourceneinsatz
+
+## Zielbild
+
+ADC soll eine zentrale Cost Governance / Controlling-Funktion besitzen.
+
+Sie soll Entwicklungskosten erfassen, bewerten, begrenzen, prognostizieren und in technische Entscheidungen einbeziehen.
+
+Beispiel:
+
+    User Request
+        ↓
+    Requirement / Acceptance Criteria
+        ↓
+    Change Impact Analysis
+        ↓
+    geplanter Workflow
+        ↓
+    Cost Estimate
+        ↓
+    Nutzen-/Risiko-/Kostenbewertung
+        ↓
+    Ausführung
+        ↓
+    Ist-Kosten
+        ↓
+    Abweichungsanalyse
+        ↓
+    Cost Evidence / Controlling
+        ↓
+    zukünftige Planung verbessern
+
+## Kostenarten
+
+Controlling soll nicht nur reine LLM-Tokenkosten betrachten.
+
+Mögliche Kostenarten:
+
+### 1. LLM-/Provider-Kosten
+- Input Tokens
+- Output Tokens
+- Reasoning Tokens, falls vom Provider ausgewiesen
+- Prompt Caching
+- Retrieval-/Tool-Aufrufe
+- Provider-Gebühren
+- Modellabhängige Preise
+- Endpoint-spezifische Preise
+- Retry-Kosten
+- Repair-Prompt-Kosten
+- Council-Kosten
+- Chairman-Kosten
+- Agenten-Kosten
+
+### 2. Agentenlaufzeit
+- Laufzeit pro Agent
+- Laufzeit pro Workflow-Schritt
+- Wartezeit
+- Timeout-Zeit
+- unnötige Wiederholungen
+- erneute Repository-Analyse
+- unnötige Testläufe durch Agenten
+- parallele vs. serielle Laufzeit
+
+### 3. Tool-/Execution-Kosten
+- Build-Zeit
+- Compile-Zeit
+- Testlaufzeit
+- Container-/VM-Nutzung
+- CI/CD-Minuten
+- Cloud-Ressourcen
+- Storage
+- Netzwerk
+- externe APIs
+- kostenpflichtige MCP-/Tool-Capabilities
+
+### 4. Menschliche Kosten
+Perspektivisch erfassbar:
+
+- notwendige manuelle Reviews
+- Human Approval Aufwand
+- manuelle Fehlerbehebung
+- wiederholte Fehlversuche
+- unnötige Kontextwechsel
+- Wiederholung bereits erledigter Arbeit
+
+Diese Werte können zunächst als Zeit-/Aufwandsschätzung geführt werden und müssen nicht sofort monetär bewertet werden.
+
+## Kostenobjekte
+
+Kosten sollen mindestens folgenden Ebenen zugeordnet werden können:
+
+- Projekt
+- User Request
+- Workflow Run
+- Workflow Stage
+- Agent
+- Council Round
+- Chairman
+- Provider
+- Modell
+- Endpoint
+- Capability
+- Tool
+- Build
+- Test
+- Retry
+- Repair
+- Human Approval
+- Release
+
+Wichtig:
+
+Model != Provider != Endpoint.
+
+Kosten müssen auf der tatsächlich verwendeten Kombination nachvollziehbar sein.
+
+## Soll-/Ist-Controlling
+
+Für geplante Arbeit soll ADC möglichst vor Ausführung eine Kosteneinschätzung bilden.
+
+Beispiel:
+
+    geplante Aktion:
+    - 1 Requirement Discovery Call
+    - 3 Council Proposal Calls
+    - 3 Council Review Calls
+    - 1 Chairman Call
+    - 1 Developer Agent Run
+    - 1 fokussierter Testlauf
+
+Daraus kann entstehen:
+
+    Expected Cost
+    Expected Runtime
+    Expected Benefit
+    Risk of Repetition
+    Confidence
+
+Nach Ausführung:
+
+    Estimated Cost
+        vs.
+    Actual Cost
+
+Abweichungen sollen sichtbar und erklärbar werden.
+
+## Kostenentscheidung vor Agenten-/LLM-Läufen
+
+Vor einem kostenrelevanten Lauf soll ADC perspektivisch bewerten:
+
+- Welche konkrete Frage muss beantwortet werden?
+- Kann vorhandene Evidence wiederverwendet werden?
+- Ist ein erneuter Full-Repo-Scan notwendig?
+- Ist ein großer Agentenlauf nötig?
+- Reicht ein fokussierter Agentenlauf?
+- Ist ein LLM-Aufruf überhaupt erforderlich?
+- Kann deterministische Logik die Aufgabe erledigen?
+- Kann ein günstigeres Modell dieselbe Capability zuverlässig erfüllen?
+- Ist die erwartete Verbesserung den Preis wert?
+- Ist ein Repair-/Retry-Lauf gerechtfertigt?
+- Ist der Fehler bereits ausreichend lokalisiert?
+- Muss wirklich der gesamte Testumfang erneut ausgeführt werden?
+
+Das Controlling soll insbesondere unnötige Wiederholungen vermeiden.
+
+## Benefit / Cost / Risk
+
+Kosten allein dürfen nicht entscheiden.
+
+Ein möglicher zentraler Bewertungsrahmen:
+
+    Expected Benefit
+    Expected Cost
+    Expected Risk Reduction
+    Expected Quality Gain
+    Probability of Success
+    Reuse Potential
+
+Beispiel:
+
+Ein 4-Euro-Agentenlauf ist möglicherweise sinnvoll, wenn er einen sicherheitskritischen Defekt mit hoher Erfolgswahrscheinlichkeit behebt.
+
+Ein 4-Euro-Agentenlauf ist nicht sinnvoll, wenn er nur eine bereits bestätigte Architektur erneut analysiert.
+
+## Budgetierung
+
+ADC soll perspektivisch Budgets unterstützen.
+
+Mögliche Budgettypen:
+
+- Kosten pro Request
+- Kosten pro Workflow
+- Kosten pro Projekt
+- Tagesbudget
+- Monatsbudget
+- Provider-Budget
+- Agenten-Budget
+- Test-/CI-Budget
+
+Mögliche Schwellen:
+
+    INFO
+    WARNING
+    APPROVAL_REQUIRED
+    HARD_LIMIT
+
+Beispiel:
+
+- erwartete Kosten < 0,50 EUR: normal
+- erwartete Kosten >= 0,50 EUR: anzeigen
+- erwartete Kosten >= definierter Schwelle: Human Approval
+- Budget überschritten: Lauf blockieren oder alternative Planung verlangen
+
+Die konkreten Grenzen müssen konfigurierbar sein.
+
+## Human Approval bei Kosten
+
+Neben technischen Side Effects kann auch ein hoher erwarteter Kostenaufwand approval-relevant sein.
+
+Beispiel:
+
+    Estimated Cost > Project Budget Threshold
+        ↓
+    Human Approval required
+
+Wichtig:
+
+Kostenfreigabe ist eine zusätzliche Freigabedimension.
+
+Sie ersetzt niemals Sicherheitsfreigaben.
+
+## Kostenbewusste Modell-/Provider-Auswahl
+
+Die zukünftige LLM Capability Layer soll Kosten als ein Auswahlkriterium berücksichtigen können.
+
+Beispiel:
+
+    Required capabilities:
+    - structured_output
+    - sufficient context
+    - coding
+    - reliability threshold
+
+Dann:
+
+    geeignete Provider/Model/Endpoint-Kandidaten
+        ↓
+    Capability fit
+    Quality expectation
+    Cost
+    Latency
+    Privacy
+    Availability
+        ↓
+    Auswahl
+
+Keine statische Zuordnung:
+
+    "Task X immer Modell Y"
+
+Stattdessen capability-basierte Auswahl.
+
+Kosten dürfen nie ein Modell auswählen, das eine notwendige Capability nicht erfüllt.
+
+## Cost-Aware Council
+
+Das Engineering Council soll Kosten in technischen Varianten berücksichtigen können.
+
+Kostenperspektiven können sein:
+
+- initiale Setup-Kosten
+- Entwicklungsaufwand
+- laufende Betriebskosten
+- Cloud-/Providerkosten
+- Wartungskosten
+- CI-Kosten
+- Tool-/Lizenzkosten
+- Hardwarekosten
+- langfristige Total Cost of Ownership
+
+Wichtig:
+
+Das Council darf keine Kosten erfinden.
+
+Es muss Unsicherheit kennzeichnen.
+
+## Retry- und Repair-Controlling
+
+Ein besonders wichtiger Bereich ist das Vermeiden teurer Wiederholungen.
+
+ADC soll erkennen:
+
+- identischer Fehler trat bereits auf
+- gleicher Prompt wurde schon geschickt
+- gleiche Repository-Analyse wurde bereits gemacht
+- gleicher Build ist bereits fehlgeschlagen
+- gleiche Evidence existiert schon
+- Retry hat ohne neue Information geringe Erfolgschance
+
+Vor Retry:
+
+    Was hat sich seit dem letzten Versuch geändert?
+
+Wenn die Antwort lautet:
+
+    nichts
+
+dann ist ein identischer Retry normalerweise nicht gerechtfertigt.
+
+## Workflow Recovery und Kosten
+
+Cost Governance soll eng mit Workflow Recovery zusammenarbeiten.
+
+Nach Abbruch:
+
+    letzter gültiger Checkpoint
+        ↓
+    relevante Inputs revalidieren
+        ↓
+    nur notwendige Schritte wiederholen
+        ↓
+    bereits gültige Evidence wiederverwenden
+
+Damit sollen insbesondere doppelte Provider-/Agentenkosten vermieden werden.
+
+## Change Impact Analysis als Kosteninstrument
+
+Change Impact Analysis dient nicht nur Qualität, sondern auch Kostenkontrolle.
+
+Statt:
+
+    Agent analysiert gesamtes Repository
+    → gesamte Test-Suite
+    → vollständiger Review
+
+soll möglich sein:
+
+    konkrete Änderung
+        ↓
+    betroffene Komponenten
+        ↓
+    relevante Dateien
+        ↓
+    relevante Regeln
+        ↓
+    relevante Tests
+        ↓
+    fokussierter Agenten-/Testumfang
+
+Breiter Scope nur, wenn Risiko/Evidence ihn rechtfertigt.
+
+## Regression Intelligence als Kosteninstrument
+
+Nicht jeder Fix braucht immer die gesamte Test-Suite.
+
+ADC soll anhand des Change Impact entscheiden können:
+
+- fokussierte Tests
+- Integrationstests
+- Full Suite
+- Real-System E2E
+- Browser E2E
+- manueller Smoke
+
+Dabei gilt:
+
+    so wenig wie vertretbar,
+    so viel wie für belastbare Evidence notwendig.
+
+## Entwicklungskosten im DiagnosticTrace
+
+Kostenrelevante Informationen sollen mit dem zentralen Audit-/Diagnostic-Modell verknüpft werden können.
+
+Beispiele:
+
+- provider
+- model
+- endpoint
+- operation
+- duration
+- tokens
+- estimated_cost
+- actual_cost
+- retry_count
+- repair_count
+- cache_hit
+- budget_state
+
+Wichtig:
+
+Business-/DiagnosticTrace und System-Monitoring bleiben konzeptionell getrennt.
+
+Cost Evidence darf aber mit Workflow-Trace korrelierbar sein.
+
+## Cost Ledger
+
+Perspektivisch sollte ADC ein strukturiertes Cost Ledger besitzen.
+
+Beispiel:
+
+    CostRecord
+      id
+      project_id
+      workflow_id
+      stage
+      actor
+      provider
+      model
+      endpoint
+      capability
+      started_at
+      duration_ms
+      input_tokens
+      output_tokens
+      reasoning_tokens
+      estimated_cost
+      actual_cost
+      currency
+      source
+      retry_of
+      metadata
+
+Das Datenmodell muss provider-neutral bleiben.
+
+Nicht jeder Provider liefert alle Werte.
+
+Fehlende Werte müssen als unbekannt behandelt werden, nicht erfunden.
+
+## Preisquellen
+
+Kostenberechnung benötigt nachvollziehbare Preis-Evidence.
+
+Mögliche Quellen:
+
+- Provider-Abrechnung
+- Provider API Usage
+- Endpoint-Metadaten
+- konfigurierbare Preislisten
+- manuell gepflegte Kosten
+- lokale Modelle: Ressourcen-/Zeitkosten
+
+Preisstände sollten versioniert bzw. zeitlich zuordenbar sein.
+
+Ein heutiger Preis darf nicht rückwirkend als damaliger Preis verwendet werden.
+
+## Kosten für lokale Modelle
+
+Auch lokale Modelle sind nicht "kostenlos".
+
+Mögliche Kosten:
+
+- GPU-Zeit
+- CPU-Zeit
+- Energie
+- Infrastruktur
+- Hardware-Abschreibung
+- Laufzeit
+- Opportunitätskosten
+
+Eine monetäre Bewertung kann optional sein.
+
+Mindestens Laufzeit und Ressourcenverbrauch sollten erfassbar sein.
+
+## Kostenprognose
+
+ADC soll aus vergangenen Runs lernen können:
+
+    ähnliche Aufgabe
+    + ähnlicher Scope
+    + ähnliches Modell
+    + bekannte Laufzeiten
+        ↓
+    realistischere Kostenschätzung
+
+Dies darf keine versteckte Autorität werden.
+
+Die Prognose ist Evidence für Planung, nicht Wahrheit.
+
+## Kostenberichte
+
+Nützliche Berichte:
+
+### Projekt
+- Gesamtkosten
+- Kosten pro Feature
+- Kosten pro Request
+- Kosten pro Workflow
+- teuerste Schritte
+- häufigste Retries
+- Kostenentwicklung
+
+### Provider / Modell
+- Kosten
+- durchschnittliche Laufzeit
+- Fehlerrate
+- Repair-Rate
+- Erfolg pro Kosten
+- strukturierte Output-Fehler
+- Timeout-Rate
+
+### Agent
+- Kosten pro Agentenlauf
+- Laufzeit
+- Scope-Größe
+- Wiederholungsrate
+- Ergebnisqualität / Acceptance Rate
+
+### Test / Build
+- Laufzeit
+- Wiederholungen
+- Fehlschlagsrate
+- Kosten pro verwertbarer Evidence
+
+## Kostenkennzahlen
+
+Mögliche Kennzahlen:
+
+- Cost per Request
+- Cost per Accepted Change
+- Cost per Successful Workflow
+- Cost per Defect Fixed
+- Cost per Council Decision
+- Retry Cost Ratio
+- Repair Cost Ratio
+- Failed Run Cost
+- Reused Evidence Savings
+- Test Cost per Change
+- Provider Cost Efficiency
+- Agent Cost Efficiency
+- Cost Forecast Accuracy
+
+Wichtig:
+
+Kennzahlen dürfen nicht zu falschen Optimierungsanreizen führen.
+
+"Billigster Agent" ist nicht automatisch "bester Agent".
+
+## Vermeidbare Kosten erkennen
+
+ADC soll perspektivisch Cost Smells erkennen.
+
+Beispiele:
+
+- Full-Repo-Analyse trotz bekanntem Fehlerort
+- erneuter gleicher Provider-Aufruf ohne neue Evidence
+- wiederholte Full Suite nach lokaler, eng begrenzter Änderung
+- LLM für deterministisch lösbare Aufgabe
+- Council für triviale Entscheidung
+- zu großer Prompt mit redundanter Architektur
+- wiederholte Übertragung unveränderter Kontextdaten
+- Agent führt Tests aus, obwohl User sie lokal ausführen kann
+- erneute Beschaffung bereits gespeicherter Evidence
+- Timeout ohne adaptive Strategie
+
+## Prompt-Kosten
+
+Prompts sollen kostenbewusst aufgebaut sein.
+
+Grundsatz:
+
+    so viel Kontext wie notwendig,
+    keine redundanten Wiederholungen.
+
+ADC soll perspektivisch erfassen:
+
+- Prompt-Größe
+- wiederverwendbare Kontextblöcke
+- gecachte Inhalte
+- redundanter Kontext
+- Verhältnis Input-/Output-Kosten
+
+Shared Context soll zentral gepflegt und kompakt bleiben.
+
+## Council-Kosten
+
+Das Engineering Council ist bewusst teurer als ein einzelner Call.
+
+Deshalb sollte ADC entscheiden können, wann ein Council wirklich nötig ist.
+
+Mögliche Kriterien:
+
+- mehrere plausible Architekturvarianten
+- hoher technischer Einfluss
+- hohes Risiko
+- unsichere Toolchainwahl
+- Hardware-/Systemwirkung
+- hohe langfristige Kosten
+- Knowledge Gap
+
+Nicht jeder kleine Codefix braucht einen vollständigen Council-Lauf.
+
+## Quality Governance und Kosten
+
+Quality Governance muss Kosten berücksichtigen, ohne Standards zu verwässern.
+
+Beispiel:
+
+    Quality Gate verlangt relevante Integrationstests
+
+Das Controlling darf nicht sagen:
+
+    zu teuer, Tests überspringen
+
+Es darf aber fragen:
+
+    welche Tests liefern für diesen Change die notwendige Evidence
+    mit dem geringsten unnötigen Aufwand?
+
+## Architekturregel
+
+Cost Governance / Controlling ist eine Querschnittsfunktion.
+
+Sie darf nicht als paralleler Entwicklungsworkflow entstehen.
+
+Sie liefert Evidence und Policies für den zentralen Workflow.
+
+Beispiel:
+
+    Central Workflow
+      ├─ Quality Governance
+      ├─ Cost Governance
+      ├─ DiagnosticTrace
+      ├─ Change Impact
+      ├─ Regression Intelligence
+      ├─ Workflow Recovery
+      └─ Human Approval
+
+## Sicherheit
+
+Kostenoptimierung darf niemals:
+
+- Human Approval umgehen
+- Sicherheitsprüfungen abschalten
+- aktive Blocker ignorieren
+- gefährliche Aktionen automatisch freigeben
+- Evidence fälschen
+- Tests manipulieren
+- günstigere, aber inkompatible Tools erzwingen
+- Provider-/Modell-Capability-Anforderungen abschwächen
+
+## Technologieoffenheit
+
+Controlling muss stack-neutral bleiben.
+
+Kosten können entstehen bei:
+
+- Python
+- Nix/NixOS
+- C/C++
+- ESPHome
+- Firmware
+- FPGA
+- Hardware
+- Cloud
+- Container
+- CI/CD
+- lokalen Modellen
+- MCP-Capabilities
+- zukünftigen unbekannten Technologien
+
+Es darf keine feste Liste zukünftiger Technologien voraussetzen.
+
+## Verbindung zum Architektur-Härtetest
+
+Bei neuen Architekturentscheidungen soll deshalb zusätzlich gefragt werden:
+
+- Kann ADC die Kosten dieser neuen Capability messen?
+- Kann ADC ihre Laufzeit erfassen?
+- Kann ADC ihren Nutzen gegen Kosten bewerten?
+- Kann ADC einen teuren Retry vermeiden?
+- Kann ADC vorhandene Evidence wiederverwenden?
+- Kann ADC Kosten vor einer potenziell teuren Aktion anzeigen?
+- Kann ein Budget oder Human Approval greifen?
+- Bleibt die Lösung provider-/toolchain-/technologie-neutral?
+
+## Priorisierung
+
+### P0
+- Cost Records pro Workflow/Stage/Provider/Modell
+- tatsächliche LLM-/Agentenkosten erfassen, soweit verfügbar
+- Laufzeiten erfassen
+- Retry-/Repair-Kosten sichtbar machen
+- Cost Estimate vor teuren Agenten-/LLM-Schritten
+- konfigurierbare Warnschwellen
+- Cost Evidence im Workflow
+
+### P1
+- Projektbudgets
+- Cost Ledger
+- Cost Reports
+- Provider-/Modellvergleich
+- Cost-aware Capability Selection
+- Wiederverwendung bereits gültiger Evidence
+- Retry-Entscheidung mit Kostenbewertung
+
+### P2
+- historische Prognosen
+- Kostenanomalien
+- Ressourcenbewertung lokaler Modelle
+- Total Cost of Ownership
+- langfristige Optimierung über Projekte hinweg
+
+## Ziel
+
+AI-Dev-Center soll Entwicklungskosten als messbare Engineering-Größe behandeln.
+
+Vor teuren Aktionen soll ADC wissen:
+
+    Was kostet dieser Schritt voraussichtlich?
+    Warum brauchen wir ihn?
+    Welche Evidence erwarten wir?
+    Gibt es einen günstigeren gleichwertigen Weg?
+    Was passiert, wenn wir ihn nicht ausführen?
+
+Nach dem Schritt soll ADC wissen:
+
+    Was hat er tatsächlich gekostet?
+    Was hat er gebracht?
+    War die Schätzung korrekt?
+    War ein Retry notwendig?
+    Kann zukünftige Arbeit günstiger und trotzdem gleich sicher durchgeführt werden?
+
+Damit wird Controlling zu einem festen Bestandteil kontrollierter,
+wirtschaftlicher und nachvollziehbarer Software-, Firmware- und
+Hardwareentwicklung im AI-Dev-Center.

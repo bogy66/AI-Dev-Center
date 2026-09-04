@@ -433,7 +433,9 @@ body {
 /* Help view */
 #help-view {
     flex: 1;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     padding: 1.5rem;
     background: #fff;
     border-top: 1px solid #e0e0e0;
@@ -890,4 +892,292 @@ body {
 .summary-value {
     color: #2d3748;
     font-weight: 500;
+}
+
+/* ---------- Help section tabs ---------- */
+.help-section-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 0;
+}
+
+.help-section-tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 0.5rem 1rem;
+    font-size: 0.95rem;
+    color: #718096;
+    cursor: pointer;
+    font-family: inherit;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.help-section-tab:hover {
+    color: #2d3748;
+}
+
+.help-section-tab.active {
+    color: #2b6cb0;
+    border-bottom-color: #3182ce;
+    font-weight: 600;
+}
+
+.help-section-content {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.help-section-content.hidden {
+    display: none;
+}
+
+/* ---------- Documentation layout ---------- */
+.docs-layout {
+    display: flex;
+    height: 100%;
+    gap: 0;
+}
+
+.docs-sidebar {
+    width: 250px;
+    min-width: 250px;
+    border-right: 1px solid #e2e8f0;
+    overflow-y: auto;
+    padding: 0.75rem 0;
+    background: #f7fafc;
+}
+
+.docs-sidebar-header {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: #1a202c;
+    padding: 0.25rem 1rem 0.5rem 1rem;
+    border-bottom: 1px solid #e2e8f0;
+    margin-bottom: 0.25rem;
+}
+
+.docs-toc {
+    display: flex;
+    flex-direction: column;
+}
+
+.docs-toc-link {
+    display: block;
+    padding: 0.35rem 1rem;
+    font-size: 0.85rem;
+    color: #4a5568;
+    text-decoration: none;
+    border-left: 2px solid transparent;
+    transition: background 0.1s, border-color 0.1s;
+}
+
+.docs-toc-link:hover {
+    background: #edf2f7;
+    color: #2d3748;
+}
+
+.docs-toc-link.active {
+    background: #ebf8ff;
+    color: #2b6cb0;
+    border-left-color: #3182ce;
+    font-weight: 600;
+}
+
+.docs-main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem 2rem;
+    min-width: 0;
+}
+
+.docs-breadcrumb {
+    font-size: 0.85rem;
+    color: #718096;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #edf2f7;
+}
+
+.docs-breadcrumb-link {
+    color: #3182ce;
+    text-decoration: none;
+}
+
+.docs-breadcrumb-link:hover {
+    text-decoration: underline;
+}
+
+.docs-breadcrumb-sep {
+    margin: 0 0.35rem;
+    color: #cbd5e0;
+}
+
+.docs-body {
+    max-width: 800px;
+}
+
+.docs-section-title {
+    color: #1a202c;
+    font-size: 1.5rem;
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.docs-body h3 {
+    color: #1a202c;
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+    font-size: 1.15rem;
+}
+
+.docs-body h4 {
+    color: #2d3748;
+    margin-top: 1.2rem;
+    margin-bottom: 0.4rem;
+    font-size: 1rem;
+}
+
+.docs-body p {
+    color: #4a5568;
+    line-height: 1.55;
+    margin-bottom: 0.75rem;
+    font-size: 0.93rem;
+}
+
+.docs-body ul,
+.docs-body ol {
+    color: #4a5568;
+    line-height: 1.55;
+    margin-bottom: 0.75rem;
+    padding-left: 1.5rem;
+    font-size: 0.93rem;
+}
+
+.docs-body li {
+    margin-bottom: 0.25rem;
+}
+
+.docs-body code {
+    background: #f7fafc;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    font-size: 0.85rem;
+    color: #2d3748;
+}
+
+.docs-body strong {
+    color: #2d3748;
+}
+
+.docs-body .target-badge {
+    display: inline-block;
+    background: #fed7d7;
+    color: #9b2c2c;
+    padding: 0.1rem 0.45rem;
+    border-radius: 3px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    margin-right: 0.25rem;
+}
+
+.docs-body .current-badge {
+    display: inline-block;
+    background: #c6f6d5;
+    color: #276749;
+    padding: 0.1rem 0.45rem;
+    border-radius: 3px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    margin-right: 0.25rem;
+}
+
+.doc-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1rem;
+    font-size: 0.88rem;
+}
+
+.doc-table th {
+    background: #f7fafc;
+    color: #2d3748;
+    font-weight: 600;
+    text-align: left;
+    padding: 0.45rem 0.65rem;
+    border-bottom: 2px solid #e2e8f0;
+    font-size: 0.85rem;
+}
+
+.doc-table td {
+    padding: 0.4rem 0.65rem;
+    border-bottom: 1px solid #edf2f7;
+    color: #4a5568;
+}
+
+.doc-table tr:hover td {
+    background: #f7fafc;
+}
+
+.doc-code {
+    background: #f7fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    font-family: monospace;
+    font-size: 0.82rem;
+    color: #2d3748;
+    overflow-x: auto;
+    line-height: 1.45;
+    margin-bottom: 0.75rem;
+    white-space: pre;
+}
+
+.subsystem-card {
+    background: #f7fafc;
+    border: 1px solid #e2e8f0;
+    border-left: 3px solid #3182ce;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.subsystem-card h4 {
+    margin-top: 0;
+    color: #2b6cb0;
+}
+
+.subsystem-card p {
+    margin-bottom: 0.25rem;
+}
+
+.security-principle {
+    background: #fbd38d33;
+    border: 1px solid #d69e2e;
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+    font-weight: 600;
+    color: #975a16;
+    text-align: center;
+}
+
+.arch-diagram {
+    width: 100%;
+    max-width: 900px;
+    display: block;
+    margin: 1rem 0;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: #fff;
+}
+
+.docs-section-nav {
+    display: flex;
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e2e8f0;
+    gap: 0.5rem;
 }

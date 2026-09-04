@@ -18,7 +18,7 @@ from app.verification import (
     PytestRunner, PythonUnittestRunner,
     ESPHomeCheckRunner, PlatformIORunner, CMakeRunner,
     build_verification_plan, build_default_registry, _aggregate,
-    _build_step_result,
+    _build_step_result, _MAX_OUTPUT,
 )
 
 
@@ -786,3 +786,87 @@ def test_area_cwd_is_correct_for_subdirs(tmp_path):
     # At least one set of steps has config in its metadata
     assert any(s.metadata is not None and s.metadata.get("config") is not None
                for s in esphome_steps)
+
+
+# ============================================================================
+# _build_step_result diagnostics
+# ============================================================================
+
+class FakeCompletedProcess:
+    def __init__(self, returncode=0, stdout="", stderr="", timed_out=False):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+        self.timed_out = timed_out
+
+
+def _make_step():
+    return VerificationStep(
+        step_id="s1", area=".", working_directory=".",
+        verification_kind="validate", test_system="esphome",
+        runner_type="esphome_check", policy="controlled_execution",
+    )
+
+
+class TestBuildStepResult:
+    def test_success_has_empty_diagnostics(self):
+        result = FakeCompletedProcess(returncode=0, stdout="ok", stderr="")
+        built = _build_step_result(_make_step(), result, ("esphome", "config", "."))
+        assert built.status == PASS.value
+        assert built.diagnostics == ""
+        assert built.stdout == "ok"
+        assert built.stderr == ""
+
+    def test_fail_with_stderr_puts_stderr_in_diagnostics(self):
+        result = FakeCompletedProcess(returncode=1, stdout="", stderr="Config error: missing name")
+        built = _build_step_result(_make_step(), result, ("esphome", "config", "."))
+        assert built.status == FAIL.value
+        assert "Config error: missing name" in built.diagnostics
+        assert built.stderr == "Config error: missing name"
+
+    def test_fail_with_empty_stderr_falls_back_to_stdout(self):
+        result = FakeCompletedProcess(returncode=1, stdout="Warning: config issue", stderr="")
+        built = _build_step_result(_make_step(), result, ("esphome", "config", "."))
+        assert built.status == FAIL.value
+        assert "Warning: config issue" in built.diagnostics
+
+    def test_fail_with_neither_stream_uses_returncode_fallback(self):
+        result = FakeCompletedProcess(returncode=2, stdout="", stderr="")
+        built = _build_step_result(_make_step(), result, ("esphome", "config", "."))
+        assert built.status == FAIL.value
+        assert "return code 2" in built.diagnostics
+
+    def test_timeout_includes_timeout_message(self):
+        result = FakeCompletedProcess(returncode=-1, stdout="partial", stderr="",
+                                      timed_out=True)
+        built = _build_step_result(_make_step(), result, ("esphome", "compile", "."))
+        assert built.status == TIMEOUT.value
+        assert "Execution timed out" in built.diagnostics
+
+    def test_timeout_includes_stderr_when_present(self):
+        result = FakeCompletedProcess(returncode=-1, stdout="start", stderr="killed\n",
+                                      timed_out=True)
+        built = _build_step_result(_make_step(), result, ("esphome", "compile", "."))
+        assert built.status == TIMEOUT.value
+        assert "Execution timed out" in built.diagnostics
+        assert "killed" in built.diagnostics
+
+    def test_timeout_includes_stdout_when_stderr_empty(self):
+        result = FakeCompletedProcess(returncode=-1, stdout="started\nworking\n",
+                                      stderr="", timed_out=True)
+        built = _build_step_result(_make_step(), result, ("esphome", "compile", "."))
+        assert built.status == TIMEOUT.value
+        assert "Execution timed out" in built.diagnostics
+        assert "started" in built.diagnostics
+
+    def test_diagnostics_bounded_by_max_output(self):
+        huge = "x" * (_MAX_OUTPUT + 1000)
+        result = FakeCompletedProcess(returncode=1, stdout="", stderr=huge)
+        built = _build_step_result(_make_step(), result, ("esphome", "config", "."))
+        assert len(built.diagnostics) <= _MAX_OUTPUT
+
+    def test_stdout_and_stderr_preserved_in_result(self):
+        result = FakeCompletedProcess(returncode=1, stdout="out", stderr="err")
+        built = _build_step_result(_make_step(), result, ("esphome", "config", "."))
+        assert built.stdout == "out"
+        assert built.stderr == "err"

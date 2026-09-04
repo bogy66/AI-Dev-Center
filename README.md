@@ -61,6 +61,18 @@ The core container runs without privileged mode, without Docker‑socket access 
 
 The central application service now opens a capability-specific Human Approval only from the actual Project Intelligence and completed Chairman Council result. It creates `ApprovalProvenance` from those result identifiers and the matching persisted Human Approval record, then calls the existing `CapabilityRegistry.register_approved()` boundary. On restart it restores only complete approved project-bound registrations through that same boundary; pending and rejected approvals are not restored. Capability approval remains independent from setup, Git, publish and physical-hardware approvals.
 
+## Real-System E2E
+
+A durable, manually opt-in Real-System E2E test exercises the full productive central workflow with real OpenRouter/provider/model calls, real Project Intelligence, real Requirement Discovery, the real Engineering Council (A1/A2/A3), the real Chairman, real review phase, real toolchain handling (including the productive MissingToolchainSetup path when ESPHome is unavailable), real development, real ESPHome configuration validation, real ESPHome firmware compile, local Git commit, and complete cleanup.
+
+It requires an explicit opt-in and is **never** part of the normal test suite:
+
+```bash
+venv/bin/python -m pytest tests/real_system/real_system_e2e.py --real-system-e2e -s
+```
+
+The test creates a unique disposable greenfield project for each run through the central `GreenfieldProjectMaterializer`, uses an isolated venv for any ESPHome installation (never mutating the host or AI‑Dev‑Center runtime), exercises Setup Approval, Final Approval, the Controlled Git stage, and validates the central Diagnostic Trace. All test-owned resources are removed on success, failure, exception, or blocked outcome.
+
 ## Web local (development)
 
 The productive Web GUI opens an existing server-local project root. The typed path or server-side directory selection is validated as an existing directory and used unchanged—AI-Dev-Center does not append the project name or upload directory contents. Invalid and stale recent paths are marked unusable. New-directory creation is not implied by this flow. If central workflow start fails after a session is created, the error response retains the session ID so its safe failed state and Diagnostic Trace remain inspectable.

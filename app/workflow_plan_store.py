@@ -121,4 +121,5 @@ class WorkflowPlanStore:
             warnings=tuple(data.get("warnings", ())),
             status=data["status"],
             created_at=created_at,
+            provided_requirement_ids=tuple(data.get("provided_requirement_ids", ())),
         )

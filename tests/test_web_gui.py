@@ -330,7 +330,7 @@ def test_council_detail_rendering_is_progressive_and_text_safe():
     assert "diagnosticDetailRank" in script
     assert "meta.council_output" in script
     assert "projections[projectionKey] || projections.info" in script
-    assert "selectedLevel === 'NORMAL'" in script
+    assert "diagnosticDetailRank[selectedLevel] <= diagnosticDetailRank.NORMAL" in script
     assert "diagnosticDetailRank[selectedLevel] >= diagnosticDetailRank[requiredLevel]" in script
     assert "diagnosticDetailRank[selectedLevel] >= diagnosticDetailRank.VERBOSE" in script
     assert "container.textContent" in script
@@ -349,7 +349,7 @@ def test_interface_trace_renders_grouped_xy_at_detail_levels():
     assert "x — Input" in script
     assert "f — Processor" in script
     assert "y — Output" in script
-    assert "if (selectedLevel === 'NORMAL') return" in script
+    assert "diagnosticDetailRank[selectedLevel] <= diagnosticDetailRank.NORMAL) return" in script
     assert "${label}: ${value.type || 'unavailable'} / ${value.interface || 'unavailable'}" in script
     assert "Source: ${value.source || 'unavailable'}" in script
     assert "Destination: ${value.destination || 'unavailable'}" in script

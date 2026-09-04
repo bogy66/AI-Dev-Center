@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 
@@ -343,3 +344,29 @@ def test_input_step_unchanged():
     executor.execute(step)
 
     assert step == original
+
+
+def test_default_runner_resolves_python_via_path(monkeypatch, tmp_path):
+    isolated_bin = tmp_path / "bin"
+    isolated_bin.mkdir()
+    python_link = isolated_bin / "python"
+    python_link.symlink_to(sys.executable)
+
+    prior_path = os.environ.get("PATH", "")
+    monkeypatch.setenv("PATH", f"{isolated_bin}:{prior_path}")
+
+    executor = PythonPackageExecutor()
+
+    assert executor._uses_default_runner is True
+    resolved = executor.python_executable
+    assert resolved is not None
+    assert resolved == str(python_link.resolve()) or resolved.startswith(
+        str(isolated_bin)
+    ), f"Default runner must use Python from isolated venv PATH, got {resolved}"
+
+
+def test_custom_runner_falls_back_to_sys_executable():
+    executor = PythonPackageExecutor(runner=FakeRunner())
+
+    assert executor._uses_default_runner is False
+    assert executor.python_executable == sys.executable

@@ -905,6 +905,22 @@ def _build_step_result(step, result, args):
     else:
         status = FAIL.value
 
+    diagnostics = ""
+    if timed_out:
+        if stderr:
+            diagnostics = f"Execution timed out.\n{stderr}"[:_MAX_OUTPUT]
+        elif stdout:
+            diagnostics = f"Execution timed out.\n{stdout}"[:_MAX_OUTPUT]
+        else:
+            diagnostics = "Execution timed out."
+    elif status == FAIL.value:
+        if stderr:
+            diagnostics = stderr
+        elif stdout:
+            diagnostics = stdout
+        else:
+            diagnostics = f"Process exited with return code {result.returncode}"
+
     return VerificationStepResult(
         step_id=step.step_id, area=step.area,
         status=status,
@@ -916,4 +932,5 @@ def _build_step_result(step, result, args):
         command=args,
         timed_out=timed_out,
         truncated_output=truncated,
+        diagnostics=diagnostics,
     )

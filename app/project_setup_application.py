@@ -55,6 +55,7 @@ from app.project_context import (
     compose_project_context,
 )
 from app.execution_identity import execution_identity
+from app.greenfield_project import GreenfieldProjectApproval, GreenfieldProjectMaterializer
 
 
 class ProjectSetupApplicationService:
@@ -73,6 +74,7 @@ class ProjectSetupApplicationService:
         verification_registry: object | None = None,
         project_definition_store: ProjectDefinitionStore | None = None,
         technical_config: object | None = None,
+        greenfield_materializer: GreenfieldProjectMaterializer | None = None,
     ) -> None:
         self._development_workflow = development_workflow
         self._project_inspector = project_inspector or ProjectInspector()
@@ -84,6 +86,7 @@ class ProjectSetupApplicationService:
         self._verification_registry = verification_registry
         self._project_definition_store = project_definition_store or ProjectDefinitionStore()
         self._technical_config = technical_config
+        self._greenfield_materializer = greenfield_materializer or GreenfieldProjectMaterializer()
         trace_path = self._workflow_manager.storage.parent / ".diagnostic-traces" / "events.jsonl"
         self._diagnostic_trace = diagnostic_trace or DiagnosticTrace(DiagnosticTraceStore(trace_path))
         if hasattr(self._development_workflow, "set_diagnostic_trace"):
@@ -102,6 +105,18 @@ class ProjectSetupApplicationService:
     def get_diagnostic_trace(self, run_id: str):
         """Return the ordered, read-only central trace for one run."""
         return self._diagnostic_trace.get_trace(run_id)
+
+    def materialize_approved_greenfield(
+        self, approval: GreenfieldProjectApproval,
+    ) -> Path:
+        """Materialize one explicitly approved empty project before planning."""
+        root = self._greenfield_materializer.materialize(approval)
+        self._trace(
+            approval.run_id, "project_inspection", "completed", "completed",
+            "Approved greenfield project root and local repository created",
+            details={"project_id": approval.project_id, "execution_stage": "greenfield"},
+        )
+        return root
 
     def build_request(
         self, project_id: str, project_path: str | Path, *,

@@ -10,6 +10,7 @@ from app.requirement_model import (
     PreflightResult,
     Requirement,
     RequirementType,
+    normalize_requirement_activations,
 )
 
 
@@ -17,9 +18,11 @@ class RequirementPreflight:
     """Minimal generic requirement preflight.
 
     This version checks locally verifiable requirement types
-    (EXECUTABLE and PYTHON_PACKAGE). Types that cannot be verified locally
-    are reported as not present/not satisfied but do not affect overall
-    readiness or missing requirements.
+    (EXECUTABLE, PYTHON_PACKAGE, and SYSTEM_PACKAGE). EXECUTABLE and
+    SYSTEM_PACKAGE requirements prefer a structured verification_executable
+    over the human-readable name for deterministic PATH resolution. Other
+    types remain represented as not locally verifiable; explicit per-workflow
+    activation decides whether their absence blocks the current operation.
     """
 
     UNSUPPORTED_WARNING = "requirement type verification not implemented"
@@ -27,22 +30,40 @@ class RequirementPreflight:
     VERSION_CONSTRAINT_WARNING = "version constraint not evaluated"
 
     @staticmethod
-    def check(requirements, project_id: str) -> PreflightResult:
+    def _resolvable_executable(requirement) -> str | None:
+        """Return the executable identity to resolve via shutil.which."""
+        if requirement.verification_executable:
+            return requirement.verification_executable
+        return requirement.name
+
+    @staticmethod
+    def check(requirements, project_id: str, activations=None) -> PreflightResult:
         """Run generic preflight logic over the given requirements."""
 
         requirements_tuple = tuple(requirements)
+        explicit_activation = activations is not None
+        normalized_activations = normalize_requirement_activations(
+            requirements_tuple, activations,
+        )
+        activation_by_id = {
+            activation.requirement_id: activation
+            for activation in normalized_activations
+        }
 
         results = []
         missing_requirements = []
+        inactive_requirements = []
 
         for requirement in requirements_tuple:
+            activation = activation_by_id[requirement.id]
             detected_version = None
             present = False
             satisfied = False
             warning = None
 
             if requirement.type == RequirementType.EXECUTABLE:
-                install_path = shutil.which(requirement.name)
+                executable = RequirementPreflight._resolvable_executable(requirement)
+                install_path = shutil.which(executable)
                 present = bool(install_path)
                 satisfied = present
             elif requirement.type == RequirementType.PYTHON_PACKAGE:
@@ -61,6 +82,14 @@ class RequirementPreflight:
                         )
                     except Exception:
                         detected_version = None
+            elif requirement.type == RequirementType.SYSTEM_PACKAGE:
+                executable = RequirementPreflight._resolvable_executable(requirement)
+                install_path = shutil.which(executable)
+                if install_path:
+                    present = True
+                    satisfied = True
+                else:
+                    warning = RequirementPreflight.NOT_LOCALLY_VERIFIABLE_WARNING
             elif requirement.type == RequirementType.VERSION_CONSTRAINT:
                 warning = RequirementPreflight.VERSION_CONSTRAINT_WARNING
             else:
@@ -73,22 +102,33 @@ class RequirementPreflight:
                     detected_version=detected_version,
                     satisfied=satisfied,
                     warning=warning,
+                    active=activation.active,
+                    blocks_current_operation=activation.blocks_current_operation,
                 )
             )
 
-            # Only locally checkable, required, and not satisfied requirements
-            # contribute to missing_requirements.
-            if (
-                requirement.type in (
-                    RequirementType.EXECUTABLE,
-                    RequirementType.PYTHON_PACKAGE,
+            if not activation.active:
+                inactive_requirements.append(requirement)
+            elif not satisfied and (
+                explicit_activation
+                or (
+                    requirement.required
+                    and requirement.type in (
+                        RequirementType.EXECUTABLE,
+                        RequirementType.PYTHON_PACKAGE,
+                    )
                 )
-                and requirement.required
-                and not satisfied
             ):
                 missing_requirements.append(requirement)
 
-        overall_ready = not missing_requirements
+        blocking_ids = {
+            activation.requirement_id
+            for activation in normalized_activations
+            if activation.blocks_current_operation
+        }
+        overall_ready = not any(
+            requirement.id in blocking_ids for requirement in missing_requirements
+        )
 
         # Collect all non‑empty warnings from the per‑requirement results.
         warnings = tuple(
@@ -105,4 +145,7 @@ class RequirementPreflight:
             missing_requirements=tuple(missing_requirements),
             already_installed=tuple(),
             warnings=warnings,
+            activations=normalized_activations,
+            inactive_requirements=tuple(inactive_requirements),
+            project_requirements=requirements_tuple,
         )

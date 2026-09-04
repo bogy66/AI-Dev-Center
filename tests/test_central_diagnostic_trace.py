@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict, replace
 from datetime import datetime
 import json
 from types import SimpleNamespace
@@ -8,7 +9,8 @@ import pytest
 
 from app.controlled_git_stage import GitCommitResult
 from app.diagnostic_trace import (
-    DiagnosticTrace, DiagnosticTraceError, DiagnosticTraceStore,
+    DiagnosticDetailLevel, DiagnosticTrace, DiagnosticTraceError,
+    DiagnosticTraceStore, render_diagnostic_trace_event,
 )
 from app.execution_identity import ADC_IMPLEMENTATION_VERSION, execution_identity
 from app.dev_workflow import DevelopmentWorkflow
@@ -216,6 +218,152 @@ def test_interface_projection_persists_safe_xy_and_rejects_unsafe_payloads(tmp_p
         assert forbidden not in raw
 
 
+def _terminal_event(tmp_path, *, council_phase="phase1"):
+    trace, _ = _trace(tmp_path)
+    return trace.record(
+        "terminal-run", "engineering_council", "completed", "completed",
+        "Council activity completed",
+        details={
+            "actor": "Agent A1", "actor_role": "solution_architect",
+            "runtime_state": "completed", "council_phase": council_phase,
+            "provider": "safe-provider", "model": "safe-model", "duration_ms": 12,
+            "interface_data": {
+                "info": {
+                    "x": {"type": "requirements", "interface": "internal"},
+                    "f": {"entity": "council_agent_a1_proposal", "entity_version": 1,
+                          "implementation_version": "adc-python-1",
+                          "provider": "safe-provider", "model": "safe-model"},
+                    "y": {"type": "proposal", "interface": "internal"},
+                },
+                "verbose": {
+                    "x": {"type": "requirements", "interface": "internal",
+                          "source": "validation", "destination": "Agent A1",
+                          "data": {"requirement_count": 2}},
+                    "f": {"entity": "council_agent_a1_proposal", "entity_version": 1,
+                          "implementation_version": "adc-python-1",
+                          "provider": "safe-provider", "model": "safe-model"},
+                    "y": {"type": "proposal", "interface": "internal",
+                          "source": "Agent A1", "destination": "council",
+                          "data": {"proposal_count": 1}},
+                },
+                "very_verbose": {
+                    "x": {"type": "requirements", "interface": "internal",
+                          "source": "validation", "destination": "Agent A1",
+                          "data": {"requirements": [{"name": "safe-tool"}]}},
+                    "f": {"entity": "council_agent_a1_proposal", "entity_version": 1,
+                          "implementation_version": "adc-python-1",
+                          "provider": "safe-provider", "model": "safe-model"},
+                    "y": {"type": "proposal", "interface": "internal",
+                          "source": "Agent A1", "destination": "council",
+                          "data": {"proposals": [{"name": "safe proposal"}]}},
+                },
+            },
+            "council_output": {
+                "info": {"summary": "safe summary"},
+                "verbose": {"summary": "safe summary", "risks": ["safe risk"]},
+                "very_verbose": {"summary": "safe summary", "advantages": ["safe"]},
+            },
+        },
+    )
+
+
+def test_terminal_normal_is_compact_and_does_not_fabricate_fields(tmp_path):
+    event = _terminal_event(tmp_path)
+    rendered = render_diagnostic_trace_event(event, DiagnosticDetailLevel.NORMAL)
+
+    assert rendered.startswith("[TRACE] engineering_council")
+    assert "Phase 1 — Proposals" in rendered
+    assert "Agent A1 (solution_architect)" in rendered
+    assert "status=completed" in rendered and "activity=completed" in rendered
+    assert "x — Input" not in rendered and "model_version" not in rendered
+
+
+def test_terminal_info_renders_concise_x_f_y_identity(tmp_path):
+    rendered = render_diagnostic_trace_event(_terminal_event(tmp_path), "INFO")
+
+    assert "x — Input: type=requirements interface=internal" in rendered
+    assert "f — Processor: entity=council_agent_a1_proposal" in rendered
+    assert "provider=safe-provider model=safe-model" in rendered
+    assert "y — Output: type=proposal interface=internal" in rendered
+    assert "requirement_count" not in rendered
+
+
+def test_terminal_verbose_renders_structured_xy_context_and_council(tmp_path):
+    rendered = render_diagnostic_trace_event(_terminal_event(tmp_path), "VERBOSE")
+
+    assert "source=validation destination=Agent A1" in rendered
+    assert 'data={"requirement_count": 2}' in rendered
+    assert "Context: provider=safe-provider model=safe-model duration_ms=12" in rendered
+    assert '"risks": ["safe risk"]' in rendered
+
+
+def test_terminal_very_verbose_uses_richest_existing_safe_projection(tmp_path):
+    rendered = render_diagnostic_trace_event(_terminal_event(tmp_path), "VERY_VERBOSE")
+
+    assert '"requirements": [{"name": "safe-tool"}]' in rendered
+    assert '"proposals": [{"name": "safe proposal"}]' in rendered
+    assert '"advantages": ["safe"]' in rendered
+
+
+@pytest.mark.parametrize(
+    ("phase", "label", "actor"),
+    (("phase1", "Phase 1 — Proposals", "Agent A1"),
+     ("phase2", "Phase 2 — Reviews", "Agent A1"),
+     ("phase3", "Phase 3 — Chairman", "Chairman")),
+)
+def test_terminal_distinguishes_council_phases(tmp_path, phase, label, actor):
+    event = _terminal_event(tmp_path, council_phase=phase)
+    if actor == "Chairman":
+        event = replace(event, details={**event.details, "actor": actor,
+                                        "actor_role": "chairman"})
+
+    rendered = render_diagnostic_trace_event(event, "VERBOSE")
+
+    assert label in rendered and actor in rendered
+
+
+def test_terminal_rendering_preserves_safety_and_does_not_mutate_event(tmp_path):
+    trace, _ = _trace(tmp_path)
+    event = trace.record(
+        "safe-terminal", "engineering_council", "completed", "completed",
+        "Safe summary token=hidden-token",
+        details={
+            "actor": "Agent A2",
+            "interface_data": {
+                "very_verbose": {
+                    "x": {"type": "input", "interface": "internal",
+                          "data": {"prompt": "private prompt", "api_key": "key-1"}},
+                    "f": {"entity": "processor", "command": "unsafe --run"},
+                    "y": {"type": "output", "interface": "internal",
+                          "data": {"reasoning": "private reasoning"}},
+                },
+            },
+            "council_output": {"very_verbose": {
+                "summary": "safe", "raw_response": "private response",
+                "verification": "unsafe verifier --run",
+            }},
+        },
+    )
+    before = asdict(event)
+
+    rendered = render_diagnostic_trace_event(event, "VERY_VERBOSE")
+
+    assert asdict(event) == before
+    assert "[REDACTED]" in rendered
+    for forbidden in ("hidden-token", "private prompt", "key-1", "unsafe --run",
+                      "private reasoning", "private response", "unsafe verifier"):
+        assert forbidden not in rendered
+
+
+def test_terminal_detail_levels_are_progressively_richer(tmp_path):
+    event = _terminal_event(tmp_path)
+    rendered = [
+        render_diagnostic_trace_event(event, level)
+        for level in DiagnosticDetailLevel
+    ]
+    assert len(rendered[0]) < len(rendered[1]) < len(rendered[2]) < len(rendered[3])
+
+
 def test_invalid_contract_and_persistence_failure_are_explicit(tmp_path):
     trace, _ = _trace(tmp_path)
     with pytest.raises(ValueError, match="phase"):
@@ -336,3 +484,164 @@ def test_read_only_web_api_delegates_to_application_service(tmp_path):
     service.get_diagnostic_trace.assert_called_once_with("run-api")
     assert missing.status_code == 404
     assert path.read_bytes() == before
+
+
+class TestPromptVisibility:
+    """Tests that effective prompts are visible only at VERY_VERBOSE level."""
+
+    _SAMPLE_PROMPT = (
+        "You are the Requirement Discovery Analyst of AI-Dev-Center. "
+        "Return a JSON object with the single key requirements."
+    )
+
+    def _trace_with_prompt(self, tmp_path):
+        trace, path = _trace(tmp_path)
+        event = trace.record(
+            "run-prompt", "requirement_discovery", "started", "started",
+            "Thinking",
+            details={
+                "effective_prompt": self._SAMPLE_PROMPT,
+                "runtime_state": "thinking",
+                "actor": "Requirement discovery provider",
+                "model": "test-model",
+                "provider": "TestProvider",
+            },
+        )
+        return event
+
+    def test_normal_level_does_not_expose_prompt(self, tmp_path):
+        event = self._trace_with_prompt(tmp_path)
+        rendered = render_diagnostic_trace_event(event, DiagnosticDetailLevel.NORMAL)
+        assert "Effective-Prompt" not in rendered
+        assert self._SAMPLE_PROMPT not in rendered
+
+    def test_info_level_does_not_expose_prompt(self, tmp_path):
+        event = self._trace_with_prompt(tmp_path)
+        rendered = render_diagnostic_trace_event(event, DiagnosticDetailLevel.INFO)
+        assert "Effective-Prompt" not in rendered
+        assert self._SAMPLE_PROMPT not in rendered
+
+    def test_verbose_level_does_not_expose_prompt(self, tmp_path):
+        event = self._trace_with_prompt(tmp_path)
+        rendered = render_diagnostic_trace_event(event, DiagnosticDetailLevel.VERBOSE)
+        assert "Effective-Prompt" not in rendered
+        assert self._SAMPLE_PROMPT not in rendered
+
+    def test_very_verbose_level_exposes_prompt(self, tmp_path):
+        event = self._trace_with_prompt(tmp_path)
+        rendered = render_diagnostic_trace_event(
+            event, DiagnosticDetailLevel.VERY_VERBOSE,
+        )
+        assert "Effective-Prompt" in rendered
+        assert "Requirement Discovery Analyst of AI-Dev-Center" in rendered
+
+    def test_very_verbose_prompt_passes_through_sanitization(self, tmp_path):
+        trace, path = _trace(tmp_path)
+        event = trace.record(
+            "run-sanitize", "requirement_discovery", "started", "started",
+            "Thinking",
+            details={
+                "effective_prompt": "Bearer abc123 password=secret-value api_key=deadbeef",
+                "runtime_state": "thinking",
+                "actor": "Requirement discovery provider",
+                "model": "test-model",
+                "provider": "TestProvider",
+            },
+        )
+        rendered = render_diagnostic_trace_event(
+            event, DiagnosticDetailLevel.VERY_VERBOSE,
+        )
+        assert "[REDACTED]" in rendered
+        assert "deadbeef" not in rendered
+        assert "secret-value" not in rendered
+
+    def test_effective_prompt_not_in_trace_without_explicit_include(self, tmp_path):
+        trace, path = _trace(tmp_path)
+        event = trace.record(
+            "run-no-prompt", "requirement_discovery", "started", "started",
+            "Thinking",
+            details={
+                "runtime_state": "thinking",
+                "actor": "Requirement discovery provider",
+            },
+        )
+        rendered = render_diagnostic_trace_event(
+            event, DiagnosticDetailLevel.VERY_VERBOSE,
+        )
+        assert "Effective-Prompt" not in rendered
+
+    def test_no_second_trace_system_created(self, tmp_path):
+        trace, path = _trace(tmp_path)
+        event = trace.record(
+            "run-single-trace", "requirement_discovery", "started", "started",
+            "Thinking",
+            details={
+                "effective_prompt": self._SAMPLE_PROMPT,
+                "runtime_state": "thinking",
+            },
+        )
+        events = trace.get_trace("run-single-trace")
+        assert len(events) == 1
+        assert events[0].phase == "requirement_discovery"
+
+
+class TestDiagnosticDetailLevels:
+    """Tests for the central five-level diagnostic model."""
+
+    def test_exactly_five_levels(self):
+        levels = set(DiagnosticDetailLevel)
+        assert levels == {"NONE", "NORMAL", "INFO", "VERBOSE", "VERY_VERBOSE"}
+
+    def test_none_suppresses_presentation(self, tmp_path):
+        trace, path = _trace(tmp_path)
+        event = trace.record(
+            "run-a", "testing", "started", "started", "Testing",
+            details={"model": "x", "provider": "y"},
+        )
+        rendered = render_diagnostic_trace_event(event, DiagnosticDetailLevel.NONE)
+        assert rendered == ""
+
+    def test_none_does_not_destroy_collection(self, tmp_path):
+        trace, path = _trace(tmp_path)
+        trace.record(
+            "run-audit", "testing", "started", "started", "Audit test",
+            details={"model": "x"},
+        )
+        events = trace.get_trace("run-audit")
+        assert len(events) == 1
+        assert events[0].phase == "testing"
+
+    def test_none_rank_below_normal(self):
+        from app.diagnostic_trace import _DIAGNOSTIC_DETAIL_RANK
+        assert _DIAGNOSTIC_DETAIL_RANK[DiagnosticDetailLevel.NONE] == -1
+        assert (_DIAGNOSTIC_DETAIL_RANK[DiagnosticDetailLevel.NONE] <
+                _DIAGNOSTIC_DETAIL_RANK[DiagnosticDetailLevel.NORMAL])
+
+    def test_effective_prompt_retention_is_usable(self, tmp_path):
+        trace, path = _trace(tmp_path)
+        prompt = "You are the Requirement Discovery Analyst of AI-Dev-Center." * 20
+        event = trace.record(
+            "run-prompt", "requirement_discovery", "started", "started",
+            "Thinking",
+            details={
+                "effective_prompt": prompt,
+                "actor": "Requirement discovery provider",
+            },
+        )
+        stored = event.details.get("effective_prompt", "")
+        assert len(stored) > 500
+        assert "AI-Dev-Center" in stored
+
+    def test_none_render_returns_empty_string_for_all_events(self, tmp_path):
+        trace, path = _trace(tmp_path)
+        event = trace.record(
+            "run-x", "engineering_council", "started", "started",
+            "Testing",
+            details={
+                "council_output": {"info": {"summary": "X"}},
+                "interface_data": {"info": {"x": {"type": "t"}}},
+                "effective_prompt": "prompt",
+            },
+        )
+        rendered = render_diagnostic_trace_event(event, DiagnosticDetailLevel.NONE)
+        assert rendered == ""

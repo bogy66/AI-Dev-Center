@@ -50,14 +50,18 @@ Deine Aufgabe:
 - Plane konkrete Änderungen
 - Nenne Dateien
 - Beschreibe Implementierung
+- Liefere Ergebnis als strukturiertes JSON-Objekt
 
-Antwortformat:
+Antwortformat (JSON):
 
-## Dateien
-
-## Änderungen
-
-## Umsetzung
+{
+  "changes": [
+    {"file": "relativer/pfad", "action": "create", "content": "vollständiger Inhalt"},
+    {"file": "relativer/pfad", "action": "update", "content": "vollständiger Inhalt"},
+    {"file": "relativer/pfad", "action": "delete", "content": ""}
+  ],
+  "tests": ["testbeschreibung"]
+}
 
 Maximal 700 Tokens.
 """,

@@ -1,5 +1,8 @@
+import pytest
+
 from app.requirement_model import (
     Requirement,
+    RequirementActivation,
     RequirementEvidence,
     ValidationResult,
 )
@@ -212,3 +215,24 @@ def test_no_mutation_of_input_objects():
     assert req.name == original_name
     assert req.type == original_type
     assert req.confidence == original_confidence
+
+
+def test_validation_preserves_exact_per_workflow_activation():
+    req = _make_req(id="future-tool")
+    activation = RequirementActivation(
+        "future-tool", active=False, blocks_current_operation=False,
+        reason="not used by this operation",
+    )
+
+    result = RequirementValidator.validate([req], [activation])
+
+    assert result.activations == (activation,)
+    assert result.required_requirements == (req,)
+
+
+def test_validation_rejects_activation_for_unknown_requirement():
+    req = _make_req(id="known")
+    activation = RequirementActivation("other", True, True)
+
+    with pytest.raises(ValueError, match="unknown requirement"):
+        RequirementValidator.validate([req], [activation])

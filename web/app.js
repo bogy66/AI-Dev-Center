@@ -13,6 +13,7 @@ let approvalActionRendered = false;
 let currentHelpSlide = 0;
 let helpPitchDeckInitialized = false;
 let currentTraceEvents = [];
+let currentDocSection = null;
 const totalHelpSlides = 15;
 
 // ---------- API helpers ----------
@@ -206,7 +207,7 @@ function formatActivity(activity) {
 }
 
 const diagnosticDetailRank = {
-    NORMAL: 0, INFO: 1, VERBOSE: 2, VERY_VERBOSE: 3,
+    NONE: -1, NORMAL: 0, INFO: 1, VERBOSE: 2, VERY_VERBOSE: 3,
 };
 
 function readableDiagnosticKey(key) {
@@ -222,7 +223,7 @@ function selectedInterfaceProjection(interfaceData, selectedLevel) {
 
 function appendInterfaceLines(lines, interfaceData, selectedLevel) {
     const projection = selectedInterfaceProjection(interfaceData, selectedLevel);
-    if (selectedLevel === 'NORMAL') return;
+    if (diagnosticDetailRank[selectedLevel] <= diagnosticDetailRank.NORMAL) return;
     const appendEndpoint = (label, endpoint) => {
         const value = endpoint || {};
         lines.push(`${label}: ${value.type || 'unavailable'} / ${value.interface || 'unavailable'}`);
@@ -261,12 +262,12 @@ function formatInterfaceOutput(event, selectedLevel) {
 }
 
 function formatCouncilOutput(event, selectedLevel) {
+    if (diagnosticDetailRank[selectedLevel] <= diagnosticDetailRank.NORMAL) return '';
     const meta = event.metadata || {};
     const projections = meta.council_output || {};
     const projectionKey = selectedLevel === 'VERY_VERBOSE'
         ? 'very_verbose' : selectedLevel.toLowerCase();
-    const output = selectedLevel === 'NORMAL'
-        ? {} : (projections[projectionKey] || projections.info || {});
+    const output = projections[projectionKey] || projections.info || {};
     const phaseNames = {
         phase1: 'Phase 1 — Proposals',
         phase2: 'Phase 2 — Reviews',
@@ -298,6 +299,7 @@ function formatCouncilOutput(event, selectedLevel) {
 }
 
 function formatTraceLine(event, selectedLevel = 'NORMAL') {
+    if (selectedLevel === 'NONE') return '';
     const meta = event.metadata || {};
     const actor = String(meta.actor || meta.role || '').trim();
     const runtimeState = String(meta.runtime_state || '').trim();
@@ -342,7 +344,9 @@ function appendTrace(traceEvents) {
     });
 
     container.textContent = filtered
-        .map(event => formatTraceLine(event, selectedLevel)).join('\n\n');
+        .map(event => formatTraceLine(event, selectedLevel))
+        .filter(line => line)
+        .join('\n\n');
 }
 
 function startPolling(sessionId) {
@@ -521,6 +525,7 @@ function showHelp() {
     hideAllMainViews();
     currentHelpSlide = 0;
     helpPitchDeckInitialized = false;
+    currentDocSection = null;
     showHelpOverview();
     document.getElementById('help-view').classList.remove('hidden');
 }
@@ -529,20 +534,25 @@ function hideHelp() {
     document.getElementById('help-view').classList.add('hidden');
     showNormalMainView();
     helpPitchDeckInitialized = false;
+    currentDocSection = null;
 }
 
 function showHelpOverview() {
     document.getElementById('help-overview-content').classList.remove('hidden');
     document.getElementById('help-pitch-content').classList.add('hidden');
+    document.getElementById('help-docs-content').classList.add('hidden');
     document.getElementById('help-overview-btn').classList.add('active');
     document.getElementById('help-pitch-btn').classList.remove('active');
+    document.getElementById('help-docs-btn').classList.remove('active');
 }
 
 function showHelpPitch() {
     document.getElementById('help-overview-content').classList.add('hidden');
     document.getElementById('help-pitch-content').classList.remove('hidden');
+    document.getElementById('help-docs-content').classList.add('hidden');
     document.getElementById('help-overview-btn').classList.remove('active');
     document.getElementById('help-pitch-btn').classList.add('active');
+    document.getElementById('help-docs-btn').classList.remove('active');
 
     if (!helpPitchDeckInitialized) {
         currentHelpSlide = 0;
@@ -595,6 +605,93 @@ function renderHelpDeck() {
       </div>
     `;
     updateHelpPagination();
+}
+
+// ---------- Documentation view ----------
+function showHelpDocs() {
+    document.getElementById('help-overview-content').classList.add('hidden');
+    document.getElementById('help-pitch-content').classList.add('hidden');
+    document.getElementById('help-docs-content').classList.remove('hidden');
+    document.getElementById('help-overview-btn').classList.remove('active');
+    document.getElementById('help-pitch-btn').classList.remove('active');
+    document.getElementById('help-docs-btn').classList.add('active');
+
+    if (!currentDocSection) {
+        renderDocsTOC();
+        showDocSection('sec-01');
+    }
+}
+
+function renderDocsTOC() {
+    const toc = document.getElementById('docs-toc');
+    if (!toc || typeof DOC_TOC === 'undefined') return;
+    toc.innerHTML = DOC_TOC.map(function(item) {
+        return '<a href="#" class="docs-toc-link" data-doc-id="' + item.id + '">' + escapeHtml(item.title) + '</a>';
+    }).join('');
+    toc.querySelectorAll('.docs-toc-link').forEach(function(link) {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            showDocSection(e.target.getAttribute('data-doc-id'));
+        });
+    });
+}
+
+function showDocSection(sectionId) {
+    currentDocSection = sectionId;
+    var section = typeof docSections !== 'undefined' ? docSections[sectionId] : null;
+    if (!section) return;
+    var body = document.getElementById('docs-body');
+    body.innerHTML = '<h2 class="docs-section-title">' + escapeHtml(section.title) + '</h2>' + (section.html || '');
+    body.appendChild(buildDocSectionNav(sectionId));
+    updateDocsBreadcrumb(sectionId);
+    updateDocsTOCHighlight(sectionId);
+    document.getElementById('docs-body').scrollTop = 0;
+    document.querySelector('.docs-main').scrollTop = 0;
+}
+
+function buildDocSectionNav(sectionId) {
+    var nav = document.createElement('div');
+    nav.className = 'docs-section-nav';
+    var index = DOC_TOC.findIndex(function(item) { return item.id === sectionId; });
+    var prev = index > 0 ? DOC_TOC[index - 1] : null;
+    var next = index >= 0 && index < DOC_TOC.length - 1 ? DOC_TOC[index + 1] : null;
+    if (prev) {
+        var prevBtn = document.createElement('button');
+        prevBtn.className = 'back-button';
+        prevBtn.textContent = '← ' + prev.title;
+        prevBtn.addEventListener('click', function() { showDocSection(prev.id); });
+        nav.appendChild(prevBtn);
+    }
+    var spacer = document.createElement('span');
+    spacer.style.flex = '1';
+    nav.appendChild(spacer);
+    if (next) {
+        var nextBtn = document.createElement('button');
+        nextBtn.className = 'back-button';
+        nextBtn.textContent = next.title + ' →';
+        nextBtn.addEventListener('click', function() { showDocSection(next.id); });
+        nav.appendChild(nextBtn);
+    }
+    return nav;
+}
+
+function updateDocsBreadcrumb(sectionId) {
+    var breadcrumb = document.getElementById('docs-breadcrumb');
+    var tocEntry = DOC_TOC.find(function(item) { return item.id === sectionId; });
+    if (!tocEntry) return;
+    breadcrumb.innerHTML = '<a href="#" class="docs-breadcrumb-link" id="docs-breadcrumb-home">ADC Documentation</a>' +
+        ' <span class="docs-breadcrumb-sep">&rsaquo;</span> ' +
+        '<span>' + escapeHtml(tocEntry.title) + '</span>';
+    document.getElementById('docs-breadcrumb-home').addEventListener('click', function(e) {
+        e.preventDefault();
+        showDocSection('sec-01');
+    });
+}
+
+function updateDocsTOCHighlight(sectionId) {
+    document.querySelectorAll('.docs-toc-link').forEach(function(link) {
+        link.classList.toggle('active', link.getAttribute('data-doc-id') === sectionId);
+    });
 }
 
 // ---------- Setup view ----------
@@ -1002,7 +1099,7 @@ const legacyHelpSlides = [
                 </div>
                 <div>
                     <h3>Trace</h3>
-                    <p>INFO – important workflow events.<br>DEBUG – technical workflow, agent and MCP activity.<br>VERBOSE – more detailed diagnostic information.<br>VERY_VERBOSE – maximum diagnostic detail.</p>
+                    <p>NONE – suppress diagnostic presentation.<br>NORMAL – essential workflow progress and outcomes.<br>INFO – important workflow events with actor/provider context.<br>VERBOSE – structured handoffs, engineering fields and safe metadata.<br>VERY_VERBOSE – maximum diagnostic detail including sanitized effective LLM prompts.</p>
                     <div class="trace-sample">timestamp | level | component | role | action/event | tool | status</div>
                 </div>
             </div>
@@ -1061,15 +1158,15 @@ const helpSlides = [
     {title: '3. The idea', html: () => `<p>Bring project facts, durable decisions, specialist AI roles, controlled tools and observable workflow state together around one project.</p>`},
     {title: '4. How the user works', html: () => `<p>Choose a Project, describe the desired outcome, follow live progress, inspect results and decide each Human Approval request.</p>`},
     {title: '5. Existing projects', html: () => `<p>The current Web GUI opens an exact existing project root. AI Dev Center observes its languages, frameworks, tests, toolchains and conventions before proposing change.</p>`},
-    {title: '6. New projects', html: () => `<p>Greenfield projects are part of the product direction. Safe Web creation is not implemented yet, so the current interface does not pretend that selecting a path creates one.</p>`},
+    {title: '6. New projects', html: () => `<p>Greenfield projects are part of the product direction. The central workflow creates them through a controlled GreenfieldProjectMaterializer — safe, explicit and Git-initialized. The Real-System E2E test already exercises this greenfield path end to end.</p>`},
     {title: '7. More than conventional software', html: () => `<p>The scope includes software, firmware, embedded and hardware-near development. Physical device actions remain behind a separate appropriate approval boundary and are not automatically available.</p>`},
-    {title: '8. AI team and Engineering Council', html: () => `<p>Specialist roles examine the project and alternatives. The Engineering Council compares approaches, and a Chairman participates in the technical recommendation before controlled action is considered.</p>`},
-    {title: '9. Human control', html: () => `<p>Setup, capability use, final development acceptance and publish each have separate approvals. An approval never becomes permission for arbitrary shell commands or another approval boundary.</p>`},
-    {title: '10. Tools when needed', html: () => `<p>Missing toolchains are reported, not self-installed. Approved structured setup and capability registration can extend future technologies without turning a fixed list into the product architecture.</p>`},
+    {title: '8. AI team and Engineering Council', html: () => `<p>Specialist roles examine the project and alternatives. The Engineering Council compares approaches, and a Chairman participates in the technical recommendation before controlled action is considered. The Real-System E2E test exercises A1/A2/A3 and Chairman with real LLM providers and models.</p>`},
+    {title: '9. Human control', html: () => `<p>Setup, capability use, final development acceptance and publish each have separate approvals. An approval never becomes permission for arbitrary shell commands or another approval boundary. The Real-System E2E test provides test-owned approval for Setup, Final and toolchain boundaries without granting arbitrary execution.</p>`},
+    {title: '10. Tools when needed', html: () => `<p>Missing toolchains are reported, not self-installed. Approved structured setup through the MissingToolchainSetup path and capability registration can extend future technologies without turning a fixed list into the product architecture. Only a command-free SetupPlan materialized from Project Intelligence and the Chairman Council result, followed by separate Human Approval, may invoke a registered structured installer — all exercised by the Real-System E2E test.</p>`},
     {title: '11. One project, multiple frontends', html: () => `<p>Web, Signal, API, CLI and MCP connect to the same central workflow. Signal is an adapter contract today; a concrete deployed provider remains future integration work. Active Signal chat and project bindings are strict 1:1.</p>`},
     {title: '12. Project Definitions / Memory', html: () => `<p>Observed project reality stays separate from explicit durable decisions and technical configuration. Conflicts are visible instead of silently merged, and raw chat history is not Project Memory.</p>`},
-    {title: '13. Transparency while work happens', html: () => `<p>The central Diagnostic Trace records typed input x, the versioned processor identity f, and typed output y across planning handoffs. Type, interface, source and destination show the actual user intent entering through Web and reaching Requirement Discovery alongside separate observed Project Intelligence. This makes workflow execution more reproducible while keeping ADC entity versions distinct from configured AI provider and model identity. NORMAL stays operationally compact; INFO shows concise x/f/y; VERBOSE and VERY VERBOSE progressively reveal allowlisted structured data and safe metadata. Partial successful proposals and reviews remain inspectable after an incomplete Council. Trace rows use local HH:MM:SS, while provider prompts, raw responses, private reasoning, secrets and executable command payloads remain excluded at every level.</p>`},
-    {title: '14. From development to delivery', html: () => `<p>Controlled development leads to real verification and review, then separate final approval, controlled Git and Publish Approval. Verification never installs its own tools.</p>`},
+    {title: '13. Transparency while work happens', html: () => `<p>The central Diagnostic Trace records typed input x, the versioned processor identity f, and typed output y across planning handoffs. Type, interface, source and destination show the actual user intent entering through Web and reaching Requirement Discovery alongside separate observed Project Intelligence. This makes workflow execution more reproducible while keeping ADC entity versions distinct from configured AI provider and model identity. NONE suppresses diagnostic presentation without affecting central audit collection; NORMAL shows essential progress; INFO shows concise x/f/y; VERBOSE and VERY VERBOSE progressively reveal allowlisted structured data and safe metadata. At VERY VERBOSE level, sanitized effective LLM prompts (after template substitution) provide diagnostic transparency. Raw responses, private reasoning, credentials, and executable command payloads remain excluded at every level. Partial successful proposals and reviews remain inspectable after an incomplete Council. Trace rows use local HH:MM:SS.</p>`},
+    {title: '14. From development to delivery', html: () => `<p>Controlled development leads to real verification and review, then separate final approval, controlled Git and Publish Approval. Verification never installs its own tools. A durable Real-System E2E test exercises this full productive workflow with real external providers, models, ESPHome validation/compile and controlled Git commit — opt-in only via --real-system-e2e.</p>`},
     {title: '15. Why AI Dev Center?', html: () => `<p>It combines project continuity, extensible capabilities, human control and transparent progress. Docker is the intended production direction, while unfinished integrations remain clearly identified.</p>`},
 ];
 
@@ -1153,6 +1250,7 @@ document.getElementById('help-btn').addEventListener('click', showHelp);
 document.getElementById('help-back-btn').addEventListener('click', hideHelp);
 document.getElementById('help-overview-btn').addEventListener('click', showHelpOverview);
 document.getElementById('help-pitch-btn').addEventListener('click', showHelpPitch);
+document.getElementById('help-docs-btn').addEventListener('click', showHelpDocs);
 document.getElementById('help-prev-btn').addEventListener('click', prevHelpSlide);
 document.getElementById('help-next-btn').addEventListener('click', nextHelpSlide);
 document.getElementById('setup-btn').addEventListener('click', showSetup);

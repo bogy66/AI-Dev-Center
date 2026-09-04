@@ -57,6 +57,7 @@ from app.llm_provider_factory import create_council_provider
 from app.logger import get_logger
 from app.secret_resolver import SecretResolver
 from app.execution_identity import execution_identity
+from app.toolchain_materializer import ToolchainMaterializer
 
 logger = get_logger("council")
 
@@ -85,7 +86,13 @@ _AGENT_ID_TO_CONFIG_KEY = {
 }
 
 _MAX_RETRIES = 1  # 1 initial try + 1 retry = 2 total
+_TOTAL_RETRY_MULTIPLIER = _MAX_RETRIES + 1
 _TIMEOUT_GRACE_SECONDS = 15
+
+
+def _outer_deadline(config: CouncilAgentConfig) -> float:
+    """Total bounded deadline covering all permitted same-phase provider calls."""
+    return time.monotonic() + config.timeout_seconds * _TOTAL_RETRY_MULTIPLIER + _TIMEOUT_GRACE_SECONDS
 
 
 @dataclass
@@ -106,6 +113,14 @@ class _AgentResult:
     parsed: dict[str, Any] | None = None
     raw_response: str = ""
     error: str | None = None
+
+
+@dataclass(frozen=True)
+class _CouncilQuorum:
+    complete: bool
+    degraded: bool
+    phase1_agents: int
+    phase2_agents: int
 
 
 def _get_agent_config(council_config: CouncilConfig, agent_id: str) -> CouncilAgentConfig:
@@ -139,6 +154,7 @@ class EngineeringCouncil:
         self._run_id: str = ""
         self._activity_callback: Callable[..., None] | None = None
         self._result_callback: Callable[..., None] | None = None
+        self._effective_prompts: dict[str, str] = {}
 
     def set_activity_callback(self, callback: Callable[..., None] | None) -> None:
         """Project safe Council runtime activity into the central trace."""
@@ -183,6 +199,8 @@ class EngineeringCouncil:
             )
             if failure_category:
                 details["failure_category"] = failure_category
+            if state == "thinking" and task.prompt:
+                details["effective_prompt"] = task.prompt
             self._activity_callback(**details)
         except Exception:
             # Observability must never change Council decisions or execution.
@@ -237,12 +255,12 @@ class EngineeringCouncil:
         if chairman_error:
             total_errors.append(f"Chairman: {chairman_error}")
 
-        council_complete = (
-            not proposal_set.agent_errors
-            and not vote_errors
-            and chairman_error is None
-            and len(vote_sets) == 3
-            and bool(council_result.variants)
+        quorum = self._evaluate_quorum(
+            proposal_set,
+            vote_sets,
+            council_result,
+            chairman_error,
+            tuple(total_errors),
         )
 
         if not council_result.variants and not proposal_set.agent_errors:
@@ -253,6 +271,7 @@ class EngineeringCouncil:
                 agent_errors=tuple(total_errors),
                 chairman_error=chairman_error,
                 council_complete=False,
+                council_degraded=False,
                 total_llm_calls=len(self._call_records),
             )
 
@@ -267,7 +286,8 @@ class EngineeringCouncil:
             merge_decisions=council_result.merge_decisions,
             agent_errors=tuple(total_errors),
             chairman_error=chairman_error,
-            council_complete=council_complete,
+            council_complete=quorum.complete,
+            council_degraded=quorum.degraded,
             total_llm_calls=len(self._call_records),
         )
 
@@ -279,6 +299,41 @@ class EngineeringCouncil:
             self._persist_trace(council_input, proposal_set, vote_sets, council_result, started)
 
         return council_result
+
+    @staticmethod
+    def _evaluate_quorum(
+        proposal_set: ProposalSet,
+        vote_sets: tuple[AgentVoteSet, ...],
+        council_result: CouncilResult,
+        chairman_error: str | None,
+        unresolved_errors: tuple[str, ...],
+    ) -> _CouncilQuorum:
+        """Evaluate the single authoritative Council completion policy."""
+        phase1_agents = len({proposal.agent_id for proposal in proposal_set.proposals})
+        phase2_agents = len({vote_set.agent_id for vote_set in vote_sets})
+        variant_ids = {variant.id for variant in council_result.variants}
+        chairman_valid = (
+            chairman_error is None
+            and bool(variant_ids)
+            and council_result.recommendation in variant_ids
+        )
+        complete = (
+            phase1_agents >= 2
+            and phase2_agents >= 2
+            and chairman_valid
+        )
+        normal = (
+            complete
+            and phase1_agents == 3
+            and phase2_agents == 3
+            and not unresolved_errors
+        )
+        return _CouncilQuorum(
+            complete=complete,
+            degraded=complete and not normal,
+            phase1_agents=phase1_agents,
+            phase2_agents=phase2_agents,
+        )
 
     def _emit_structured_results(
         self, council_input: CouncilInput, proposal_set: ProposalSet,
@@ -342,6 +397,9 @@ class EngineeringCouncil:
                 "toolchain": tools,
                 "disadvantages": list(proposal.disadvantages),
             }
+            prompt_key = f"{proposal.agent_id}:phase1"
+            if prompt_key in self._effective_prompts:
+                very_verbose["effective_prompt"] = self._effective_prompts[prompt_key]
             config = _get_agent_config(self._config, proposal.agent_id)
             self._result(
                 actor=f"Agent {proposal.agent_id}", actor_role=proposal.agent_role,
@@ -397,6 +455,13 @@ class EngineeringCouncil:
                 "concerns": item["concerns"][:3],
             } for item in reviews]
             config = _get_agent_config(self._config, vote_set.agent_id)
+            review_very_verbose = {
+                "summary": f"Reviewed {len(reviews)} variants",
+                "reviews": reviews,
+            }
+            prompt_key = f"{vote_set.agent_id}:phase2"
+            if prompt_key in self._effective_prompts:
+                review_very_verbose["effective_prompt"] = self._effective_prompts[prompt_key]
             self._result(
                 actor=f"Agent {vote_set.agent_id}", actor_role=vote_set.agent_role,
                 council_phase="phase2", result_kind="review",
@@ -408,8 +473,7 @@ class EngineeringCouncil:
                              "reviews": info_reviews},
                     "verbose": {"summary": f"Reviewed {len(reviews)} variants",
                                 "reviews": reviews},
-                    "very_verbose": {"summary": f"Reviewed {len(reviews)} variants",
-                                     "reviews": reviews},
+                    "very_verbose": review_very_verbose,
                 },
                 interface_data={
                     "normal": {"summary": "Proposal variants produced a structured review."},
@@ -454,6 +518,11 @@ class EngineeringCouncil:
              if variant.id == council_result.recommendation), None,
         )
         selected_name = selected.name if selected else None
+        council_status = (
+            "degraded" if council_result.council_degraded
+            else "complete" if council_result.council_complete
+            else "incomplete"
+        )
         chairman_info = {
             "summary": (
                 f"Selected {selected_name or council_result.recommendation}"
@@ -461,7 +530,9 @@ class EngineeringCouncil:
             ),
             "recommendation": council_result.recommendation,
             "selected_approach": selected_name,
-            "status": "complete" if council_result.council_complete else "incomplete",
+            "status": council_status,
+            "council_complete": council_result.council_complete,
+            "council_degraded": council_result.council_degraded,
         }
         chairman_verbose = {**chairman_info,
             "preferred_variants": [variant.name for variant in council_result.variants],
@@ -475,10 +546,13 @@ class EngineeringCouncil:
         chairman_very_verbose = {**chairman_verbose,
             "result_id": council_result.id,
             "council_complete": council_result.council_complete,
+            "council_degraded": council_result.council_degraded,
             "error_count": len(council_result.agent_errors) + bool(council_result.chairman_error),
             "total_llm_calls": council_result.total_llm_calls,
             "variant_ids": [variant.id for variant in council_result.variants],
         }
+        if "C:phase3" in self._effective_prompts:
+            chairman_very_verbose["effective_prompt"] = self._effective_prompts["C:phase3"]
         self._result(
             actor="Chairman", actor_role="chairman", council_phase="phase3",
             result_kind="chairman_decision", provider=self._config.chairman.provider,
@@ -495,7 +569,8 @@ class EngineeringCouncil:
                                "engineering_council", "chairman"),
                     "f": execution_identity("chairman", provider=self._config.chairman.provider, model=self._config.chairman.model, actor="C", phase="phase3"),
                     "y": typed({"recommendation": council_result.recommendation,
-                                "council_complete": council_result.council_complete},
+                                "council_complete": council_result.council_complete,
+                                "council_degraded": council_result.council_degraded},
                                "chairman_decision", "chairman", "engineering_council"),
                 },
                 "verbose": {
@@ -556,7 +631,11 @@ class EngineeringCouncil:
                 for variant_data in res.parsed.get("variants", []):
                     try:
                         proposal = self._build_proposal_from_dict(
-                            res.agent_id, AGENT_ROLES.get(res.agent_id, ""), variant_data, res.raw_response
+                            res.agent_id,
+                            AGENT_ROLES.get(res.agent_id, ""),
+                            variant_data,
+                            res.raw_response,
+                            council_input,
                         )
                         all_proposals.append(proposal)
                     except Exception as exc:
@@ -570,8 +649,16 @@ class EngineeringCouncil:
         )
 
     def _build_proposal_from_dict(
-        self, agent_id: str, agent_role: str, data: dict, raw_response: str
+        self,
+        agent_id: str,
+        agent_role: str,
+        data: dict,
+        raw_response: str,
+        council_input: CouncilInput,
     ) -> AgentProposal:
+        self._validate_toolchain_requirement_refs(
+            data.get("toolchain", []), council_input
+        )
         toolchain = tuple(
             ToolchainItem(
                 requirement_ref=t.get("requirement_ref", ""),
@@ -583,6 +670,7 @@ class EngineeringCouncil:
                 depends_on=tuple(t.get("depends_on", []) or []),
                 state=t.get("state", "needs_install"),
                 environment_constraint=t.get("environment_constraint"),
+                provided_by=t.get("provided_by"),
             )
             for t in data.get("toolchain", [])
         )
@@ -608,6 +696,33 @@ class EngineeringCouncil:
             agent_reasoning=data.get("agent_reasoning", ""),
             raw_llm_response=raw_response,
         )
+
+    @staticmethod
+    def _validate_toolchain_requirement_refs(
+        toolchain: list[dict[str, Any]], council_input: CouncilInput
+    ) -> None:
+        """Require every toolchain item to reference this Council input."""
+        requirement_ids = {requirement.id for requirement in council_input.requirements}
+        for item in toolchain:
+            requirement_ref = item.get("requirement_ref")
+            if (
+                not isinstance(requirement_ref, str)
+                or not requirement_ref.strip()
+                or requirement_ref not in requirement_ids
+            ):
+                raise ValueError(
+                    "toolchain requirement_ref must exactly reference a current "
+                    "CouncilInput requirement"
+                )
+            provided_by = item.get("provided_by")
+            if provided_by is not None and (
+                not isinstance(provided_by, str)
+                or not provided_by.strip()
+                or provided_by not in requirement_ids
+            ):
+                raise ValueError(
+                    "toolchain provided_by must reference a current CouncilInput requirement"
+                )
 
     # ------------------------------------------------------------------
     # Phase 2 — Cross-Review
@@ -637,6 +752,7 @@ class EngineeringCouncil:
                             "depends_on": list(t.depends_on),
                             "state": t.state,
                             "environment_constraint": t.environment_constraint,
+                            "provided_by": t.provided_by,
                         }
                         for t in p.toolchain
                     ],
@@ -721,9 +837,27 @@ class EngineeringCouncil:
                             "requirement_ref": t.requirement_ref,
                             "name": t.name,
                             "type": t.type,
+                            "install_method": t.install_method,
+                            "version": t.version,
+                            "state": t.state,
+                            "environment_constraint": t.environment_constraint,
+                            "provided_by": t.provided_by,
                         }
                         for t in p.toolchain
                     ],
+                    "controlled_setup": {
+                        **ToolchainMaterializer().assess_variant(
+                            CouncilVariant(
+                                id=p.variant_id,
+                                name=p.name,
+                                toolchain=p.toolchain,
+                            ),
+                            council_input.preflight,
+                        ),
+                        "selection_guidance": (
+                            "required_when_available"
+                        ),
+                    },
                     "advantages": list(p.advantages),
                     "disadvantages": list(p.disadvantages),
                     "risks": list(p.risks),
@@ -777,6 +911,9 @@ class EngineeringCouncil:
     def _parse_chairman_result(self, parsed: dict, council_input: CouncilInput) -> CouncilResult:
         variants: list[CouncilVariant] = []
         for v in parsed.get("variants", []):
+            self._validate_toolchain_requirement_refs(
+                v.get("toolchain", []), council_input
+            )
             variants.append(CouncilVariant(
                 id=v.get("id", ""),
                 name=v.get("name", ""),
@@ -802,6 +939,7 @@ class EngineeringCouncil:
                         depends_on=tuple(t.get("depends_on", []) or []),
                         state=t.get("state", "needs_install"),
                         environment_constraint=t.get("environment_constraint"),
+                        provided_by=t.get("provided_by"),
                     )
                     for t in v.get("toolchain", [])
                 ),
@@ -837,13 +975,37 @@ class EngineeringCouncil:
             for md in parsed.get("merge_decisions", [])
         )
 
+        recommendation = parsed.get("recommendation")
+        variant_ids = {variant.id for variant in variants}
+        if not variants:
+            raise CouncilChairmanError("Chairman produced no valid final variant")
+        if not recommendation or recommendation not in variant_ids:
+            raise CouncilChairmanError(
+                "Chairman recommendation must identify a final Council variant"
+            )
+
+        materializer = ToolchainMaterializer()
+        auto_materializable_ids: set[str] = set()
+        for variant in variants:
+            assessment = materializer.assess_variant(
+                variant, council_input.preflight,
+            )
+            if assessment.get("automatically_materializable"):
+                auto_materializable_ids.add(variant.id)
+
+        if auto_materializable_ids and recommendation not in auto_materializable_ids:
+            raise CouncilChairmanError(
+                "Chairman recommendation must identify an automatically "
+                "materializable final variant when at least one is available"
+            )
+
         return CouncilResult(
             id=self._run_id,
             project_id=council_input.project_id,
             stack=council_input.detected_stack or "",
             variants=tuple(sorted(variants, key=lambda v: v.rank)),
             rejected_variants=rejected,
-            recommendation=parsed.get("recommendation"),
+            recommendation=recommendation,
             reasoning=parsed.get("reasoning", ""),
             merge_decisions=merges,
             council_complete=True,
@@ -861,9 +1023,7 @@ class EngineeringCouncil:
                 self._activity(task, "waiting")
             futures = {executor.submit(self._run_single_agent, t): t for t in tasks}
             deadlines = {
-                future: time.monotonic()
-                + task.config.timeout_seconds
-                + _TIMEOUT_GRACE_SECONDS
+                future: _outer_deadline(task.config)
                 for future, task in futures.items()
             }
             pending = set(futures)
@@ -890,7 +1050,7 @@ class EngineeringCouncil:
                         temperature=task.config.temperature,
                         phase=phase,
                         started_at=task.started_at,
-                        duration_ms=(task.config.timeout_seconds + _TIMEOUT_GRACE_SECONDS) * 1000,
+                        duration_ms=(task.config.timeout_seconds * _TOTAL_RETRY_MULTIPLIER + _TIMEOUT_GRACE_SECONDS) * 1000,
                         success=False,
                         error=error,
                     ))
@@ -960,6 +1120,7 @@ class EngineeringCouncil:
             started = datetime.now()
             try:
                 self._activity(task, "thinking")
+                self._effective_prompts[f"{task.agent_id}:{task.phase}"] = task.prompt
                 raw = provider.complete(task.prompt)
                 last_raw = raw
                 self._activity(task, "reviewing")
@@ -989,8 +1150,13 @@ class EngineeringCouncil:
                 self._activity(task, "completed")
                 return result
 
-            except AgentParseError:
+            except Exception as exc:
                 duration_ms = (datetime.now() - started).total_seconds() * 1000
+                is_parse = isinstance(exc, AgentParseError)
+                error_msg = (
+                    f"JSON parse error (attempt {attempt + 1})"
+                    if is_parse else f"{type(exc).__name__}: {exc}"
+                )
                 self._call_records.append(AgentCallRecord(
                     agent_id=task.agent_id,
                     role=task.role,
@@ -1001,33 +1167,25 @@ class EngineeringCouncil:
                     started_at=task.started_at,
                     duration_ms=duration_ms,
                     success=False,
-                    error=f"JSON parse error (attempt {attempt + 1})",
-                    raw_response_snippet=last_raw[:500],
+                    error=error_msg,
+                    raw_response_snippet=last_raw[:500] if last_raw else "",
                 ))
                 if attempt >= _MAX_RETRIES:
-                    self._activity(task, "failed", failure_category="invalid_json")
-                    logger.warning(f"Agent {task.agent_id}: JSON parse failed after retry")
+                    failure_cat = "invalid_json" if is_parse else "provider_failure"
+                    self._activity(task, "failed", failure_category=failure_cat)
+                    logger.warning(f"Agent {task.agent_id}: failed after {attempt + 1} attempts — {exc}")
                     return _AgentResult(
                         agent_id=task.agent_id,
                         success=False,
-                        error=f"JSON parse error after {attempt + 1} attempts",
+                        error=f"{'JSON parse' if is_parse else 'Provider'} error after {attempt + 1} attempts: {exc}",
                         raw_response=last_raw,
                     )
-                task.prompt = (
-                    f"{task.prompt}\n\n"
-                    f"DEINE VORHERIGE ANTWORT WAR KEIN VALIDES JSON. "
-                    f"BITTE NUR VALIDES JSON ZURÜCKGEBEN — KEIN BEGLEITTEXT."
-                )
-
-            except Exception as exc:
-                self._activity(task, "failed", failure_category="provider_failure")
-                logger.warning(f"Agent {task.agent_id}: {exc}")
-                return _AgentResult(
-                    agent_id=task.agent_id,
-                    success=False,
-                    error=str(exc),
-                    raw_response=last_raw,
-                )
+                if is_parse:
+                    task.prompt = (
+                        f"{task.prompt}\n\n"
+                        f"DEINE VORHERIGE ANTWORT WAR KEIN VALIDES JSON. "
+                        f"BITTE NUR VALIDES JSON ZURÜCKGEBEN — KEIN BEGLEITTEXT."
+                    )
 
         return _AgentResult(
             agent_id=task.agent_id,

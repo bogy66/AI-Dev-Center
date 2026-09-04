@@ -18,9 +18,12 @@ from app.python_package_executor import PythonPackageExecutor
 from app.requirement_model import (
     DiscoveryResult,
     PreflightResult,
+    PreflightRequirementResult,
     Requirement,
+    RequirementActivation,
     RequirementEvidence,
     RequirementType,
+    SetupEffect,
     SetupPlan,
     SetupStep,
     Status,
@@ -59,6 +62,7 @@ def _make_discovery_result(project_id: str = "proj-1") -> DiscoveryResult:
         source="test",
         project_id=project_id,
         requirements=(req,),
+        activations=(RequirementActivation(req.id, True, True, "current request"),),
         warnings=(),
     )
 
@@ -74,6 +78,10 @@ def _make_validation_result(requirements) -> ValidationResult:
         required_requirements=requirements,
         optional_requirements=(),
         rejected_requirements=(),
+        activations=tuple(
+            RequirementActivation(req.id, True, True, "current request")
+            for req in requirements
+        ),
     )
 
 
@@ -96,6 +104,7 @@ def _make_setup_step(
     action: str = "install",
     package: str | None = "example-package",
     install_method: str | None = "python_package",
+    setup_effect: str | None = SetupEffect.PYTHON_PACKAGE_INSTALL,
 ) -> SetupStep:
     return SetupStep(
         id=step_id,
@@ -107,6 +116,7 @@ def _make_setup_step(
         command=None,
         verification_after="import example_package",
         is_approved=approved,
+        setup_effect=setup_effect,
     )
 
 
@@ -267,6 +277,7 @@ class TestDevelopmentWorkflow:
 
         validator.validate.assert_called_once_with(
             discovery_result.requirements,
+            discovery_result.activations,
         )
 
     def test_preflight_receives_normalized_requirements(self):
@@ -296,6 +307,7 @@ class TestDevelopmentWorkflow:
         preflight.check.assert_called_once_with(
             validation_result.normalized_requirements,
             "proj-1",
+            validation_result.activations,
         )
 
     def test_council_receives_canonical_input(self):
@@ -340,6 +352,7 @@ class TestDevelopmentWorkflow:
         assert council_input.project_id == "proj-1"
         assert council_input.project_files == ("pyproject.toml", "app/main.py")
         assert council_input.validation_warnings == validation_result.warnings
+        assert council_input.requirement_activations == validation_result.activations
 
     def test_invalid_project_file_information_is_ignored(self):
         discovery, validator, preflight, planner, council, materializer, *_ = _make_components()
@@ -367,7 +380,7 @@ class TestDevelopmentWorkflow:
             materializer,
             _,
             _,
-            _,
+            preflight_result,
             council_result,
             plan_result,
         ) = _make_components()
@@ -383,7 +396,7 @@ class TestDevelopmentWorkflow:
 
         result = workflow.run({"name": "test"}, "proj-1")
 
-        materializer.materialize.assert_called_once_with(council_result, "proj-1")
+        materializer.materialize.assert_called_once_with(council_result, "proj-1", preflight=preflight_result)
         assert result.council_result is council_result
         assert result.setup_plan is plan_result
 
@@ -530,6 +543,103 @@ class TestDevelopmentWorkflow:
         )
         assert not any(event.phase == "toolchain_materialization" for event in events)
 
+    def test_complete_degraded_council_continues_to_materialization(self, tmp_path):
+        (
+            discovery, validator, preflight, planner, council, materializer,
+            _, _, preflight_result, _, plan_result,
+        ) = _make_components()
+        degraded_result = CouncilResult(
+            id="council-degraded",
+            project_id="proj-1",
+            council_complete=True,
+            council_degraded=True,
+            agent_errors=("A1 unavailable",),
+        )
+        council.evaluate.return_value = degraded_result
+        trace = DiagnosticTrace(DiagnosticTraceStore(tmp_path / "trace.jsonl"))
+        workflow = DevelopmentWorkflow(
+            discovery, validator, preflight, planner,
+            council=council, materializer=materializer,
+            diagnostic_trace=trace,
+        )
+
+        result = workflow.run({"name": "test"}, "proj-1")
+
+        materializer.materialize.assert_called_once_with(
+            degraded_result, "proj-1", preflight=preflight_result
+        )
+        assert result.council_result is degraded_result
+        assert result.setup_plan is plan_result
+        council_events = [
+            event for event in trace.get_trace("proj-1")
+            if event.phase == "engineering_council"
+        ]
+        assert any(event.status == "completed" for event in council_events)
+        assert not any(event.status == "degraded" for event in council_events)
+        assert any(
+            event.details.get("council_degraded") is True
+            for event in council_events
+        )
+        assert any(
+            event.details.get("interface_data", {})
+            .get("info", {})
+            .get("y", {})
+            .get("data", {})
+            .get("council_degraded") is True
+            for event in council_events
+        )
+
+    def test_preflight_trace_exposes_safe_activation_state(self, tmp_path):
+        (
+            discovery, validator, preflight, planner, council, materializer,
+            discovery_result, validation_result, _, _, _,
+        ) = _make_components()
+        activation = RequirementActivation(
+            discovery_result.requirements[0].id, False, False,
+        )
+        discovery.discover.return_value = DiscoveryResult(
+            id=discovery_result.id, source=discovery_result.source,
+            project_id=discovery_result.project_id,
+            requirements=discovery_result.requirements,
+            activations=(activation,),
+        )
+        validator.validate.return_value = ValidationResult(
+            id=validation_result.id, valid=True,
+            requirements=validation_result.requirements,
+            normalized_requirements=validation_result.normalized_requirements,
+            required_requirements=validation_result.required_requirements,
+            activations=(activation,),
+        )
+        preflight.check.return_value = PreflightResult(
+            id="pre-activation", project_id="proj-1", overall_ready=True,
+            results=(PreflightRequirementResult(
+                requirement_id=activation.requirement_id,
+                present=False, satisfied=False, active=False,
+                blocks_current_operation=False,
+            ),),
+            activations=(activation,),
+            inactive_requirements=discovery_result.requirements,
+        )
+        trace = DiagnosticTrace(DiagnosticTraceStore(tmp_path / "trace.jsonl"))
+        workflow = DevelopmentWorkflow(
+            discovery, validator, preflight, planner,
+            council=council, materializer=materializer,
+            diagnostic_trace=trace,
+        )
+
+        workflow.run({"name": "test"}, "proj-1")
+
+        states = [
+            row.get("state")
+            for event in trace.get_trace("proj-1")
+            for row in (
+                event.details.get("interface_data", {})
+                .get("verbose", {}).get("y", {}).get("data", {})
+                .get("preflight_results", [])
+            )
+        ]
+        assert "inactive" in states
+
 
     def test_intermediate_objects_are_not_mutated(self):
         (
@@ -613,6 +723,23 @@ class TestApprovedExecution:
         executor.execute.assert_any_call(step1)
         executor.execute.assert_any_call(step2)
 
+    def test_approved_plan_with_deferred_requirement_does_not_block_execution(self):
+        executor = MagicMock(spec=PythonPackageExecutor)
+        workflow = self._make_workflow(executor)
+        activation = RequirementActivation(
+            "future-physical-capability", False, False,
+        )
+        plan = SetupPlan(
+            id="plan-deferred", project_id="proj-1", steps=(),
+            status="approved", requirement_activations=(activation,),
+            deferred_requirement_ids=(activation.requirement_id,),
+        )
+
+        results = workflow.execute_approved(plan)
+
+        assert results == ()
+        executor.execute.assert_not_called()
+
     def test_pending_plan_is_rejected(self):
         executor = MagicMock(spec=PythonPackageExecutor)
         workflow = self._make_workflow(executor)
@@ -662,6 +789,7 @@ class TestApprovedExecution:
         step = _make_setup_step(
             approved=True,
             action="manual_review",
+            setup_effect=None,
         )
         plan = _make_setup_plan(
             status="approved",
@@ -819,3 +947,304 @@ class TestApprovedExecution:
 
         assert result.setup_plan is plan_result
         executor.execute.assert_not_called()
+
+
+class TestDiscoveryFallbackTraceSemantics:
+    """Tests verifying that trace events correctly represent discovery state."""
+
+    def test_successful_discovery_emits_completed_trace_status(self, tmp_path):
+        (
+            discovery, validator, preflight, planner, council, materializer,
+            discovery_result, *_,
+        ) = _make_components()
+        trace = DiagnosticTrace(DiagnosticTraceStore(tmp_path / "trace.jsonl"))
+        workflow = DevelopmentWorkflow(
+            discovery, validator, preflight, planner,
+            council=council, materializer=materializer,
+            diagnostic_trace=trace,
+        )
+
+        workflow.run({"name": "test"}, "proj-1")
+
+        events = trace.get_trace("proj-1")
+        discovery_completed = [
+            e for e in events
+            if e.phase == "requirement_discovery" and e.event_type == "completed"
+        ]
+        assert len(discovery_completed) >= 1
+        assert all(
+            e.status == "completed" for e in discovery_completed
+        )
+
+    def test_fallback_discovery_emits_blocked_not_completed_trace_status(
+        self, tmp_path,
+    ):
+        (
+            discovery, validator, preflight, planner, council, materializer,
+            discovery_result, *_,
+        ) = _make_components()
+        fallback_result = DiscoveryResult(
+            id=discovery_result.id,
+            source=discovery_result.source,
+            project_id=discovery_result.project_id,
+            requirements=(),
+            conversation_trace_id=None,
+            ai_model="test-model",
+            fallback_used=True,
+            warnings=("Failed to parse LLM response: invalid structure",),
+        )
+        discovery.discover.return_value = fallback_result
+
+        trace = DiagnosticTrace(DiagnosticTraceStore(tmp_path / "trace.jsonl"))
+        workflow = DevelopmentWorkflow(
+            discovery, validator, preflight, planner,
+            diagnostic_trace=trace,
+        )
+
+        with pytest.raises(WorkflowBlockedError, match="planning was blocked"):
+            workflow.run({"name": "test"}, "proj-1")
+
+        events = trace.get_trace("proj-1")
+        discovery_completed_events = [
+            e for e in events
+            if e.phase == "requirement_discovery" and e.status == "completed"
+        ]
+        assert discovery_completed_events == []
+
+        discovery_blocked_events = [
+            e for e in events
+            if e.phase == "requirement_discovery" and e.status == "blocked"
+        ]
+        assert len(discovery_blocked_events) >= 1
+
+    def test_successful_discovery_interface_status_is_completed(
+        self, tmp_path,
+    ):
+        (
+            discovery, validator, preflight, planner, council, materializer,
+            *_,
+        ) = _make_components()
+        trace = DiagnosticTrace(DiagnosticTraceStore(tmp_path / "trace.jsonl"))
+        workflow = DevelopmentWorkflow(
+            discovery, validator, preflight, planner,
+            council=council, materializer=materializer,
+            diagnostic_trace=trace,
+        )
+
+        workflow.run({"name": "test"}, "proj-1")
+
+        events = trace.get_trace("proj-1")
+        interface_events = [
+            e for e in events
+            if e.phase == "requirement_discovery"
+            and e.details.get("interface_stage") == "requirement_discovery"
+        ]
+        assert interface_events
+        for e in interface_events:
+            y_data = (
+                e.details.get("interface_data", {})
+                .get("info", {}).get("y", {}).get("data", {})
+            )
+            assert y_data.get("warning_count", -1) == 0
+
+    def test_fallback_discovery_interface_status_is_failed(self, tmp_path):
+        (
+            discovery, validator, preflight, planner, council, materializer,
+            discovery_result, *_,
+        ) = _make_components()
+        fallback_result = DiscoveryResult(
+            id=discovery_result.id,
+            source=discovery_result.source,
+            project_id=discovery_result.project_id,
+            requirements=(),
+            conversation_trace_id=None,
+            ai_model="test-model",
+            fallback_used=True,
+            warnings=("Failed to parse LLM response: invalid structure",),
+        )
+        discovery.discover.return_value = fallback_result
+        trace = DiagnosticTrace(DiagnosticTraceStore(tmp_path / "trace.jsonl"))
+        workflow = DevelopmentWorkflow(
+            discovery, validator, preflight, planner,
+            diagnostic_trace=trace,
+        )
+
+        with pytest.raises(WorkflowBlockedError, match="planning was blocked"):
+            workflow.run({"name": "test"}, "proj-1")
+
+        events = trace.get_trace("proj-1")
+        interface_events = [
+            e for e in events
+            if e.phase == "requirement_discovery"
+            and e.details.get("interface_stage") == "requirement_discovery"
+        ]
+        assert interface_events
+        for e in interface_events:
+            assert e.status == "failed"
+
+    def test_discovery_effective_prompt_appears_in_interface_very_verbose(
+        self, tmp_path,
+    ):
+        (
+            discovery, validator, preflight, planner, council, materializer,
+            *_,
+        ) = _make_components()
+        discovery.effective_prompt = (
+            "You are the Requirement Discovery Analyst of AI-Dev-Center."
+        )
+        discovery.effective_repair_prompt = None
+        trace = DiagnosticTrace(DiagnosticTraceStore(tmp_path / "trace.jsonl"))
+        workflow = DevelopmentWorkflow(
+            discovery, validator, preflight, planner,
+            council=council, materializer=materializer,
+            diagnostic_trace=trace,
+        )
+
+        workflow.run({"name": "test"}, "proj-1")
+
+        events = trace.get_trace("proj-1")
+        interface_events = [
+            e for e in events
+            if e.phase == "requirement_discovery"
+            and e.details.get("interface_stage") == "requirement_discovery"
+        ]
+        assert interface_events
+        interface_data = interface_events[0].details.get("interface_data", {})
+        very_verbose = interface_data.get("very_verbose", {})
+        x_data = very_verbose.get("x", {}).get("data", {})
+        assert "effective_prompt" in x_data
+        assert "Requirement Discovery Analyst of AI-Dev-Center" in x_data["effective_prompt"]
+
+
+class TestSetupExecutionActivation:
+    """Tests for activation-aware setup step execution."""
+
+    def test_nonblocking_manual_step_is_skipped_not_rejected(self):
+        executor = MagicMock(spec=PythonPackageExecutor)
+        result = ExecutionResult(step_id="step-req-1", success=True,
+                                 message="ok", verification_passed=True)
+        executor.execute.return_value = result
+
+        discovery = MagicMock(spec=AIRequirementDiscovery)
+        workflow = DevelopmentWorkflow(
+            discovery=discovery, validator=MagicMock(),
+            preflight=MagicMock(), planner=MagicMock(), executor=executor,
+        )
+        activation = RequirementActivation("req-future", False, False,
+                                           "forward-looking")
+        plan = SetupPlan(
+            id="plan-future", project_id="proj-1",
+            steps=(
+                SetupStep(id="step-req-future", requirement_id="req-future",
+                          action="manual_review", package=None,
+                          install_method=None),
+                SetupStep(id="step-req-1", requirement_id="req-1",
+                          action="install", install_method="pip",
+                          package="example-package", is_approved=True),
+            ),
+            status="approved",
+            requirement_activations=(activation,),
+        )
+
+        results = workflow.execute_approved(plan)
+        assert len(results) == 1
+        assert results[0].step_id == "step-req-1"
+
+    def test_active_blocking_manual_step_still_blocks(self):
+        executor = MagicMock(spec=PythonPackageExecutor)
+        workflow = DevelopmentWorkflow(
+            discovery=MagicMock(), validator=MagicMock(),
+            preflight=MagicMock(), planner=MagicMock(), executor=executor,
+        )
+        blocking_activation = RequirementActivation(
+            "req-blocking", True, True, "genuinely needed",
+        )
+        plan = SetupPlan(
+            id="plan-block", project_id="proj-1",
+            steps=(SetupStep(
+                id="step-req-blocking", requirement_id="req-blocking",
+                action="manual_review", package=None, install_method=None,
+                is_approved=True,
+            ),),
+            status="approved",
+            requirement_activations=(blocking_activation,),
+        )
+
+        with pytest.raises(WorkflowExecutionError, match="manual review"):
+            workflow.execute_approved(plan)
+
+    def test_inactive_noblocking_step_skipped_in_plan(self):
+        executor = MagicMock(spec=PythonPackageExecutor)
+        executor.execute.return_value = ExecutionResult(
+            step_id="step-req-install", success=True, message="ok",
+            verification_passed=True,
+        )
+        workflow = DevelopmentWorkflow(
+            discovery=MagicMock(), validator=MagicMock(),
+            preflight=MagicMock(), planner=MagicMock(), executor=executor,
+        )
+        inactive = RequirementActivation("req-inactive", False, False,
+                                         "not needed")
+        plan = SetupPlan(
+            id="plan-inactive", project_id="proj-1",
+            steps=(
+                SetupStep(id="step-req-inactive", requirement_id="req-inactive",
+                          action="manual_review", is_approved=True),
+                SetupStep(id="step-req-install", requirement_id="req-install",
+                          action="install", install_method="pip",
+                          package="pkg", is_approved=True),
+            ),
+            status="approved",
+            requirement_activations=(inactive,),
+        )
+
+        results = workflow.execute_approved(plan)
+        assert len(results) == 1
+        assert results[0].step_id == "step-req-install"
+
+    def test_active_nonblocking_manual_skipped(self):
+        executor = MagicMock(spec=PythonPackageExecutor)
+        executor.execute.return_value = ExecutionResult(
+            step_id="install-step", success=True, message="ok",
+            verification_passed=True,
+        )
+        workflow = DevelopmentWorkflow(
+            discovery=MagicMock(), validator=MagicMock(),
+            preflight=MagicMock(), planner=MagicMock(), executor=executor,
+        )
+        active_nonblock = RequirementActivation(
+            "req-active-nonblock", True, False, "active but not blocking",
+        )
+        plan = SetupPlan(
+            id="plan-anb", project_id="proj-1",
+            steps=(
+                SetupStep(id="step-req-anb", requirement_id="req-active-nonblock",
+                          action="manual_review", is_approved=True),
+                SetupStep(id="install-step", requirement_id="req-install",
+                          action="install", install_method="pip",
+                          package="pkg", is_approved=True),
+            ),
+            status="approved",
+            requirement_activations=(active_nonblock,),
+        )
+
+        results = workflow.execute_approved(plan)
+        assert len(results) == 1
+
+    def test_no_activation_data_still_validates_as_before(self):
+        executor = MagicMock(spec=PythonPackageExecutor)
+        executor.execute.return_value = ExecutionResult(
+            step_id="step-req-1", success=True, message="ok",
+            verification_passed=True,
+        )
+        workflow = DevelopmentWorkflow(
+            discovery=MagicMock(), validator=MagicMock(),
+            preflight=MagicMock(), planner=MagicMock(), executor=executor,
+        )
+        plan = _make_setup_plan(
+            status="approved",
+            steps=(_make_setup_step("step-req-1", approved=True),),
+        )
+
+        results = workflow.execute_approved(plan)
+        assert len(results) == 1

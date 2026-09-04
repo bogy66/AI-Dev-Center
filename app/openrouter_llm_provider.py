@@ -52,15 +52,16 @@ class OpenRouterLLMProvider:
         self._timeout = timeout if timeout is not None else self.DEFAULT_TIMEOUT
         self._session = session or requests.Session()
 
-    def complete(self, prompt: str) -> str:
+    def complete(self, prompt: str, max_tokens: int | None = None) -> str:
         """Send a completion request to OpenRouter and return the response text."""
-        return self._complete(prompt, structured_json=False)
+        return self._complete(prompt, structured_json=False, max_tokens=max_tokens)
 
-    def complete_structured(self, prompt: str) -> str:
+    def complete_structured(self, prompt: str, max_tokens: int | None = None) -> str:
         """Request a provider-enforced JSON object response."""
-        return self._complete(prompt, structured_json=True)
+        return self._complete(prompt, structured_json=True, max_tokens=max_tokens)
 
-    def _complete(self, prompt: str, *, structured_json: bool) -> str:
+    def _complete(self, prompt: str, *, structured_json: bool,
+                  max_tokens: int | None = None) -> str:
         url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {self._api_key}",
@@ -70,6 +71,8 @@ class OpenRouterLLMProvider:
             "model": self._model,
             "messages": [{"role": "user", "content": prompt}],
         }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
         if structured_json:
             payload["response_format"] = {"type": "json_object"}
         try:

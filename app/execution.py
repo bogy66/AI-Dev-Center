@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 
+from app.requirement_model import SetupEffect
 from app.verification import INVALID_PLAN, TOOL_UNAVAILABLE, UNSUPPORTED, VerificationStep, VerificationStepResult
 
 
@@ -18,6 +19,19 @@ _REGISTRATION_STATUSES = frozenset({ACTIVE, SUSPENDED, REVOKED})
 _SAFE_OPERATION_TYPES = frozenset({
     "verification", "validate", "compile", "build", "test", "configure",
 })
+
+# Setup effects for which ADC currently has a controlled execution backend.
+# This is a capability-policy boundary, not a shell-command allowlist.
+CONTROLLED_SETUP_EFFECTS = frozenset({
+    SetupEffect.PYTHON_PACKAGE_INSTALL,
+})
+
+
+def is_controlled_setup_effect(effect: str | None) -> bool:
+    """Return True when ADC has a controlled backend for *effect*."""
+    if not effect or not isinstance(effect, str):
+        return False
+    return effect in CONTROLLED_SETUP_EFFECTS
 
 
 @dataclass(frozen=True)

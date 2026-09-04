@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-from app.requirement_model import Requirement, RequirementType
+from app.requirement_model import Requirement, RequirementActivation, RequirementType
 from app.requirement_preflight import RequirementPreflight
 
 
@@ -146,6 +146,81 @@ def test_no_network_or_subprocess_calls(monkeypatch):
         RequirementPreflight.check([req], "project-6")
     except AssertionError as exc:
         pytest.fail(f"Preflight should not perform network/subprocess calls: {exc}")
+
+
+def test_inactive_project_requirement_is_preserved_without_blocking(monkeypatch):
+    req = make_typed_requirement(
+        "future-executable", RequirementType.EXECUTABLE, required=True,
+    )
+    activation = RequirementActivation(req.id, False, False, "not used now")
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+
+    result = RequirementPreflight.check([req], "project", [activation])
+
+    assert result.overall_ready is True
+    assert result.missing_requirements == ()
+    assert result.inactive_requirements == (req,)
+    assert result.results[0].active is False
+    assert result.results[0].requirement_id == req.id
+
+
+def test_same_project_requirement_can_become_active_and_block_later(monkeypatch):
+    req = make_typed_requirement(
+        "future-executable", RequirementType.EXECUTABLE, required=True,
+    )
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+
+    inactive = RequirementPreflight.check(
+        [req], "project", [RequirementActivation(req.id, False, False)],
+    )
+    active = RequirementPreflight.check(
+        [req], "project", [RequirementActivation(req.id, True, True)],
+    )
+
+    assert inactive.overall_ready is True
+    assert active.overall_ready is False
+    assert active.missing_requirements == (req,)
+    assert active.results[0].blocks_current_operation is True
+
+
+def test_active_manual_requirement_remains_a_blocker():
+    req = make_typed_requirement(
+        "physical-capability", RequirementType.HARDWARE_COMPONENT, required=True,
+    )
+    activation = RequirementActivation(req.id, True, True, "needed now")
+
+    result = RequirementPreflight.check([req], "project", [activation])
+
+    assert result.overall_ready is False
+    assert result.missing_requirements == (req,)
+
+
+def test_active_non_blocking_requirement_remains_visible_without_unready_state():
+    req = make_typed_requirement(
+        "future-manual", "future_capability_kind", required=True,
+    )
+    activation = RequirementActivation(req.id, True, False, "useful but not blocking")
+
+    result = RequirementPreflight.check([req], "project", [activation])
+
+    assert result.overall_ready is True
+    assert result.missing_requirements == (req,)
+    assert result.results[0].active is True
+    assert result.results[0].blocks_current_operation is False
+
+
+def test_satisfied_preflight_remains_authoritative_for_active_requirement(monkeypatch):
+    req = make_typed_requirement(
+        "available", RequirementType.EXECUTABLE, required=True,
+    )
+    activation = RequirementActivation(req.id, True, True)
+    monkeypatch.setattr(shutil, "which", lambda _name: "/controlled/available")
+
+    result = RequirementPreflight.check([req], "project", [activation])
+
+    assert result.overall_ready is True
+    assert result.results[0].satisfied is True
+    assert result.missing_requirements == ()
 
 
 def test_executable_present_requirement(monkeypatch):
@@ -731,3 +806,314 @@ def test_non_verifiable_no_network_or_subprocess_calls(monkeypatch):
         RequirementPreflight.check([req], "project-nv-no-io")
     except AssertionError as exc:
         pytest.fail(f"Preflight should not perform network/subprocess calls: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# New tests for RequirementType.SYSTEM_PACKAGE capability-aware preflight
+# ---------------------------------------------------------------------------
+
+def test_system_package_available_as_executable_is_satisfied(monkeypatch):
+    """SYSTEM_PACKAGE requirement whose name resolves in PATH is satisfied."""
+    req = Requirement(
+        id="req-sys-available",
+        name="python3",
+        type=RequirementType.SYSTEM_PACKAGE,
+        purpose="Python 3 runtime environment",
+        required=True,
+        confidence=1.0,
+    )
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/python3")
+
+    result = RequirementPreflight.check([req], "project-sys-available")
+
+    assert result.project_id == "project-sys-available"
+    assert result.overall_ready is True
+    assert len(result.results) == 1
+    res = result.results[0]
+    assert res.requirement_id == req.id
+    assert res.present is True
+    assert res.satisfied is True
+    assert res.detected_version is None
+    assert res.warning is None
+    assert result.missing_requirements == ()
+    assert result.warnings == ()
+
+
+def test_system_package_not_in_path_remains_not_verifiable(monkeypatch):
+    """SYSTEM_PACKAGE requirement whose name is not in PATH gets existing behavior."""
+    req = Requirement(
+        id="req-sys-missing",
+        name="not-present",
+        type=RequirementType.SYSTEM_PACKAGE,
+        purpose="system package not in PATH",
+        required=True,
+        confidence=1.0,
+    )
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+
+    result = RequirementPreflight.check([req], "project-sys-missing")
+
+    assert result.project_id == "project-sys-missing"
+    assert result.overall_ready is True
+    assert len(result.results) == 1
+    res = result.results[0]
+    assert res.requirement_id == req.id
+    assert res.present is False
+    assert res.satisfied is False
+    assert res.detected_version is None
+    assert res.warning == "requirement type not locally verifiable"
+    assert result.missing_requirements == ()
+    assert result.warnings == ("requirement type not locally verifiable",)
+
+
+def test_system_package_generic_executable_not_hardcoded(monkeypatch):
+    """Preflight uses generic shutil.which, not technology-specific logic."""
+    req = Requirement(
+        id="req-sys-generic",
+        name="git",
+        type=RequirementType.SYSTEM_PACKAGE,
+        purpose="Generic version control",
+        required=True,
+        confidence=1.0,
+    )
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/local/bin/git" if name == "git" else None)
+
+    result = RequirementPreflight.check([req], "project-sys-generic")
+
+    assert result.results[0].present is True
+    assert result.results[0].satisfied is True
+    assert result.warnings == ()
+
+
+def test_system_package_does_not_mutate_requirements(monkeypatch):
+    req = Requirement(
+        id="req-sys-immutable",
+        name="python3",
+        type=RequirementType.SYSTEM_PACKAGE,
+        purpose="test requirement",
+        required=True,
+        confidence=1.0,
+    )
+    original = Requirement(
+        id=req.id,
+        name=req.name,
+        type=req.type,
+        purpose=req.purpose,
+        required=req.required,
+        confidence=req.confidence,
+    )
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/python3")
+
+    RequirementPreflight.check([req], "project-sys-immutable")
+
+    assert req == original
+    assert req.id == original.id
+    assert req.required == original.required
+    assert req.type == original.type
+    assert req.evidence == original.evidence
+    assert req.metadata == original.metadata
+
+
+def test_system_package_no_network_or_subprocess_calls(monkeypatch):
+    def fail(*args, **kwargs):
+        raise AssertionError("Network or subprocess call attempted")
+
+    monkeypatch.setattr(socket, "socket", fail)
+    monkeypatch.setattr(subprocess, "run", fail)
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/python3")
+
+    req = Requirement(
+        id="req-sys-no-io",
+        name="python3",
+        type=RequirementType.SYSTEM_PACKAGE,
+        purpose="test requirement",
+        required=True,
+        confidence=1.0,
+    )
+
+    try:
+        result = RequirementPreflight.check([req], "project-sys-no-io")
+    except AssertionError as exc:
+        pytest.fail(f"Preflight should not perform network/subprocess calls: {exc}")
+
+    assert result.overall_ready is True
+    assert result.results[0].present is True
+    assert result.results[0].satisfied is True
+    assert result.warnings == ()
+
+
+# ---------------------------------------------------------------------------
+# Structured deterministic verification executable identity (OC-018)
+# ---------------------------------------------------------------------------
+
+def test_structured_verification_executable_differs_from_display_name(monkeypatch):
+    req = Requirement(
+        id="req-structured",
+        name="Runtime Display Name",
+        type=RequirementType.SYSTEM_PACKAGE,
+        purpose="test requirement",
+        required=True,
+        confidence=1.0,
+        verification_executable="generic-runtime",
+    )
+    monkeypatch.setattr(
+        shutil, "which",
+        lambda name: "/usr/bin/generic-runtime" if name == "generic-runtime" else None,
+    )
+
+    result = RequirementPreflight.check([req], "project-structured")
+
+    res = result.results[0]
+    assert res.present is True
+    assert res.satisfied is True
+    assert result.missing_requirements == ()
+    assert result.overall_ready is True
+
+
+def test_preflight_uses_structured_executable_not_display_name(monkeypatch):
+    resolved = []
+
+    def fake_which(name):
+        resolved.append(name)
+        return "/usr/bin/generic-runtime" if name == "generic-runtime" else None
+
+    monkeypatch.setattr(shutil, "which", fake_which)
+
+    req = Requirement(
+        id="req-structured-2",
+        name="Runtime Display Name",
+        type=RequirementType.SYSTEM_PACKAGE,
+        purpose="test requirement",
+        required=True,
+        confidence=1.0,
+        verification_executable="generic-runtime",
+    )
+
+    result = RequirementPreflight.check([req], "project-structured-2")
+
+    assert "generic-runtime" in resolved
+    assert "Runtime Display Name" not in resolved
+    assert result.results[0].satisfied is True
+
+
+def test_missing_structured_executable_remains_unsatisfied(monkeypatch):
+    req = Requirement(
+        id="req-structured-missing",
+        name="Runtime Display Name",
+        type=RequirementType.SYSTEM_PACKAGE,
+        purpose="test requirement",
+        required=True,
+        confidence=1.0,
+        verification_executable="fictional-tool",
+    )
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+
+    result = RequirementPreflight.check([req], "project-structured-missing")
+
+    res = result.results[0]
+    assert res.present is False
+    assert res.satisfied is False
+
+
+def test_executable_type_uses_structured_verification_executable(monkeypatch):
+    req = Requirement(
+        id="req-exe-structured",
+        name="Some Tool Display",
+        type=RequirementType.EXECUTABLE,
+        purpose="test requirement",
+        required=True,
+        confidence=1.0,
+        verification_executable="tool-bin",
+    )
+    monkeypatch.setattr(
+        shutil, "which",
+        lambda name: "/usr/bin/tool-bin" if name == "tool-bin" else None,
+    )
+
+    result = RequirementPreflight.check([req], "project-exe-structured")
+
+    assert result.results[0].present is True
+    assert result.results[0].satisfied is True
+
+
+def test_system_package_without_structured_field_remains_compatible(monkeypatch):
+    """OC-017 behavior preserved: SYSTEM_PACKAGE name still resolves in PATH."""
+    req = Requirement(
+        id="req-sys-legacy",
+        name="git",
+        type=RequirementType.SYSTEM_PACKAGE,
+        purpose="test requirement",
+        required=True,
+        confidence=1.0,
+    )
+    monkeypatch.setattr(
+        shutil, "which",
+        lambda name: "/usr/bin/git" if name == "git" else None,
+    )
+
+    result = RequirementPreflight.check([req], "project-sys-legacy")
+
+    assert result.results[0].present is True
+    assert result.results[0].satisfied is True
+
+
+def test_unsafe_command_like_verification_executable_is_neutralized(monkeypatch):
+    resolved = []
+
+    def fake_which(name):
+        resolved.append(name)
+        return None
+
+    monkeypatch.setattr(shutil, "which", fake_which)
+
+    req = Requirement(
+        id="req-unsafe",
+        name="Runtime Display Name",
+        type=RequirementType.SYSTEM_PACKAGE,
+        purpose="test requirement",
+        required=True,
+        confidence=1.0,
+        verification_executable="python3 --version",
+    )
+
+    # The model validation must neutralize the command-like value down to a
+    # safe single executable identity (or None) before preflight.
+    assert req.verification_executable != "python3 --version"
+
+    result = RequirementPreflight.check([req], "project-unsafe")
+
+    # The rejected command-like verification value must never become
+    # deterministic verification authority. The legacy fallback to the
+    # human-readable requirement name remains allowed.
+    assert "python3 --version" not in resolved
+    assert "Runtime Display Name" in resolved
+
+
+def test_verification_method_is_never_executed(monkeypatch):
+    def fail(*args, **kwargs):
+        raise AssertionError("verification_method must never be executed")
+
+    monkeypatch.setattr(subprocess, "run", fail)
+    monkeypatch.setattr(socket, "socket", fail)
+
+    req = Requirement(
+        id="req-no-verify-exec",
+        name="Runtime Display Name",
+        type=RequirementType.SYSTEM_PACKAGE,
+        purpose="test requirement",
+        required=True,
+        confidence=1.0,
+        verification_method="python3 --version",
+        verification_executable="generic-runtime",
+    )
+    monkeypatch.setattr(
+        shutil, "which",
+        lambda name: "/usr/bin/generic-runtime" if name == "generic-runtime" else None,
+    )
+
+    try:
+        result = RequirementPreflight.check([req], "project-no-verify-exec")
+    except AssertionError as exc:
+        pytest.fail(f"verification_method must never be executed: {exc}")
+
+    assert result.results[0].satisfied is True

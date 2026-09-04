@@ -1,0 +1,282 @@
+Themenspeicher – Architektur-Härtetests und technologieoffene Entwicklungsaufträge
+
+Grundgedanke
+
+Bei allen zukünftigen Architekturentscheidungen für AI-Dev-Center muss
+bereits heute berücksichtigt werden, dass ADC später
+Entwicklungsaufträge für Technologien, Sprachen, Betriebssysteme,
+Toolchains und Hardwareplattformen bearbeiten soll, die noch nicht
+speziell in ADC implementiert wurden.
+
+Neue Architektur darf deshalb nicht nur anhand der aktuell verwendeten
+Python-, Web- oder ESPHome-Szenarien bewertet werden.
+
+Eine zentrale Architekturfrage bei jeder Entscheidung lautet:
+
+    Würde diese Architektur auch für einen bisher nicht speziell implementierten
+    Technologie-Stack funktionieren?
+
+Referenz-Härtetest: NixOS / Nix
+
+Ein konkreter Referenzauftrag ist:
+
+    Entwickle oder ändere für ein bestehendes NixOS-Projekt eine .nix-Datei,
+    die eine gewünschte Systemfunktion deklarativ konfiguriert, und validiere
+    die Änderung kontrolliert.
+
+Dieser Auftrag soll als Architektur-Härtetest dienen.
+
+ADC soll perspektivisch beispielsweise erkennen und respektieren können:
+
+-   flake.nix
+-   flake.lock
+-   configuration.nix
+-   hardware-configuration.nix
+-   NixOS-Module
+-   Home-Manager-Konfigurationen
+-   bestehende projektspezifische Nix-Strukturen und Konventionen
+
+ADC darf dabei keine Python-, pip-, apt- oder andere unpassende
+Installationslogik erzwingen.
+
+Wichtige Unterscheidung
+
+Eine Konfigurationsdatei entwickeln ist nicht dasselbe wie das
+Zielsystem verändern.
+
+Beispiel:
+
+    Nix-Datei entwickeln
+        ↓
+    Syntax / Semantik prüfen
+        ↓
+    nix eval
+        ↓
+    nix flake check
+        ↓
+    nix build
+        ↓
+    Human Approval
+        ↓
+    ggf. nixos-rebuild test/switch
+
+Das Erzeugen und Validieren einer Änderung kann einen anderen Effect und
+eine andere Sicherheitsklasse besitzen als ihre Aktivierung auf einem
+realen System.
+
+Insbesondere dauerhafte Systemänderungen dürfen die Human-Approval- und
+Controlled-Execution-Grenzen nicht umgehen.
+
+Capability-orientierte Architektur
+
+NixOS soll nicht durch einen fest verdrahteten NixOS-Sonderworkflow
+unterstützt werden.
+
+Stattdessen soll die allgemeine ADC-Capability-Architektur Fähigkeiten
+ausdrücken können, beispielsweise:
+
+-   nix.evaluate
+-   nix.flake_check
+-   nix.build
+-   nixos.rebuild
+-   nixos.test
+-   nixos.switch
+
+Die konkrete Benennung ist nicht verbindlich. Entscheidend ist das
+Architekturprinzip:
+
+    Technologie erkennen
+        ↓
+    benötigte Fähigkeiten bestimmen
+        ↓
+    Fähigkeiten entdecken / klassifizieren / registrieren
+        ↓
+    Effects und Sicherheitsgrenzen bestimmen
+        ↓
+    SetupPlan
+        ↓
+    Human Approval, falls erforderlich
+        ↓
+    Controlled Runner
+        ↓
+    Verification / Evidence
+
+Es darf keine statische zukünftige Toolchain-, Framework-, Sprach-,
+Provider- oder Technologie-Allowlist entstehen.
+
+Architekturentscheidungen müssen auf Übertragbarkeit geprüft werden
+
+Bei neuen ADC-Architekturentscheidungen sollen gedanklich mehrere
+unterschiedliche Klassen von Projekten berücksichtigt werden.
+
+Beispiele:
+
+-   Python-Anwendung
+-   Web-Anwendung
+-   C/C++-Projekt
+-   ESPHome / Mikrocontroller
+-   NixOS / Nix
+-   Firmware
+-   Hardware-nahe Projekte
+-   gemischte Multi-Toolchain-Repositories
+-   bisher unbekannte zukünftige Technologie
+
+Eine Lösung, die nur für den aktuell implementierten Stack funktioniert,
+ist keine ausreichende zentrale ADC-Architektur.
+
+Bestehende Projekte
+
+ADC muss vorhandene Repositories respektieren.
+
+Bei einem bestehenden NixOS-Projekt bedeutet das beispielsweise:
+
+-   vorhandene Flake-/Non-Flake-Struktur erkennen
+-   vorhandene Module respektieren
+-   bestehende Formatierungs- und Qualitätsregeln berücksichtigen
+-   keine unnötige Projektmigration durchführen
+-   keine ADC-eigene Standardstruktur erzwingen
+-   vorhandene Build-/Check-Verfahren bevorzugen
+-   sensible Dateien besonders behandeln
+
+Beispiel:
+
+hardware-configuration.nix kann Dateisysteme, UUIDs, Boot-Konfiguration,
+Kernelmodule und andere hardwarenahe Informationen enthalten.
+
+Solche Dateien benötigen eine risikobewusste Change Impact Analysis und
+dürfen nicht wie beliebige Konfigurationsdateien behandelt werden.
+
+Verbindung zu Quality Governance
+
+Dieser Härtetest ist eng mit der geplanten Quality Governance verbunden.
+
+Für eine unbekannte oder neue Technologie soll ADC aus mehreren Quellen
+eine Effective Quality Policy bilden können:
+
+    ADC Baseline Rules
+    + erkannte Repository-Regeln
+    + explizite Project Definitions
+    + technologie-/toolchain-spezifische Regeln
+    = Effective Quality Policy
+
+Damit soll ADC technologieabhängige Qualitätsregeln anwenden können,
+ohne seine zentrale Architektur technologieabhängig zu machen.
+
+Verbindung zu Change Impact Analysis
+
+Vor Änderungen soll ADC erkennen:
+
+-   welche Dateien betroffen sind
+-   welche Schnittstellen betroffen sind
+-   welche Systembereiche betroffen sein können
+-   welche Tests oder Checks notwendig sind
+-   ob Hardware-/Systemzustand betroffen ist
+-   ob eine Änderung persistenten Effect haben kann
+-   welche Dokumentation betroffen ist
+
+Gerade NixOS ist hierfür ein geeigneter Härtetest, weil eine kleine
+deklarative Änderung große Auswirkungen auf ein Zielsystem haben kann.
+
+Verbindung zu Regression Intelligence
+
+ADC soll nicht pauschal einen festen Testbefehl für jede Technologie
+besitzen.
+
+Stattdessen:
+
+    Change
+        ↓
+    Impact Analysis
+        ↓
+    verfügbare Verification Capabilities
+        ↓
+    risikobasierter Verification Plan
+        ↓
+    Evidence
+
+Für Nix könnten dies je nach Projekt beispielsweise Evaluation, Flake
+Checks oder Builds sein. Andere Technologien benötigen andere Prüfungen.
+
+Referenz-E2E für die Zukunft
+
+Nach dem ESPHome Real-System-E2E wäre NixOS ein sehr geeigneter
+zusätzlicher Technologie-Härtetest.
+
+Beispielauftrag:
+
+    Create a NixOS flake configuration for a host running nginx with SSH
+    enabled. The configuration must be evaluable and buildable.
+    Do not activate it on the host.
+
+Ein solcher Test prüft gleichzeitig:
+
+-   neue Technologie
+-   neue Sprache
+-   neues Package-/Dependency-Modell
+-   deklarative Systemkonfiguration
+-   neue Toolchain
+-   Project Intelligence
+-   Requirement Discovery
+-   Council / Chairman
+-   Capability Discovery
+-   Development
+-   Verification
+-   Quality Governance
+-   Human-Approval-Grenzen
+-   Controlled Execution
+
+Wichtig:
+
+Der Test gilt besonders dann als Architekturnachweis, wenn er ohne einen
+NixOS-spezifischen parallelen ADC-Workflow funktioniert.
+
+Allgemeines Architekturprinzip
+
+NixOS ist nur ein Beispiel.
+
+Der eigentliche Themenspeicher-Eintrag lautet:
+
+    Bei jeder zentralen ADC-Architekturentscheidung bereits zukünftige,
+    bisher nicht speziell unterstützte Entwicklungsaufträge mitdenken.
+
+Architektur soll nach Fähigkeiten, Effects, Evidence, Policies und
+Sicherheitsgrenzen modelliert werden – nicht nach einer festen Liste
+heute bekannter Technologien.
+
+Architektur-Prüffragen
+
+Bei zukünftigen Architekturentscheidungen sollen mindestens folgende
+Fragen mitgedacht werden:
+
+1.  Funktioniert die Lösung auch für einen völlig anderen
+    Technologie-Stack?
+2.  Erzwingt sie implizit Python, pip, apt, npm oder eine andere
+    konkrete Toolchain?
+3.  Kann eine neue Capability hinzugefügt werden, ohne den zentralen
+    Workflow umzubauen?
+4.  Sind Informations-, Validation-, Build- und Side-Effect-Capabilities
+    unterscheidbar?
+5.  Bleibt Human Approval bei gefährlichen oder persistenten Aktionen
+    erhalten?
+6.  Kann Project Intelligence vorhandene Projektkonventionen übernehmen?
+7.  Kann Quality Governance technologieabhängige Regeln einbinden?
+8.  Kann Change Impact Analysis unterschiedliche Projektarten abbilden?
+9.  Kann Verification über Fähigkeiten statt fest verdrahtete
+    Testbefehle erfolgen?
+10. Bleiben Provider, Modell, Endpoint, Toolchain und Technologie
+    voneinander entkoppelt?
+11. Funktioniert die Architektur auch bei Multi-Toolchain- und
+    Hardware-/Firmware-Projekten?
+12. Entsteht kein paralleler Sonderworkflow für eine einzelne
+    Technologie?
+
+Ziel
+
+AI-Dev-Center soll nicht nur die Technologien beherrschen, für die
+während seiner Entwicklung bereits spezielle Tests geschrieben wurden.
+
+Die zentrale Architektur soll es ermöglichen, neue Entwicklungsaufträge
+und Technologien kontrolliert aufzunehmen, deren Anforderungen und
+Fähigkeiten zu erkennen, passende Tools zu integrieren und dieselben
+zentralen Engineering-, Quality-, Approval- und Audit-Prinzipien
+anzuwenden.

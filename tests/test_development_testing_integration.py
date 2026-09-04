@@ -6,7 +6,7 @@ import pytest
 
 from app.dev_workflow import DevelopmentWorkflow, SetupDevelopmentTestingResult, WorkflowExecutionError
 from app.project_setup_application import ProjectSetupApplicationService
-from app.requirement_model import SetupPlan, SetupStep
+from app.requirement_model import SetupEffect, SetupPlan, SetupStep
 from app.setup_executor import ExecutionResult
 from app.workflow_manager import WorkflowManager
 
@@ -24,6 +24,7 @@ def _plan(status="approved"):
                 install_method="python_package",
                 package="example-package",
                 is_approved=status == "approved",
+                setup_effect=SetupEffect.PYTHON_PACKAGE_INSTALL,
             ),
         ),
     )

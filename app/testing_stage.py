@@ -1,4 +1,5 @@
 """Neutral, fail-safe diagnosis after a real test result."""
+import json
 from dataclasses import dataclass
 from enum import Enum
 
@@ -38,11 +39,25 @@ class TestingStageResult:
 
 class DiagnosisReviewer:
     def __init__(self, executor): self._executor = executor
+
     def review(self, request):
-        response = self._executor.run("reviewer", str(request.test_result), "", "reviewer", 0)
-        if response == "ACCEPTED": return ReviewResult(ReviewDecision.ACCEPTED, response)
-        if response == "REWORK_REQUIRED": return ReviewResult(ReviewDecision.REWORK_REQUIRED, response)
-        raise ValueError("Invalid reviewer output")
+        response = self._executor.run(
+            "reviewer", str(request.test_result), "", "reviewer",
+        )
+        try:
+            parsed = json.loads(response)
+        except json.JSONDecodeError:
+            raise ValueError("Invalid reviewer output") from None
+        if not isinstance(parsed, dict):
+            raise ValueError("Invalid reviewer output")
+        decision_raw = parsed.get("decision")
+        if decision_raw not in {ReviewDecision.ACCEPTED.value,
+                                 ReviewDecision.REWORK_REQUIRED.value}:
+            raise ValueError("Invalid reviewer output")
+        summary = parsed.get("summary")
+        if not isinstance(summary, str) or not summary.strip():
+            raise ValueError("Invalid reviewer output")
+        return ReviewResult(ReviewDecision(decision_raw), summary.strip())
 
 
 class TestingStage:

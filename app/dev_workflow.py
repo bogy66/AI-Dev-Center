@@ -21,6 +21,7 @@ from app.toolchain_materializer import ToolchainMaterializer
 from app.development_testing_stage import DevelopmentTestingResult, DevelopmentTestingStage
 from app.controlled_rework_stage import ControlledReworkResult, ControlledReworkStage
 from app.diagnostic_trace import DiagnosticTraceError
+from app.execution import is_controlled_setup_effect
 from app.execution_identity import execution_identity
 
 
@@ -101,11 +102,12 @@ class DevelopmentWorkflow:
 
     def materialize_setup_plan(
         self, council_result: CouncilResult, project_id: str,
+        preflight: PreflightResult | None = None,
     ) -> SetupPlan:
         """Provide the workflow-owned Council-to-SetupPlan boundary."""
         if self._materializer is None:
             raise WorkflowExecutionError("No toolchain materializer has been configured.")
-        return self._materializer.materialize(council_result, project_id)
+        return self._materializer.materialize(council_result, project_id, preflight=preflight)
 
     def _trace(self, run_id, phase, event_type, status, summary, **kwargs):
         if self._diagnostic_trace is not None:
@@ -118,13 +120,15 @@ class DevelopmentWorkflow:
                 return None
 
     @staticmethod
-    def _requirement_view(requirement, *, fullest=False):
+    def _requirement_view(requirement, *, fullest=False, activation=None):
         view = {
             "id": requirement.id, "name": requirement.name,
             "type": requirement.type, "purpose": requirement.purpose,
             "required": requirement.required,
             "status": getattr(requirement.status, "value", requirement.status),
         }
+        if activation is not None:
+            view["state"] = activation.state
         if fullest:
             view.update({
                 "confidence": requirement.confidence,
@@ -241,18 +245,33 @@ class DevelopmentWorkflow:
                 x_type="project_intelligence", y_type="requirement_set",
             )
             raise
-        self._trace(run_id, "requirement_discovery", "completed", "completed", "Requirement discovery completed", details={"requirement_count": len(discovery_result.requirements), "warning_count": len(discovery_result.warnings)})
+        self._trace(run_id, "requirement_discovery", "completed", "completed" if not discovery_result.fallback_used else "blocked", "Requirement discovery completed", details={"requirement_count": len(discovery_result.requirements), "warning_count": len(discovery_result.warnings)})
+        discovery_activation_by_id = {
+            activation.requirement_id: activation
+            for activation in discovery_result.activations
+        }
         discovery_output = [
-            self._requirement_view(requirement)
+            self._requirement_view(
+                requirement,
+                activation=discovery_activation_by_id.get(requirement.id),
+            )
             for requirement in discovery_result.requirements
         ]
+        very_verbose_x = dict(discovery_input)
+        discovery_effective_prompt = getattr(self._discovery, "effective_prompt", None)
+        if discovery_effective_prompt:
+            very_verbose_x["effective_prompt"] = discovery_effective_prompt
+        discovery_repair_prompt = getattr(self._discovery, "effective_repair_prompt", None)
+        if discovery_repair_prompt:
+            very_verbose_x["effective_repair_prompt"] = discovery_repair_prompt
         self._interface(
             run_id, "requirement_discovery", "Requirement Discovery transformed project facts into requirements",
             info_x={"user_request_present": bool(user_request), "project_kind": discovery_input["project"].get("project_kind", "")},
             info_y={"requirement_count": len(discovery_output), "warning_count": len(discovery_result.warnings)},
             verbose_x=discovery_input,
             verbose_y={"requirements": discovery_output, "warnings": list(discovery_result.warnings)},
-            very_verbose_y={"requirements": [self._requirement_view(item, fullest=True) for item in discovery_result.requirements], "warnings": list(discovery_result.warnings)},
+            very_verbose_x=very_verbose_x,
+            very_verbose_y={"requirements": [self._requirement_view(item, fullest=True, activation=discovery_activation_by_id.get(item.id)) for item in discovery_result.requirements], "warnings": list(discovery_result.warnings)},
             upstream_stage="project_inspection", downstream_stage="requirement_validation",
             status="failed" if discovery_result.fallback_used else "completed",
             identity=self._discovery_identity(),
@@ -267,7 +286,9 @@ class DevelopmentWorkflow:
 
         self._trace(run_id, "requirement_validation", "started", "started", "Requirement validation started")
         try:
-            validation_result = self._validator.validate(discovery_result.requirements)
+            validation_result = self._validator.validate(
+                discovery_result.requirements, discovery_result.activations,
+            )
         except Exception as error:
             self._trace(run_id, "requirement_validation", "failed", "failed", f"Requirement validation failed: {type(error).__name__}")
             self._interface(
@@ -282,15 +303,19 @@ class DevelopmentWorkflow:
                 x_type="requirement_set", y_type="validation_result",
             )
             raise
+        validation_activation_by_id = {
+            activation.requirement_id: activation
+            for activation in validation_result.activations
+        }
         self._trace(run_id, "requirement_validation", "completed", "completed", "Requirement validation completed", details={"requirement_count": len(validation_result.normalized_requirements), "warning_count": len(validation_result.warnings), "error_count": len(validation_result.errors)})
         self._interface(
             run_id, "requirement_validation", "Requirement Validation transformed discovered requirements",
             info_x={"requirement_count": len(discovery_result.requirements)},
             info_y={"valid": validation_result.valid, "requirement_count": len(validation_result.normalized_requirements), "warning_count": len(validation_result.warnings), "error_count": len(validation_result.errors)},
             verbose_x={"requirements": discovery_output},
-            verbose_y={"valid": validation_result.valid, "normalized_requirements": [self._requirement_view(item) for item in validation_result.normalized_requirements], "warning_count": len(validation_result.warnings), "error_count": len(validation_result.errors)},
-            very_verbose_x={"requirements": [self._requirement_view(item, fullest=True) for item in discovery_result.requirements]},
-            very_verbose_y={"valid": validation_result.valid, "normalized_requirements": [self._requirement_view(item, fullest=True) for item in validation_result.normalized_requirements], "warning_count": len(validation_result.warnings), "error_count": len(validation_result.errors)},
+            verbose_y={"valid": validation_result.valid, "normalized_requirements": [self._requirement_view(item, activation=validation_activation_by_id.get(item.id)) for item in validation_result.normalized_requirements], "warning_count": len(validation_result.warnings), "error_count": len(validation_result.errors)},
+            very_verbose_x={"requirements": [self._requirement_view(item, fullest=True, activation=discovery_activation_by_id.get(item.id)) for item in discovery_result.requirements]},
+            very_verbose_y={"valid": validation_result.valid, "normalized_requirements": [self._requirement_view(item, fullest=True, activation=validation_activation_by_id.get(item.id)) for item in validation_result.normalized_requirements], "warning_count": len(validation_result.warnings), "error_count": len(validation_result.errors)},
             upstream_stage="requirement_discovery", downstream_stage="preflight",
             identity=execution_identity("requirement_validation"),
             x_type="requirement_set", y_type="validation_result",
@@ -298,7 +323,11 @@ class DevelopmentWorkflow:
 
         self._trace(run_id, "preflight", "started", "started", "Requirement preflight started")
         try:
-            preflight_result = self._preflight.check(validation_result.normalized_requirements, project_id)
+            preflight_result = self._preflight.check(
+                validation_result.normalized_requirements,
+                project_id,
+                validation_result.activations,
+            )
         except Exception as error:
             self._trace(run_id, "preflight", "failed", "failed", f"Preflight failed: {type(error).__name__}")
             normalized = [
@@ -321,6 +350,11 @@ class DevelopmentWorkflow:
         preflight_rows = [{
             "requirement_id": item.requirement_id, "present": item.present,
             "satisfied": item.satisfied, "detected_version": item.detected_version,
+            "state": (
+                "inactive" if not item.active else
+                "active_blocker" if item.blocks_current_operation else
+                "active_non_blocking"
+            ),
         } for item in preflight_result.results]
         self._interface(
             run_id, "preflight", "Preflight checked validated requirements",
@@ -351,6 +385,7 @@ class DevelopmentWorkflow:
             detected_stack=self._build_detected_stack(project_info),
             project_intelligence=self._project_intelligence_from(project_info),
             validation_warnings=validation_result.warnings,
+            requirement_activations=validation_result.activations,
         )
 
         self._trace(run_id, "engineering_council", "started", "started", "Engineering Council started")
@@ -404,7 +439,24 @@ class DevelopmentWorkflow:
             )
             raise
         council_status = "completed" if council_result.council_complete else "incomplete"
-        self._trace(run_id, "engineering_council", "completed", council_status, "Engineering Council completed", details={"variant_count": len(council_result.variants), "recommendation": council_result.recommendation or "", "council_complete": council_result.council_complete, "error_count": len(council_result.agent_errors) + bool(council_result.chairman_error)}, related_result_id=council_result.id)
+        self._trace(
+            run_id,
+            "engineering_council",
+            "completed",
+            council_status,
+            "Engineering Council completed",
+            details={
+                "variant_count": len(council_result.variants),
+                "recommendation": council_result.recommendation or "",
+                "council_complete": council_result.council_complete,
+                "council_degraded": council_result.council_degraded,
+                "error_count": (
+                    len(council_result.agent_errors)
+                    + bool(council_result.chairman_error)
+                ),
+            },
+            related_result_id=council_result.id,
+        )
         council_x = {
             "project_id": council_input.project_id,
             "stack": council_input.detected_stack,
@@ -415,6 +467,7 @@ class DevelopmentWorkflow:
         council_y = {
             "result_id": council_result.id,
             "council_complete": council_result.council_complete,
+            "council_degraded": council_result.council_degraded,
             "recommendation": council_result.recommendation,
             "variant_ids": [item.id for item in council_result.variants],
             "error_count": len(council_result.agent_errors) + bool(council_result.chairman_error),
@@ -422,7 +475,7 @@ class DevelopmentWorkflow:
         self._interface(
             run_id, "engineering_council", "Engineering Council transformed CouncilInput into CouncilResult",
             info_x={"requirement_count": len(council_input.requirements), "stack": council_input.detected_stack or ""},
-            info_y={"proposal_count": len(council_result.variants), "council_complete": council_result.council_complete, "recommendation": council_result.recommendation},
+            info_y={"proposal_count": len(council_result.variants), "council_complete": council_result.council_complete, "council_degraded": council_result.council_degraded, "recommendation": council_result.recommendation},
             verbose_x=council_x, verbose_y=council_y,
             very_verbose_x={**council_x, "requirements": [self._requirement_view(item, fullest=True) for item in council_input.requirements]},
             very_verbose_y={**council_y, "total_llm_calls": council_result.total_llm_calls},
@@ -451,7 +504,7 @@ class DevelopmentWorkflow:
 
         self._trace(run_id, "toolchain_materialization", "started", "started", "Toolchain materialization started")
         try:
-            setup_plan = self._materializer.materialize(council_result, project_id)
+            setup_plan = self._materializer.materialize(council_result, project_id, preflight=preflight_result)
         except Exception as error:
             self._trace(run_id, "toolchain_materialization", "failed", "failed", f"Toolchain materialization failed: {type(error).__name__}")
             self._interface(
@@ -470,7 +523,8 @@ class DevelopmentWorkflow:
             info_y={"plan_id": setup_plan.id, "step_count": len(setup_plan.steps)},
             verbose_x={"result_id": council_result.id,
                        "recommendation": council_result.recommendation,
-                       "council_complete": council_result.council_complete},
+                       "council_complete": council_result.council_complete,
+                       "council_degraded": council_result.council_degraded},
             verbose_y={"plan_id": setup_plan.id, "step_count": len(setup_plan.steps)},
             upstream_stage="engineering_council", downstream_stage="setup_plan",
             identity=execution_identity("toolchain_materializer"),
@@ -558,26 +612,48 @@ class DevelopmentWorkflow:
                 result[key] = value
         return result if result else None
 
-    def _validate_executable_step(self, step) -> None:
-        """Reject steps that are not safe for automatic execution."""
+    def _validate_executable_step(self, step, plan: SetupPlan | None = None) -> None:
+        """Reject steps that are not safe for automatic execution.
 
-        if step.action != "install":
+        A step whose requirement is inactive or nonblocking is skipped,
+        not rejected — its requirement remains represented in the plan but
+        does not block controlled execution of unrelated setup work.
+        """
+        if plan is not None and plan.requirement_activations:
+            activation_by_id = {
+                activation.requirement_id: activation
+                for activation in plan.requirement_activations
+            }
+            activation = activation_by_id.get(step.requirement_id)
+            if activation is not None and not activation.blocks_current_operation:
+                return
+
+        effect = step.setup_effect
+
+        if effect is not None and is_controlled_setup_effect(effect):
+            if not step.package or not step.package.strip():
+                raise WorkflowExecutionError(
+                    f"Setup step '{step.id}' requires manual review: "
+                    "no package is specified."
+                )
+            if not step.install_method:
+                raise WorkflowExecutionError(
+                    f"Setup step '{step.id}' requires manual review: "
+                    "no install method is specified."
+                )
+            return
+
+        if effect is not None and not is_controlled_setup_effect(effect):
             raise WorkflowExecutionError(
-                f"Setup step '{step.id}' requires manual review: "
-                f"action={step.action!r}."
+                f"Setup step '{step.id}' requires setup effect '{effect}' "
+                f"for which ADC has no controlled execution backend."
             )
 
-        if not step.package or not step.package.strip():
-            raise WorkflowExecutionError(
-                f"Setup step '{step.id}' requires manual review: "
-                "no package is specified."
-            )
-
-        if not step.install_method:
-            raise WorkflowExecutionError(
-                f"Setup step '{step.id}' requires manual review: "
-                "no install method is specified."
-            )
+        raise WorkflowExecutionError(
+            f"Setup step '{step.id}' requires manual review: "
+            f"no structured setup effect is defined "
+            f"(action={step.action!r})."
+        )
 
     def execute_approved(
         self,
@@ -596,17 +672,28 @@ class DevelopmentWorkflow:
                 "No setup executor has been configured."
             )
 
+        activation_by_id = {}
+        if plan.requirement_activations:
+            activation_by_id = {
+                activation.requirement_id: activation
+                for activation in plan.requirement_activations
+            }
+
+        executable_steps: list[SetupStep] = []
         for step in plan.steps:
+            activation = activation_by_id.get(step.requirement_id)
+            if activation is not None and not activation.blocks_current_operation:
+                continue
             if not step.is_approved:
                 raise WorkflowExecutionError(
                     f"Setup step '{step.id}' is not approved."
                 )
-
-            self._validate_executable_step(step)
+            self._validate_executable_step(step, plan)
+            executable_steps.append(step)
 
         return tuple(
             self._executor.execute(step)
-            for step in plan.steps
+            for step in executable_steps
         )
 
     def execute_approved_and_run_development(

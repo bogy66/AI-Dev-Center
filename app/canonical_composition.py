@@ -1,7 +1,7 @@
 """Shared composition root for every productive canonical adapter."""
 from dataclasses import dataclass
 
-from app.agent_executor import AgentExecutor
+from app.agent_executor import ProviderAgentExecutor
 from app.ai_config import load_ai_config
 from app.ai_requirement_discovery import AIRequirementDiscovery
 from app.dev_workflow import DevelopmentWorkflow, WorkflowExecutionError
@@ -57,7 +57,7 @@ def build_canonical_components(config_path="config/ai-dev-center.yml"):
         council_config=council_config,
         secret_resolver=secrets,
     )
-    executor = AgentExecutor(model=config.model)
+    executor = ProviderAgentExecutor(provider)
     verification_registry = build_default_registry()
     development_testing = DevelopmentTestingStage(
         DevelopmentStage(DeveloperAgent(executor)),

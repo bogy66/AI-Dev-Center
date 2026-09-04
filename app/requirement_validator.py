@@ -1,4 +1,6 @@
-from app.requirement_model import Requirement, ValidationResult
+from app.requirement_model import (
+    Requirement, ValidationResult, normalize_requirement_activations,
+)
 
 
 class RequirementValidator:
@@ -10,7 +12,8 @@ class RequirementValidator:
     """
 
     @staticmethod
-    def validate(requirements):
+    def validate(requirements, activations=None):
+        requirements = tuple(requirements)
         errors = []
         warnings = []
         normalized = []
@@ -99,6 +102,23 @@ class RequirementValidator:
                 else:
                     optional_list.append(req)
 
+        normalized_ids = {item.id for item in normalized}
+
+        if activations is None:
+            normalized_activations = normalize_requirement_activations(
+                normalized,
+            )
+        else:
+            # Validate explicit activation references against the complete
+            # supplied requirement set, then retain activations only for
+            # requirements that passed deterministic validation.
+            all_activations = normalize_requirement_activations(
+                requirements, activations,
+            )
+            normalized_activations = tuple(
+                activation for activation in all_activations
+                if activation.requirement_id in normalized_ids
+            )
         result = ValidationResult(
             id="validation-result",
             valid=len(errors) == 0,
@@ -109,5 +129,6 @@ class RequirementValidator:
             required_requirements=tuple(required_list),
             optional_requirements=tuple(optional_list),
             rejected_requirements=tuple(rejected_list),
+            activations=normalized_activations,
         )
         return result
