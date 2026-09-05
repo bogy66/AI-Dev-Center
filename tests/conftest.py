@@ -3,6 +3,36 @@ import subprocess
 from pathlib import Path
 
 
+@pytest.fixture(autouse=True)
+def _isolated_project_registry(tmp_path_factory, monkeypatch):
+    """Prevent any test from writing into the real .project-definitions store.
+
+    app.web_api.get_project_registry defaults to the productive
+    ".project-definitions/definitions.json" path (the same store used by
+    the real ProjectDefinitionStore()). A test that exercises an endpoint
+    depending on it — e.g. POST /api/workflow/start — without its own
+    explicit override must not silently create or mutate real repository
+    state.
+
+    This patches the module-level default path constant directly (via
+    monkeypatch, auto-restored per test) rather than FastAPI's
+    dependency_overrides dict, because several existing test fixtures in
+    this suite call app.dependency_overrides.clear() as part of their own
+    session-cleanup, which would silently wipe an override placed there
+    instead. Tests that need specific registry behavior still set their
+    own app.dependency_overrides[get_project_registry] explicitly, which
+    takes precedence over this default when present.
+
+    Uses tmp_path_factory (not the per-test tmp_path fixture) so this
+    never appears as an unexpected extra entry for tests that assert
+    exclusive ownership of their own tmp_path.
+    """
+    import app.web_api as web_api_module
+
+    store_path = tmp_path_factory.mktemp("project-registry") / "definitions.json"
+    monkeypatch.setattr(web_api_module, "PROJECT_DEFINITIONS_PATH", str(store_path))
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--real-system-e2e",

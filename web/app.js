@@ -8,6 +8,10 @@ try {
     recents = [];
 }
 recents.forEach(p => { p.path_status = 'checking'; });
+let activeProjects = [];
+let archivedProjects = [];
+let openProjectMenuId = null;
+let projectPendingDelete = null;
 let pollingTimer = null;
 let approvalActionRendered = false;
 let currentHelpSlide = 0;
@@ -55,19 +59,264 @@ function getProjectPath() {
     return getProjectDirectory(currentProject);
 }
 
-function renderRecents() {
-    const list = document.getElementById('recents-list');
+// ---------- Project lifecycle: Archiv / Projekte, `...` menu ----------
+function findRecentByPath(path) {
+    return recents.find(entry => getProjectDirectory(entry) === path) || null;
+}
+
+async function fetchAndRenderProjects() {
+    try {
+        const data = await fetchJson('/api/projects');
+        activeProjects = Array.isArray(data.active) ? data.active : [];
+        archivedProjects = Array.isArray(data.archived) ? data.archived : [];
+    } catch (error) {
+        console.error('Failed to load projects:', error);
+        activeProjects = [];
+        archivedProjects = [];
+    }
+    renderProjectLists();
+    if (!currentProject && activeProjects.length > 0) {
+        selectRegisteredProject(activeProjects[0]);
+    }
+}
+
+function selectRegisteredProject(project) {
+    const matchingRecent = findRecentByPath(project.project_root);
+    currentProject = {
+        project_id: project.project_id,
+        project_name: project.display_name,
+        project_directory: project.project_root,
+        project_path: project.project_root,
+        path_status: 'valid',
+        session_id: matchingRecent ? matchingRecent.session_id : null,
+        trace_level: matchingRecent ? matchingRecent.trace_level : 'INFO',
+    };
+    currentSessionId = currentProject.session_id;
+    document.getElementById('project-name-display').textContent = currentProject.project_name;
+    document.getElementById('project-path-display').textContent = getProjectPath();
+    document.getElementById('global-status').textContent = currentSessionId ? 'Running' : 'Ready';
+    updateSessionDisplay(currentSessionId);
+    clearChat();
+    if (currentSessionId) {
+        loadState();
+    }
+    renderProjectLists();
+}
+
+function toggleProjectMenu(projectId) {
+    openProjectMenuId = (openProjectMenuId === projectId) ? null : projectId;
+    applyOpenProjectMenuState();
+}
+
+function closeAllProjectMenus() {
+    openProjectMenuId = null;
+    applyOpenProjectMenuState();
+}
+
+function applyOpenProjectMenuState() {
+    document.querySelectorAll('.project-menu').forEach(menu => {
+        menu.classList.toggle('hidden', menu.dataset.projectId !== openProjectMenuId);
+    });
+}
+
+function buildProjectMenu(project, isArchived) {
+    const menu = document.createElement('div');
+    menu.className = 'project-menu hidden';
+    menu.dataset.projectId = project.project_id;
+
+    if (isArchived) {
+        const restoreBtn = document.createElement('button');
+        restoreBtn.type = 'button';
+        restoreBtn.textContent = 'Wiederherstellen';
+        restoreBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeAllProjectMenus();
+            handleRestoreProject(project);
+        });
+        menu.appendChild(restoreBtn);
+    }
+
+    const renameBtn = document.createElement('button');
+    renameBtn.type = 'button';
+    renameBtn.textContent = 'Umbenennen';
+    renameBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeAllProjectMenus();
+        handleRenameProject(project);
+    });
+    menu.appendChild(renameBtn);
+
+    if (isArchived) {
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'danger';
+        deleteBtn.textContent = 'Löschen';
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeAllProjectMenus();
+            openDeleteProjectModal(project);
+        });
+        menu.appendChild(deleteBtn);
+    } else {
+        const archiveBtn = document.createElement('button');
+        archiveBtn.type = 'button';
+        archiveBtn.textContent = 'Archivieren';
+        archiveBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeAllProjectMenus();
+            handleArchiveProject(project);
+        });
+        menu.appendChild(archiveBtn);
+    }
+
+    return menu;
+}
+
+function renderProjectListInto(containerId, projects, isArchived, emptyText) {
+    const list = document.getElementById(containerId);
     list.innerHTML = '';
-    recents.forEach((project, index) => {
+    if (projects.length === 0) {
+        const hint = document.createElement('li');
+        hint.className = 'project-list-empty-hint';
+        hint.textContent = emptyText;
+        list.appendChild(hint);
+        return;
+    }
+    projects.forEach(project => {
         const li = document.createElement('li');
-        const suffix = project.path_status === 'invalid' ? ' — invalid path' : '';
-        li.textContent = `${project.project_name}${suffix}`;
-        li.classList.toggle('invalid', project.path_status === 'invalid');
-        li.classList.toggle('active', currentProject && currentProject.project_name === project.project_name);
-        li.addEventListener('click', () => selectProject(index));
+        li.className = 'project-row';
+        li.classList.toggle('active', !!currentProject && currentProject.project_id === project.project_id);
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'project-row-name';
+        nameSpan.textContent = project.display_name;
+        li.appendChild(nameSpan);
+
+        const menuBtn = document.createElement('button');
+        menuBtn.type = 'button';
+        menuBtn.className = 'project-menu-btn';
+        menuBtn.setAttribute('aria-label', 'Project actions');
+        menuBtn.textContent = '⋯';
+        menuBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleProjectMenu(project.project_id);
+        });
+        li.appendChild(menuBtn);
+        li.appendChild(buildProjectMenu(project, isArchived));
+
+        li.addEventListener('click', () => {
+            if (isArchived) {
+                setLiveStatus('This project is archived. Restore it before starting development.');
+                return;
+            }
+            selectRegisteredProject(project);
+        });
+
         list.appendChild(li);
     });
 }
+
+function renderProjectLists() {
+    renderProjectListInto('archive-list', archivedProjects, true, 'Keine archivierten Projekte');
+    renderProjectListInto('recents-list', activeProjects, false, 'Keine Projekte');
+    applyOpenProjectMenuState();
+}
+
+async function registerCurrentProjectPath(projectPath, displayName) {
+    try {
+        return await fetchJson('/api/projects/register', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({project_path: projectPath, display_name: displayName}),
+        });
+    } catch (error) {
+        console.error('Failed to register project:', error);
+        return null;
+    }
+}
+
+async function handleRenameProject(project) {
+    const newName = prompt(`Neuer Name für "${project.display_name}":`, project.display_name);
+    if (newName === null) return;
+    try {
+        await fetchJson(`/api/projects/${encodeURIComponent(project.project_id)}/rename`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({new_name: newName}),
+        });
+        if (currentProject && currentProject.project_id === project.project_id) {
+            currentProject.project_name = newName.trim();
+            document.getElementById('project-name-display').textContent = currentProject.project_name;
+        }
+        await fetchAndRenderProjects();
+    } catch (error) {
+        alert(`Umbenennen fehlgeschlagen: ${error.message}`);
+    }
+}
+
+async function handleArchiveProject(project) {
+    try {
+        await fetchJson(`/api/projects/${encodeURIComponent(project.project_id)}/archive`, {
+            method: 'POST',
+        });
+        if (currentProject && currentProject.project_id === project.project_id) {
+            currentProject = null;
+            currentSessionId = null;
+            document.getElementById('project-name-display').textContent = 'No project selected';
+            document.getElementById('project-path-display').textContent = 'No project selected';
+            document.getElementById('global-status').textContent = 'Ready';
+            updateSessionDisplay(null);
+            clearChat();
+        }
+        await fetchAndRenderProjects();
+    } catch (error) {
+        alert(`Archivieren fehlgeschlagen: ${error.message}`);
+    }
+}
+
+async function handleRestoreProject(project) {
+    try {
+        await fetchJson(`/api/projects/${encodeURIComponent(project.project_id)}/restore`, {
+            method: 'POST',
+        });
+        await fetchAndRenderProjects();
+    } catch (error) {
+        alert(`Wiederherstellen fehlgeschlagen: ${error.message}`);
+    }
+}
+
+function openDeleteProjectModal(project) {
+    projectPendingDelete = project;
+    document.getElementById('delete-project-title').textContent =
+        `Projekt "${project.display_name}" aus AI-Dev-Center löschen?`;
+    document.getElementById('delete-project-modal').classList.remove('hidden');
+}
+
+function closeDeleteProjectModal() {
+    projectPendingDelete = null;
+    document.getElementById('delete-project-modal').classList.add('hidden');
+}
+
+async function confirmDeleteProject() {
+    if (!projectPendingDelete) return;
+    const project = projectPendingDelete;
+    try {
+        await fetchJson(`/api/projects/${encodeURIComponent(project.project_id)}/remove`, {
+            method: 'POST',
+        });
+        closeDeleteProjectModal();
+        await fetchAndRenderProjects();
+    } catch (error) {
+        closeDeleteProjectModal();
+        alert(`Löschen fehlgeschlagen: ${error.message}`);
+    }
+}
+
+document.addEventListener('click', () => {
+    if (openProjectMenuId !== null) {
+        closeAllProjectMenus();
+    }
+});
 
 async function validateProjectPath(path) {
     return fetchJson('/api/project/validate', {
@@ -91,7 +340,6 @@ async function validateRecentProjects() {
         }
     }));
     saveRecents();
-    renderRecents();
     if (currentProject) {
         document.getElementById('project-path-display').textContent = getProjectPath();
         if (currentProject.path_status === 'invalid') {
@@ -121,28 +369,12 @@ async function loadState() {
             updateSessionDisplay(null);
             document.getElementById("global-status").textContent = "Ready";
             setLiveStatus("Ready");
-            renderRecents();
+            renderProjectLists();
             return;
         }
 
         setLiveStatus(`Error: ${error.message}`);
     }
-}
-
-function selectProject(index) {
-    currentProject = recents[index];
-    currentSessionId = currentProject.session_id || null;
-    document.getElementById('project-name-display').textContent = currentProject.project_name;
-    document.getElementById('project-path-display').textContent = getProjectPath();
-    document.getElementById('global-status').textContent = currentProject.path_status === 'invalid'
-        ? 'Invalid project path'
-        : (currentSessionId ? 'Running' : 'Ready');
-    updateSessionDisplay(currentSessionId);
-    clearChat();
-    if (currentSessionId) {
-        loadState();
-    }
-    renderRecents();
 }
 
 function clearChat() {
@@ -788,12 +1020,17 @@ async function handleCreateProject() {
     currentProject = project;
     currentSessionId = null;
     closeModal();
-    renderRecents();
     document.getElementById('project-name-display').textContent = name;
     document.getElementById('project-path-display').textContent = projectDirectory;
     document.getElementById('global-status').textContent = 'Ready';
     updateSessionDisplay(null);
     clearChat();
+
+    const registered = await registerCurrentProjectPath(projectDirectory, name);
+    if (registered) {
+        currentProject.project_id = registered.project_id;
+    }
+    await fetchAndRenderProjects();
 }
 
 // ---------- Chat ----------
@@ -826,7 +1063,6 @@ async function handleSend() {
             currentProject.path_status = 'invalid';
             currentProject.session_id = null;
             saveRecents();
-            renderRecents();
             document.getElementById('global-status').textContent = 'Invalid project path';
             setLiveStatus(`Invalid existing project: ${error.message}`);
             return;
@@ -1174,6 +1410,8 @@ const helpSlides = [
 document.getElementById('new-project-btn').addEventListener('click', openModal);
 document.getElementById('cancel-project-btn').addEventListener('click', closeModal);
 document.getElementById('create-project-btn').addEventListener('click', handleCreateProject);
+document.getElementById('cancel-delete-project-btn').addEventListener('click', closeDeleteProjectModal);
+document.getElementById('confirm-delete-project-btn').addEventListener('click', confirmDeleteProject);
 document.getElementById('choose-directory-btn').addEventListener('click', async () => {
     try {
         const result = await fetchJson('/api/project/select-directory', {method: 'POST'});
@@ -1279,8 +1517,5 @@ document.addEventListener('keydown', (e) => {
 
 // Initial render
 initTraceDrag();
-renderRecents();
 validateRecentProjects();
-if (recents.length > 0) {
-    selectProject(0);
-}
+fetchAndRenderProjects();

@@ -564,7 +564,7 @@ def test_projects_help_and_pitch_use_product_language():
         "const helpSlides = [", 1,
     )[1]
 
-    assert "<h2>Projects</h2>" in help_text
+    assert "<h2>Projekte</h2>" in help_text
     assert "Start here" in help_text
     assert "How to use it" in help_text
     assert "Diagnostic Trace" in help_text

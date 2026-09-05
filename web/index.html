@@ -16,9 +16,13 @@
         </div>
         <button id="new-project-btn" class="sidebar-button">+ Open Existing Project</button>
         <div class="panel-header">
-            <h2>Projects</h2>
+            <h2>Archiv</h2>
         </div>
-        <ul id="recents-list"></ul>
+        <ul id="archive-list" class="project-list"></ul>
+        <div class="panel-header">
+            <h2>Projekte</h2>
+        </div>
+        <ul id="recents-list" class="project-list"></ul>
         <div class="sidebar-spacer"></div>
         <button id="setup-btn" class="sidebar-button">Setup</button>
         <button id="help-btn" class="sidebar-button">Help</button>
@@ -122,7 +126,7 @@
                         <li>Watch the current work and any problems in Diagnostic Trace.</li>
                         <li>Review each approval request before setup, capability use, final acceptance or publishing.</li>
                     </ol>
-                    <p><strong>Projects</strong> is your local list of project roots. The Web GUI opens existing projects; greenfield project creation is available through the central workflow path and used by the Real-System E2E test.</p>
+                    <p><strong>Projects</strong> is your local list of project roots. The Web GUI opens existing projects; greenfield project creation is available through the central workflow path and used by the Real-System E2E test. Each project row has a <strong>...</strong> menu. Active projects under <strong>Projekte</strong> offer <strong>Umbenennen</strong> (rename the ADC-visible name only; the project's directory, Git remotes and history are never touched) and <strong>Archivieren</strong> (move the project to the <strong>Archiv</strong> section above Projekte, shown ABOVE Projekte, without touching its files, its Git repository, or its location on disk). An archived project must first be restored with <strong>Wiederherstellen</strong> before development can continue on it. Archived projects also offer <strong>Löschen</strong>, which removes the project from ADC's own project list only — it never deletes the underlying project or repository from disk.</p>
                     <p><strong>Diagnostic Trace</strong> is the live progress and problem view. At central planning boundaries it presents what kind of input a stage received, which interface and source supplied it, which processor/version handled it, what kind of output it produced, and where that output went. NONE suppresses diagnostic presentation; NORMAL shows essential workflow progress and outcomes; INFO adds concise type/interface and processor identity; VERBOSE adds structured handoffs, engineering fields and safe provider/model context; VERY VERBOSE shows the fullest allowlisted x→f→y projection. At VERY_VERBOSE level, sanitized effective LLM prompts (after template substitution) are visible as diagnostic transparency — raw provider responses, credentials, private model reasoning and executable command payloads remain excluded at every level. NONE only affects presentation — required central audit trace data is preserved.</p>
                     <p><strong>Human Approval</strong> means the AI can propose a controlled next step, but approval remains a separate decision. Approving one boundary never approves setup, capabilities, Git, publish or hardware actions at another boundary.</p>
                     <h3>What the AI does</h3>
@@ -324,6 +328,22 @@
         <div class="modal-actions">
             <button id="cancel-project-btn" class="secondary-button">Cancel</button>
             <button id="create-project-btn" class="primary-button">Add Existing Project</button>
+        </div>
+    </div>
+</div>
+
+<!-- Delete-from-ADC Confirmation Modal -->
+<div id="delete-project-modal" class="modal hidden">
+    <div class="modal-overlay"></div>
+    <div class="modal-content">
+        <h2 id="delete-project-title">Projekt löschen?</h2>
+        <p class="delete-project-note">
+            Das Projekt wird aus der ADC-Projektverwaltung entfernt.<br>
+            Die eigentlichen Projektdateien werden nicht gelöscht.
+        </p>
+        <div class="modal-actions">
+            <button id="cancel-delete-project-btn" class="secondary-button">Abbrechen</button>
+            <button id="confirm-delete-project-btn" class="danger-button">Löschen</button>
         </div>
     </div>
 </div>

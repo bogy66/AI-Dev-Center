@@ -23,6 +23,10 @@ from app.canonical_execution import (
 from app.workflow_plan_store import WorkflowPlanStore
 from app.canonical_composition import build_canonical_components
 from app.ai_config import load_ai_config, update_web_config
+from app.project_context import (
+    ProjectDefinitionStore, ProjectRegistry, ProjectRegistryError,
+    ARCHIVED_STATUS,
+)
 
 app = FastAPI(title="AI Dev Center Web GUI")
 app.mount("/static", StaticFiles(directory="web"), name="static")
@@ -163,6 +167,23 @@ def get_web_setup_components() -> WebSetupComponents:
 def get_workflow_components():
     """Deprecated compatibility hook; returns the canonical composition."""
     return build_canonical_components()
+
+
+# Module-level so tests can redirect it (via monkeypatch) independently of
+# the FastAPI dependency_overrides mechanism, which other fixtures in this
+# suite may legitimately clear between tests.
+PROJECT_DEFINITIONS_PATH = ".project-definitions/definitions.json"
+
+
+def get_project_registry() -> ProjectRegistry:
+    """Central project lifecycle registry, built on ProjectDefinitionStore.
+
+    Not a second persistence mechanism: this opens the same
+    ``.project-definitions/definitions.json`` history store used
+    elsewhere in the productive path, keyed by the shared resolved-path
+    lock in app.state_lock.
+    """
+    return ProjectRegistry(ProjectDefinitionStore(PROJECT_DEFINITIONS_PATH))
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +342,15 @@ class ValidateProjectRequest(BaseModel):
     project_path: str
 
 
+class RegisterProjectRequest(BaseModel):
+    project_path: str
+    display_name: str | None = None
+
+
+class RenameProjectRequest(BaseModel):
+    new_name: str
+
+
 class WebConfigUpdate(BaseModel):
     model: str | None = None
     endpoint: str | None = None
@@ -449,6 +479,7 @@ async def patch_web_config(
 async def start_workflow(
     req: StartRequest,
     components: WebSetupComponents = Depends(get_web_setup_components),
+    registry: ProjectRegistry = Depends(get_project_registry),
 ):
     project_id = req.project_name
     project_path = req.project_directory
@@ -500,6 +531,29 @@ async def start_workflow(
             "session_id": session_id, "blocked": True,
             "status": "failed", "error": safe_error,
         }, status_code=status_code)
+
+    # Archived projects are not valid development targets: they must be
+    # restored first. An unregistered path proceeds normally and is
+    # opportunistically registered as active so it becomes visible in the
+    # productive project list without requiring a separate registration step.
+    if registry.status_of(project_path) == ARCHIVED_STATUS:
+        safe_error = (
+            "This project is archived. Restore it before starting development."
+        )
+        session.error_message = safe_error
+        session.blocked = True
+        session.workflow_status = "failed"
+        recorder.record(
+            level=TraceLevel.ERROR, component="Workflow",
+            event="workflow_start_failed", action="validate_project",
+            status="failed", result_summary=safe_error,
+        )
+        sessions[session_id] = session
+        return JSONResponse(content={
+            "session_id": session_id, "blocked": True,
+            "status": "failed", "error": safe_error,
+        }, status_code=409)
+    registry.register(project_path, display_name=project_id)
 
     existing = sessions.get(session_id)
     if existing is not None and existing.workflow_status in {"planning", "running"}:
@@ -897,3 +951,99 @@ async def select_project_directory(
             status_code=503,
         )
     return {"status": "selected", "project_path": str(path)}
+
+
+# ---------------------------------------------------------------------------
+#  Project lifecycle: rename / archive / restore / delete-from-ADC (CLAUDE-003)
+# ---------------------------------------------------------------------------
+def _project_record_response(record) -> dict:
+    return {
+        "project_id": record.project_id,
+        "display_name": record.display_name,
+        "project_root": record.project_root,
+        "lifecycle_status": record.lifecycle_status,
+    }
+
+
+@app.get("/api/projects")
+async def list_projects(
+    registry: ProjectRegistry = Depends(get_project_registry),
+):
+    """List all known ADC projects, grouped by lifecycle status."""
+    return {
+        "active": [_project_record_response(r) for r in registry.list_by_status("active")],
+        "archived": [_project_record_response(r) for r in registry.list_by_status("archived")],
+    }
+
+
+@app.post("/api/projects/register")
+async def register_project(
+    req: RegisterProjectRequest,
+    registry: ProjectRegistry = Depends(get_project_registry),
+):
+    """Idempotently register a validated existing directory as a known project.
+
+    Never reactivates an archived or removed project — a path that is
+    already known is returned unchanged at its current lifecycle status.
+    """
+    try:
+        path = _resolved_existing_directory(req.project_path)
+    except (ValueError, FileNotFoundError, NotADirectoryError) as error:
+        return JSONResponse(content={"error": str(error)}, status_code=400)
+    record = registry.register(str(path), display_name=req.display_name)
+    return _project_record_response(record)
+
+
+@app.post("/api/projects/{project_id}/rename")
+async def rename_project(
+    project_id: str,
+    req: RenameProjectRequest,
+    registry: ProjectRegistry = Depends(get_project_registry),
+):
+    try:
+        record = registry.rename(project_id, req.new_name)
+    except ProjectRegistryError as error:
+        return JSONResponse(content={"error": str(error)}, status_code=400)
+    return _project_record_response(record)
+
+
+@app.post("/api/projects/{project_id}/archive")
+async def archive_project(
+    project_id: str,
+    registry: ProjectRegistry = Depends(get_project_registry),
+):
+    try:
+        record = registry.archive(project_id)
+    except ProjectRegistryError as error:
+        return JSONResponse(content={"error": str(error)}, status_code=400)
+    return _project_record_response(record)
+
+
+@app.post("/api/projects/{project_id}/restore")
+async def restore_project(
+    project_id: str,
+    registry: ProjectRegistry = Depends(get_project_registry),
+):
+    try:
+        record = registry.restore(project_id)
+    except ProjectRegistryError as error:
+        return JSONResponse(content={"error": str(error)}, status_code=400)
+    return _project_record_response(record)
+
+
+@app.post("/api/projects/{project_id}/remove")
+async def remove_project(
+    project_id: str,
+    registry: ProjectRegistry = Depends(get_project_registry),
+):
+    """Remove an archived project from ADC management.
+
+    This only supersedes lifecycle metadata in the existing project
+    definition store. It never deletes, moves, or otherwise touches the
+    underlying project directory or its Git repository.
+    """
+    try:
+        record = registry.remove(project_id)
+    except ProjectRegistryError as error:
+        return JSONResponse(content={"error": str(error)}, status_code=400)
+    return _project_record_response(record)
