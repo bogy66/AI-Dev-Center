@@ -573,7 +573,6 @@ docSections["sec-06"] = {
     '<tr><td>ProjectContext / Definitions</td><td>project_context.py</td><td>Dauerhafte Entscheidungen</td></tr>' +
     '<tr><td>LLMProviderFactory</td><td>llm_provider_factory.py</td><td>Provider-Instanziierung</td></tr>' +
     '<tr><td>CommonRequest</td><td>common_request.py</td><td>Adapter-neutrales Request-Format</td></tr>' +
-    '<tr><td>WorkflowExecutionGuard</td><td>workflow_execution_guard.py</td><td>Prozess-lokaler Mutex</td></tr>' +
     '<tr><td>CanonicalComposition</td><td>canonical_composition.py</td><td>Gemeinsame Composition-Root</td></tr></table>'
 };
 
@@ -929,7 +928,6 @@ docSections["sec-25"] = {
     '<tr><td>Haupt-Workflow</td><td>app/dev_workflow.py</td><td>DevelopmentWorkflow</td></tr>' +
     '<tr><td>Composition-Root</td><td>app/canonical_composition.py</td><td>build_canonical_components()</td></tr>' +
     '<tr><td>Projekt-Lease</td><td>app/canonical_execution.py</td><td>acquire_project_execution()</td></tr>' +
-    '<tr><td>Workflow-Guard</td><td>app/workflow_execution_guard.py</td><td>try_start() / finish()</td></tr>' +
     '<tr><td>Adapter-neutraler Request</td><td>app/common_request.py</td><td>CommonRequest</td></tr></table>' +
     '<h4>Subsystem 1: Requirement Intelligence</h4>' +
     '<table class="doc-table"><tr><th>Konzept</th><th>Datei</th><th>Klasse/Funktion</th></tr>' +

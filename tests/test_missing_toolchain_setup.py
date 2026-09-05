@@ -39,7 +39,7 @@ def _service(tmp_path, *, available=False, install_success=True):
     )
     state = {"available": available}
     executor = Mock()
-    def execute(step):
+    def execute(step, project_root=None):
         if install_success:
             state["available"] = True
         return ExecutionResult(step.id, install_success, "structured", install_success)

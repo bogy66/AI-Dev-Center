@@ -26,6 +26,17 @@ class UnsupportedInstallMethodError(PythonPackageExecutorError):
     """Raised when a step requests an installation method this executor cannot run."""
 
 
+class MissingProjectRootError(PythonPackageExecutorError):
+    """Raised when the default runner is used without a resolved project_root.
+
+    The default runner must always route through the central controlled
+    execution boundary, which requires a project_root to confine cwd and
+    validate capability scope. There is no unconfined fallback: a caller
+    that cannot supply project_root must fix its own call site, not
+    silently execute outside the boundary.
+    """
+
+
 @dataclass(frozen=True)
 class CommandResult:
     returncode: int
@@ -74,6 +85,8 @@ class PythonPackageExecutor:
 
     _SUPPORTED_INSTALL_METHODS = frozenset({"pip", "python_package"})
     _PACKAGE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    _INSTALL_TIMEOUT_SECONDS = 300
+    _VERIFY_TIMEOUT_SECONDS = 30
 
     def __init__(
         self,
@@ -89,7 +102,51 @@ class PythonPackageExecutor:
         else:
             self.python_executable = sys.executable
 
-    def execute(self, step: SetupStep) -> ExecutionResult:
+    def _run(
+        self, command: list[str], project_root, timeout: int,
+        operation_type: str = "install",
+    ) -> CommandResult:
+        """Run one command through the central controlled execution boundary.
+
+        An explicitly injected CommandRunner (unit tests, or the
+        isolated-venv runner used by the real-system environment-setup
+        test) keeps its exact existing call shape untouched — it is a
+        deliberate, justified, non-productive-default execution path.
+
+        The default runner (no CommandRunner injected) has no unconfined
+        fallback: it always routes through execute_controlled, and a
+        missing project_root is a fail-closed error, never a reason to
+        fall back to a direct, unconfined subprocess call.
+        """
+        if not self._uses_default_runner:
+            return self.runner.run(command)
+
+        if project_root is None:
+            raise MissingProjectRootError(
+                "PythonPackageExecutor's default runner requires an "
+                "explicit project_root to execute through the central "
+                "controlled execution boundary; refusing to execute "
+                "unconfined."
+            )
+
+        from app.execution import ExecutionRequest, execute_controlled
+
+        request = ExecutionRequest(
+            tuple(command), str(project_root), timeout, "python", operation_type,
+        )
+        completed = execute_controlled(request, project_root)
+        if completed is None:
+            return CommandResult(
+                returncode=1, stdout="",
+                stderr="Execution failed: tool unavailable",
+            )
+        return CommandResult(
+            returncode=completed.returncode,
+            stdout=completed.stdout or "",
+            stderr=completed.stderr or "",
+        )
+
+    def execute(self, step: SetupStep, project_root: str | None = None) -> ExecutionResult:
         self._validate_step(step)
         package_arg = self._build_package_arg(step)
         self._validate_install_method(
@@ -104,7 +161,7 @@ class PythonPackageExecutor:
             "install",
             package_arg,
         ]
-        result = self.runner.run(command)
+        result = self._run(command, project_root, self._INSTALL_TIMEOUT_SECONDS)
 
         if result.returncode != 0:
             return ExecutionResult(
@@ -114,7 +171,7 @@ class PythonPackageExecutor:
                 verification_passed=False,
             )
 
-        verification_passed = self._run_verification(step)
+        verification_passed = self._run_verification(step, project_root)
         if verification_passed:
             message = "pip install succeeded and verification passed"
         else:
@@ -186,10 +243,10 @@ class PythonPackageExecutor:
             return f"{package}{normalized_version}"
         return package
 
-    def _run_verification(self, step: SetupStep) -> bool:
+    def _run_verification(self, step: SetupStep, project_root: str | None = None) -> bool:
         try:
             if self._uses_default_runner and self.verifier is _default_verifier:
-                result = self.runner.run(
+                result = self._run(
                     [
                         self.python_executable,
                         "-c",
@@ -198,7 +255,10 @@ class PythonPackageExecutor:
                             "metadata.version(sys.argv[1])"
                         ),
                         step.package.strip(),
-                    ]
+                    ],
+                    project_root,
+                    self._VERIFY_TIMEOUT_SECONDS,
+                    "verification",
                 )
                 return result.returncode == 0
 

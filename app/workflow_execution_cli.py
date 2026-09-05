@@ -58,7 +58,7 @@ def run_approved_execution(
         )
 
     approved_plan = SetupApproval.approve(plan)
-    results = workflow.execute_approved(approved_plan)
+    results = workflow.execute_approved(approved_plan, str(project_path))
 
     store.save(approved_plan)
 

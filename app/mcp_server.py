@@ -77,16 +77,44 @@ class MCPServer:
         plan = self._planner.plan(requirements, preflight_result, project_id)
         return self._plan_store.save(plan)
 
+    @staticmethod
+    def _resolved_project_root(project_root: str) -> str:
+        """Validate project_root the same way productive ADC execution does.
+
+        Duplicated in this module (rather than imported from web_api.py)
+        deliberately: MCP is its own adapter and must not depend on
+        another adapter's internals. The check itself — an existing,
+        resolvable directory — is identical.
+        """
+        if not isinstance(project_root, str) or not project_root.strip():
+            raise ValueError("project_root is required and must be a non-empty string.")
+        try:
+            path = Path(project_root).expanduser().resolve(strict=True)
+        except (FileNotFoundError, OSError, RuntimeError) as error:
+            raise FileNotFoundError("project_root does not exist.") from error
+        if not path.is_dir():
+            raise NotADirectoryError("project_root must be an existing directory.")
+        return str(path)
+
     def plan_project_setup(
-        self, project_info: dict[str, Any], project_id: str
+        self, project_info: dict[str, Any], project_id: str, project_root: str,
     ) -> Any:
-        """Create and persist a setup plan through the canonical workflow."""
+        """Create and persist a setup plan through the canonical workflow.
+
+        project_root must be an existing, resolvable directory. It is
+        validated and persisted alongside the plan so that a later
+        execute_setup_plan call can route actual execution through the
+        central controlled execution boundary instead of falling back to
+        unconfined direct process creation.
+        """
+        resolved_root = self._resolved_project_root(project_root)
         workflow_result = self._development_workflow.run(
             project_info,
             project_id,
         )
         setup_plan = workflow_result.setup_plan
         self._plan_store.save(setup_plan)
+        self._plan_store.save_project_root(project_id, resolved_root)
         return setup_plan
 
     def get_setup_plan(self, project_id: str, plan_id: str) -> Any:
@@ -103,13 +131,25 @@ class MCPServer:
     def execute_setup_plan(self, project_id: str, plan_id: str) -> Any:
         """Execute a saved, approved setup plan.
 
-        This method never bypasses the existing approval workflow.
+        This method never bypasses the existing approval workflow. It
+        also never falls back to unconfined execution: the project_root
+        validated and persisted by plan_project_setup is required here,
+        fail-closed, so the configured executor's default runner always
+        routes through the central controlled execution boundary.
         """
         plan = self._plan_store.load(project_id, plan_id)
         if getattr(plan, "status", None) != "approved":
             raise SetupApprovalError(f"Setup plan {plan_id} is not approved")
 
-        return self._development_workflow.execute_approved(plan)
+        project_root = self._plan_store.load_project_root(project_id)
+        if not project_root:
+            raise SetupApprovalError(
+                f"No validated project_root is associated with project "
+                f"'{project_id}'; call plan_project_setup with an explicit "
+                f"project_root before executing its setup plan."
+            )
+
+        return self._development_workflow.execute_approved(plan, project_root)
 
     def list_tools(self) -> list[ToolDefinition]:
         """Return tool metadata for all exposed MCP tools."""
@@ -168,8 +208,17 @@ class MCPServer:
                     "properties": {
                         "project_info": {"type": "object"},
                         "project_id": {"type": "string"},
+                        "project_root": {
+                            "type": "string",
+                            "description": (
+                                "Existing, resolvable filesystem directory for "
+                                "this project. Required so setup execution can "
+                                "later route through the central controlled "
+                                "execution boundary instead of failing closed."
+                            ),
+                        },
                     },
-                    "required": ["project_info", "project_id"],
+                    "required": ["project_info", "project_id", "project_root"],
                 },
             ),
             ToolDefinition(

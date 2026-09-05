@@ -673,8 +673,19 @@ class DevelopmentWorkflow:
     def execute_approved(
         self,
         plan: SetupPlan,
+        project_root: str | None = None,
     ) -> tuple[ExecutionResult, ...]:
-        """Execute an already approved setup plan safely."""
+        """Execute an already approved setup plan safely.
+
+        project_root is optional and purely additive: when supplied, it
+        lets the configured executor route its actual subprocess work
+        through the central controlled execution boundary (cwd
+        confinement, environment allowlist, capability validation)
+        instead of an unconfined default. Omitting it preserves the
+        exact prior call shape for callers that do not yet have a
+        project root available at this point (e.g. MCP's
+        execute_setup_plan, which only carries a project_id).
+        """
 
         if plan.status != "approved":
             raise WorkflowExecutionError(
@@ -706,8 +717,13 @@ class DevelopmentWorkflow:
             self._validate_executable_step(step, plan)
             executable_steps.append(step)
 
+        def _execute(step: SetupStep) -> ExecutionResult:
+            if project_root is not None:
+                return self._executor.execute(step, project_root)
+            return self._executor.execute(step)
+
         return tuple(
-            self._executor.execute(step)
+            _execute(step)
             for step in executable_steps
         )
 
@@ -732,7 +748,9 @@ class DevelopmentWorkflow:
         self._trace(run_id, "setup_approval", "approved", "approved", "Setup approval granted", details={"plan_id": plan.id}, related_result_id=f"setup-approval:{plan.id}:approved")
         self._trace(run_id, "setup_execution", "started", "started", "Setup execution started", details={"step_count": len(plan.steps)})
         try:
-            setup_execution_results = self.execute_approved(plan)
+            setup_execution_results = self.execute_approved(
+                plan, getattr(development_request, "project_path", None),
+            )
         except Exception as error:
             self._trace(run_id, "setup_execution", "failed", "failed", f"Setup execution failed: {type(error).__name__}")
             raise

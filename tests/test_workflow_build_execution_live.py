@@ -99,7 +99,10 @@ def test_real_build_execution_in_isolated_venv(tmp_path):
         executor = PythonPackageExecutor()
 
         # Der Executor ruft pip über den aktiven Python-Interpreter auf.
-        result = executor.execute(approved.steps[0])
+        # project_root ist hier lediglich das cwd-Confinement fuer die
+        # zentrale execute_controlled-Grenze (CLAUDE-004A) - die
+        # tatsaechlich verwendete Interpreter-Auswahl bleibt PATH-basiert.
+        result = executor.execute(approved.steps[0], str(tmp_path))
 
         assert result.success is True
         assert result.verification_passed is True

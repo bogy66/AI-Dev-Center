@@ -18,6 +18,7 @@ REVOKED = "revoked"
 _REGISTRATION_STATUSES = frozenset({ACTIVE, SUSPENDED, REVOKED})
 _SAFE_OPERATION_TYPES = frozenset({
     "verification", "validate", "compile", "build", "test", "configure",
+    "install",
 })
 
 # Setup effects for which ADC currently has a controlled execution backend.
@@ -164,7 +165,7 @@ def _bootstrap(capability: str, executables: tuple[str, ...], operations: tuple[
 
 DEFAULT_CAPABILITY_REGISTRY = CapabilityRegistry()
 for _registration in (
-    _bootstrap("python", (sys.executable, "python", "python3"), ("verification", "test")),
+    _bootstrap("python", (sys.executable, "python", "python3"), ("verification", "test", "install")),
     _bootstrap("esphome", ("esphome",), ("validate", "compile")),
     _bootstrap("platformio", ("platformio", "pio"), ("build", "test")),
     _bootstrap("cmake", ("cmake",), ("configure", "build")),

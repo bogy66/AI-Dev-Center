@@ -36,6 +36,47 @@ class WorkflowPlanStore:
 
         return self._project_root(project_id) / f"{plan_id}.json"
 
+    def _project_root_marker_path(self, project_id: str) -> Path:
+        return self._project_root(project_id) / "_project_root.json"
+
+    def save_project_root(self, project_id: str, project_root: str) -> None:
+        """Associate one validated filesystem root with a project_id.
+
+        This is not a second project registry: it lives in the same
+        project_id-scoped directory this store already owns, alongside
+        that project's SetupPlan files, and exists solely so a later
+        execute_setup_plan(project_id, plan_id) call can resolve the
+        exact project_root that was already validated at plan-creation
+        time, without inventing a new persistence mechanism.
+        """
+        if not project_root or not str(project_root).strip():
+            raise WorkflowPlanStoreError("project_root must be a non-empty string.")
+
+        directory = self._project_root(project_id)
+        directory.mkdir(parents=True, exist_ok=True)
+        marker = self._project_root_marker_path(project_id)
+        try:
+            marker.write_text(
+                json.dumps({"project_root": str(project_root)}),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            raise WorkflowPlanStoreError(
+                f"Could not persist project root for '{project_id}'."
+            ) from exc
+
+    def load_project_root(self, project_id: str) -> str | None:
+        """Return the validated project_root associated with project_id, if any."""
+        marker = self._project_root_marker_path(project_id)
+        if not marker.is_file():
+            return None
+        try:
+            data = json.loads(marker.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        value = data.get("project_root") if isinstance(data, dict) else None
+        return value if isinstance(value, str) and value.strip() else None
+
     def save(self, plan: SetupPlan) -> Path:
         if not isinstance(plan, SetupPlan):
             raise TypeError("plan must be an instance of SetupPlan")

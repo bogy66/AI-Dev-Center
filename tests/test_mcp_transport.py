@@ -165,6 +165,7 @@ class TestRequestHandler:
         plan_store = Mock()
         plan = Mock(status="approved")
         plan_store.load.return_value = plan
+        plan_store.load_project_root.return_value = "/tmp/p1-root"
         dev = Mock()
         dev.execute_approved.return_value = {"stage": "executed", "ok": True}
         handler = self._handler(plan_store=plan_store, development_workflow=dev)
@@ -180,7 +181,8 @@ class TestRequestHandler:
             )
         )
         plan_store.load.assert_called_once_with("p1", "plan-x")
-        dev.execute_approved.assert_called_once_with(plan)
+        plan_store.load_project_root.assert_called_once_with("p1")
+        dev.execute_approved.assert_called_once_with(plan, "/tmp/p1-root")
         content = resp["result"]["content"][0]
         assert "executed" in content["text"]
 

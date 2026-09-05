@@ -400,7 +400,7 @@ class ProjectSetupApplicationService:
             )
             return MissingToolchainSetupResult(plan_id, "already_available", result)
         self._workflow_manager.update_missing_toolchain_setup(plan_id, status="executing")
-        result = installer.executor.execute(step)
+        result = installer.executor.execute(step, record["project_root"])
         available = result.success and installer.is_available(record["toolchain"])
         self._workflow_manager.update_missing_toolchain_setup(
             plan_id, status="completed" if available else "failed",

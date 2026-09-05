@@ -70,20 +70,42 @@ def test_create_setup_plan_calls_planner_and_store():
     assert result is saved_path
 
 
-def test_plan_project_setup_uses_development_workflow_and_store():
+def test_plan_project_setup_uses_development_workflow_and_store(tmp_path):
     server = make_server()
     setup_plan = Mock(id="plan-456", status="pending_approval")
     server._development_workflow.run.return_value = Mock(setup_plan=setup_plan)
 
     project_info = {"project_id": "project-123", "files": []}
-    result = server.plan_project_setup(project_info, "project-123")
+    result = server.plan_project_setup(project_info, "project-123", str(tmp_path))
 
     server._development_workflow.run.assert_called_once_with(
         project_info, "project-123"
     )
     server._planner.plan.assert_not_called()
     server._plan_store.save.assert_called_once_with(setup_plan)
+    server._plan_store.save_project_root.assert_called_once_with(
+        "project-123", str(tmp_path.resolve()),
+    )
     assert result is setup_plan
+
+
+def test_plan_project_setup_rejects_nonexistent_project_root(tmp_path):
+    server = make_server()
+
+    with pytest.raises(FileNotFoundError):
+        server.plan_project_setup({}, "project-123", str(tmp_path / "does-not-exist"))
+
+    server._development_workflow.run.assert_not_called()
+    server._plan_store.save.assert_not_called()
+
+
+def test_plan_project_setup_rejects_empty_project_root():
+    server = make_server()
+
+    with pytest.raises(ValueError):
+        server.plan_project_setup({}, "project-123", "   ")
+
+    server._development_workflow.run.assert_not_called()
 
 
 def test_get_setup_plan_loads_from_store():
@@ -112,17 +134,21 @@ def test_approve_setup_plan_calls_approval_approve():
     assert result is approved_plan
 
 
-def test_execute_setup_plan_loads_checks_approval_and_executes():
+def test_execute_setup_plan_loads_checks_approval_and_executes(tmp_path):
     server = make_server()
     plan = Mock(status="approved")
     execution_result = object()
     server._plan_store.load.return_value = plan
+    server._plan_store.load_project_root.return_value = str(tmp_path)
     server._development_workflow.execute_approved.return_value = execution_result
 
     result = server.execute_setup_plan("project-123", "plan-456")
 
     server._plan_store.load.assert_called_once_with("project-123", "plan-456")
-    server._development_workflow.execute_approved.assert_called_once_with(plan)
+    server._plan_store.load_project_root.assert_called_once_with("project-123")
+    server._development_workflow.execute_approved.assert_called_once_with(
+        plan, str(tmp_path),
+    )
     assert result is execution_result
 
 
@@ -130,6 +156,20 @@ def test_execute_setup_plan_raises_when_not_approved():
     server = make_server()
     plan = Mock(status="pending_approval")
     server._plan_store.load.return_value = plan
+
+    with pytest.raises(SetupApprovalError):
+        server.execute_setup_plan("project-123", "plan-456")
+
+    server._development_workflow.execute_approved.assert_not_called()
+
+
+def test_execute_setup_plan_fails_closed_without_associated_project_root():
+    """A plan with no persisted project_root must never fall back to
+    unconfined execution — it must refuse outright."""
+    server = make_server()
+    plan = Mock(status="approved")
+    server._plan_store.load.return_value = plan
+    server._plan_store.load_project_root.return_value = None
 
     with pytest.raises(SetupApprovalError):
         server.execute_setup_plan("project-123", "plan-456")
