@@ -1,3 +1,0 @@
-# Reviewer Agent
-
-Prüft Änderungen.

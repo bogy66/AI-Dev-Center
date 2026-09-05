@@ -160,7 +160,6 @@ DOC_DIAGRAMS.subsystem = '<svg viewBox="0 0 900 620" xmlns="http://www.w3.org/20
   '<text x="25" y="106" font-size="8" fill="#4a5568">AIRequirementDiscovery — LLM-Anforderungen</text>' +
   '<text x="25" y="120" font-size="8" fill="#4a5568">RequirementValidator — Validierung</text>' +
   '<text x="25" y="134" font-size="8" fill="#4a5568">RequirementPreflight — lokale Prüfungen</text>' +
-  '<text x="25" y="148" font-size="8" fill="#4a5568">RequirementsManager — REQ-xxx Parser</text>' +
   '<text x="25" y="162" font-size="8" fill="#4a5568">RequirementModel — Datenmodelle</text>' +
   '<text x="25" y="176" font-size="8" fill="#4a5568">ProjectScanner / Reader / Files</text>' +
   '<rect x="310" y="35" width="280" height="150" rx="6" fill="#ebf4ff" stroke="#3182ce"/>' +
@@ -181,7 +180,6 @@ DOC_DIAGRAMS.subsystem = '<svg viewBox="0 0 900 620" xmlns="http://www.w3.org/20
   '<text x="625" y="78" font-size="8" fill="#4a5568">SetupPlanner — SetupPlan aus Anforderungen</text>' +
   '<text x="625" y="92" font-size="8" fill="#4a5568">SetupExecutor — kontrollierte Ausführung</text>' +
   '<text x="625" y="106" font-size="8" fill="#4a5568">SetupApproval — Human Approval</text>' +
-  '<text x="625" y="120" font-size="8" fill="#4a5568">EnvironmentOrchestrator — voller Check</text>' +
   '<text x="625" y="134" font-size="8" fill="#4a5568">PythonPackageExecutor — pip backend</text>' +
   '<text x="625" y="148" font-size="8" fill="#4a5568">MissingToolchainSetup — Setup-Brücke</text>' +
   '<text x="625" y="162" font-size="8" fill="#4a5568">Execution — CapabilityRegistry</text>' +
@@ -202,10 +200,9 @@ DOC_DIAGRAMS.subsystem = '<svg viewBox="0 0 900 620" xmlns="http://www.w3.org/20
   '<line x1="320" y1="237" x2="580" y2="237" stroke="#3182ce" stroke-width="0.5"/>' +
   '<text x="325" y="253" font-size="8" fill="#4a5568">VerificationPlan — typisierte Prüfstrategie</text>' +
   '<text x="325" y="267" font-size="8" fill="#4a5568">ProjectTestRunner — git-freie Testausführung</text>' +
-  '<text x="325" y="281" font-size="8" fill="#4a5568">TestAdapters — pytest, ESPHome, CMake</text>' +
   '<text x="325" y="295" font-size="8" fill="#4a5568">TestingStage — Diagnose nach Tests</text>' +
   '<text x="325" y="309" font-size="8" fill="#4a5568">DevelopmentTestingStage — Dev+Test</text>' +
-  '<text x="325" y="323" font-size="8" fill="#4a5568">TestChangeGenerator / TestStackDetector</text>' +
+  '<text x="325" y="323" font-size="8" fill="#4a5568">TestChangeGenerator</text>' +
   '<line x1="290" y1="270" x2="310" y2="270" stroke="#3182ce" stroke-width="1.5" marker-end="url(#dep-arr)"/>' +
   '<rect x="610" y="210" width="280" height="120" rx="6" fill="#ebf4ff" stroke="#3182ce"/>' +
   '<text x="750" y="230" text-anchor="middle" font-size="10" font-weight="700" fill="#2b6cb0">6. Delivery &amp; Outcome</text>' +
@@ -214,13 +211,11 @@ DOC_DIAGRAMS.subsystem = '<svg viewBox="0 0 900 620" xmlns="http://www.w3.org/20
   '<text x="625" y="267" font-size="8" fill="#4a5568">ControlledGitStage — lokaler Commit</text>' +
   '<text x="625" y="281" font-size="8" fill="#4a5568">PublishApproval — Publish-Freigabe</text>' +
   '<text x="625" y="295" font-size="8" fill="#4a5568">ControlledPublishStage — Git Push</text>' +
-  '<text x="625" y="309" font-size="8" fill="#4a5568">WorkflowPublisher — Veröffentlichung</text>' +
-  '<text x="625" y="323" font-size="8" fill="#4a5568">GitManager — Git-Operationen</text>' +
   '<line x1="590" y1="270" x2="610" y2="270" stroke="#3182ce" stroke-width="1.5" marker-end="url(#dep-arr)"/>' +
   '<rect x="10" y="355" width="880" height="75" rx="6" fill="#fefcbf" opacity="0.4" stroke="#d69e2e"/>' +
   '<text x="450" y="375" text-anchor="middle" font-size="10" font-weight="700" fill="#975a16">Querschnittliche Units</text>' +
   '<text x="25" y="393" font-size="8" fill="#744210">DiagnosticTrace — persistente Laufzeitbeobachtung  |  ProjectContext — dauerhafte Entscheidungen</text>' +
-  '<text x="25" y="407" font-size="8" fill="#744210">ApprovalManager — zentrale Freigabeverwaltung  |  ExecutionIdentity — stabile Prozessor-IDs</text>' +
+  '<text x="25" y="407" font-size="8" fill="#744210">ExecutionIdentity — stabile Prozessor-IDs</text>' +
   '<text x="25" y="421" font-size="8" fill="#744210">LLMProviderFactory — Provider-Instanziierung  |  CanonicalComposition — Composition-Root</text>' +
   '<rect x="10" y="445" width="880" height="65" rx="6" fill="#e2e8f0" opacity="0.5" stroke="#a0aec0"/>' +
   '<text x="450" y="463" text-anchor="middle" font-size="10" font-weight="700" fill="#4a5568">Communication Adapter (Frontends) → CommonRequest → zentraler Workflow</text>' +
@@ -533,7 +528,6 @@ docSections["sec-06"] = {
     '<tr><td>AIRequirementDiscovery</td><td>ai_requirement_discovery.py</td><td>LLM-gestützte Anforderungserkennung</td></tr>' +
     '<tr><td>RequirementValidator</td><td>requirement_validator.py</td><td>Deterministische Validierung</td></tr>' +
     '<tr><td>RequirementPreflight</td><td>requirement_preflight.py</td><td>Lokale Verfügbarkeitsprüfungen</td></tr>' +
-    '<tr><td>RequirementsManager</td><td>requirements_manager.py</td><td>REQ-xxx Muster-Parser</td></tr>' +
     '<tr><td>RequirementModel</td><td>requirement_model.py</td><td>Datenmodelle</td></tr></table>' +
     '<h4>2. Engineering Decision</h4>' +
     '<table class="doc-table"><tr><th>Unit</th><th>Datei</th><th>Verantwortung</th></tr>' +
@@ -548,8 +542,6 @@ docSections["sec-06"] = {
     '<tr><td>SetupPlanner</td><td>setup_planner.py</td><td>SetupPlan aus Anforderungen + Preflight</td></tr>' +
     '<tr><td>SetupExecutor</td><td>setup_executor.py</td><td>Kontrollierte Schritt-Ausführung</td></tr>' +
     '<tr><td>SetupApproval</td><td>setup_approval.py</td><td>Human Approval für Setup</td></tr>' +
-    '<tr><td>EnvironmentOrchestrator</td><td>environment_orchestrator.py</td><td>Voller Umgebungs-Check</td></tr>' +
-    '<tr><td>EnvironmentResolver</td><td>environment_resolver.py</td><td>Bereitschaftsprüfung</td></tr>' +
     '<tr><td>MissingToolchainSetup</td><td>missing_toolchain_setup.py</td><td>TOOL_UNAVAILABLE → Setup → Retry</td></tr>' +
     '<tr><td>PythonPackageExecutor</td><td>python_package_executor.py</td><td>Kontrollierte pip-Installation</td></tr>' +
     '<tr><td>ProjectSetupApplication</td><td>project_setup_application.py</td><td>Application-Core Setup-Planung</td></tr>' +
@@ -566,25 +558,19 @@ docSections["sec-06"] = {
     '<table class="doc-table"><tr><th>Unit</th><th>Datei</th><th>Verantwortung</th></tr>' +
     '<tr><td>VerificationPlan</td><td>verification.py</td><td>Typisierte Prüfstrategie</td></tr>' +
     '<tr><td>ProjectTestRunner</td><td>project_test_runner.py</td><td>Git-freie Testausführung</td></tr>' +
-    '<tr><td>TestAdapters</td><td>test_adapters.py</td><td>pytest, ESPHome, CMake Adapter</td></tr>' +
     '<tr><td>TestingStage</td><td>testing_stage.py</td><td>Diagnose nach Tests</td></tr>' +
     '<tr><td>DevelopmentTestingStage</td><td>development_testing_stage.py</td><td>Dev+Test-Koordination</td></tr>' +
-    '<tr><td>TestChangeGenerator</td><td>test_change_generator.py</td><td>Test-Änderungen generieren</td></tr>' +
-    '<tr><td>TestStackDetector</td><td>test_stack_detector.py</td><td>Test-Stack erkennen</td></tr>' +
-    '<tr><td>TestStrategy</td><td>test_strategy.py</td><td>Test-Strategie Datenmodell</td></tr></table>' +
+    '<tr><td>TestChangeGenerator</td><td>test_change_generator.py</td><td>Test-Änderungen generieren</td></tr></table>' +
     '<h4>6. Delivery &amp; Outcome</h4>' +
     '<table class="doc-table"><tr><th>Unit</th><th>Datei</th><th>Verantwortung</th></tr>' +
     '<tr><td>FinalApproval</td><td>final_approval.py</td><td>Abschließende Human-Freigabe</td></tr>' +
     '<tr><td>ControlledGitStage</td><td>controlled_git_stage.py</td><td>Fail-Safe lokaler Commit</td></tr>' +
     '<tr><td>PublishApproval</td><td>publish_approval.py</td><td>Separate Publish-Freigabe</td></tr>' +
-    '<tr><td>ControlledPublishStage</td><td>controlled_publish_stage.py</td><td>Kontrollierter Git Push</td></tr>' +
-    '<tr><td>WorkflowPublisher</td><td>workflow_publisher.py</td><td>Veröffentlichung nach Freigabe</td></tr>' +
-    '<tr><td>GitManager</td><td>git_manager.py</td><td>Git-Operationen</td></tr></table>' +
+    '<tr><td>ControlledPublishStage</td><td>controlled_publish_stage.py</td><td>Kontrollierter Git Push</td></tr></table>' +
     '<h4>Querschnittliche Units</h4>' +
     '<table class="doc-table"><tr><th>Unit</th><th>Datei</th><th>Verantwortung</th></tr>' +
     '<tr><td>DiagnosticTrace</td><td>diagnostic_trace.py</td><td>Persistente Workflow-Beobachtung</td></tr>' +
     '<tr><td>ProjectContext / Definitions</td><td>project_context.py</td><td>Dauerhafte Entscheidungen</td></tr>' +
-    '<tr><td>ApprovalManager</td><td>approval_manager.py</td><td>Freigabeverwaltung</td></tr>' +
     '<tr><td>LLMProviderFactory</td><td>llm_provider_factory.py</td><td>Provider-Instanziierung</td></tr>' +
     '<tr><td>CommonRequest</td><td>common_request.py</td><td>Adapter-neutrales Request-Format</td></tr>' +
     '<tr><td>WorkflowExecutionGuard</td><td>workflow_execution_guard.py</td><td>Prozess-lokaler Mutex</td></tr>' +
@@ -694,8 +680,7 @@ docSections["sec-12"] = {
   html: '<h3>Subsystem 3: Umgebung und Einrichtung</h3>' +
     DOC_DIAGRAMS.envsetup +
     '<h4>Ablauf</h4>' +
-    '<ol><li><strong>Environment Detection:</strong> EnvironmentOrchestrator führt vollständigen Umgebungs-Check durch (Detection → Preflight → Resolution)</li>' +
-    '<li><strong>SetupPlan-Erstellung:</strong> SetupPlanner erzeugt SetupPlan aus Requirements + PreflightResult + kontrollierten SetupEffects</li>' +
+    '<ol><li><strong>SetupPlan-Erstellung:</strong> SetupPlanner erzeugt SetupPlan aus Requirements + PreflightResult + kontrollierten SetupEffects</li>' +
     '<li><strong>Human Approval:</strong> SetupApproval erfordert explizite Freigabe vor jeder Ausführung</li>' +
     '<li><strong>Kontrollierte Ausführung:</strong> SetupExecutor führt nur genehmigte Schritte mit registrierten Backends aus</li>' +
     '<li><strong>Verifikation:</strong> Nach der Ausführung wird die Verfügbarkeit erneut geprüft</li></ol>' +
@@ -976,13 +961,11 @@ docSections["sec-25"] = {
     '<h4>Subsystem 6: Delivery &amp; Outcome</h4>' +
     '<table class="doc-table"><tr><th>Konzept</th><th>Datei</th><th>Klasse/Funktion</th></tr>' +
     '<tr><td>Controlled Git</td><td>app/controlled_git_stage.py</td><td>ControlledGitStage</td></tr>' +
-    '<tr><td>Controlled Publish</td><td>app/controlled_publish_stage.py</td><td>ControlledPublishStage</td></tr>' +
-    '<tr><td>Git-Operationen</td><td>app/git_manager.py</td><td>GitManager</td></tr></table>' +
+    '<tr><td>Controlled Publish</td><td>app/controlled_publish_stage.py</td><td>ControlledPublishStage</td></tr></table>' +
     '<h4>Querschnittlich</h4>' +
     '<table class="doc-table"><tr><th>Konzept</th><th>Datei</th><th>Klasse/Funktion</th></tr>' +
     '<tr><td>Diagnostic Trace</td><td>app/diagnostic_trace.py</td><td>DiagnosticTraceRecorder</td></tr>' +
     '<tr><td>Project Context</td><td>app/project_context.py</td><td>ProjectDefinitionStore</td></tr>' +
-    '<tr><td>Approval Manager</td><td>app/approval_manager.py</td><td>ApprovalManager</td></tr>' +
     '<tr><td>LLM Provider</td><td>app/llm_provider_factory.py</td><td>create_llm_provider()</td></tr>' +
     '<tr><td>Web GUI</td><td>app/web_api.py</td><td>FastAPI app</td></tr>' +
     '<tr><td>MCP Server</td><td>app/mcp_server.py</td><td>MCPServer</td></tr>' +

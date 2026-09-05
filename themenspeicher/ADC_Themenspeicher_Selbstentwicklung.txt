@@ -1,0 +1,19 @@
+Themenspeicher – ADC Selbstentwicklung
+
+ADC soll sich auch selbst analysieren und reparieren können.
+
+ADC soll:
+- Fehler in der eigenen Software erkennen.
+- Ursachen selbst analysieren.
+- Reparaturen planen.
+- Änderungen an der eigenen Software implementieren.
+- Eigene Änderungen testen und validieren.
+- Neue Features für AI-Dev-Center selbst entwickeln.
+- Für die eigene Weiterentwicklung dieselben Qualitäts- und Sicherheitsregeln anwenden wie bei externen Projekten.
+- Eigene Änderungen nicht allein aufgrund eines Agenten-Erfolgsberichts als erfolgreich ansehen.
+- Je nach Änderung Unit-, Integrations- und Real-System-Nachweise verwenden.
+- Die eigene zentrale Architektur, Project Definitions, Sicherheitsgrenzen und bestehenden technischen Entscheidungen berücksichtigen.
+- Sich selbst als vollwertiges Softwareprojekt behandeln, das mit AI-Dev-Center weiterentwickelt werden kann.
+
+Ziel:
+AI-Dev-Center soll langfristig in der Lage sein, seine eigene Software kontrolliert weiterzuentwickeln, Fehler selbst zu beheben und neue Funktionen für sich selbst umzusetzen, ohne seine zentralen Architektur- und Sicherheitsregeln zu umgehen.

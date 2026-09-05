@@ -618,6 +618,13 @@ class DevelopmentWorkflow:
         A step whose requirement is inactive or nonblocking is skipped,
         not rejected — its requirement remains represented in the plan but
         does not block controlled execution of unrelated setup work.
+
+        A step is structurally executable either through the controlled
+        ``setup_effect`` classification, or through the legacy
+        ``action="install"`` + ``install_method`` + ``package``
+        representation that predates that field. Anything else —
+        notably ``action="manual_review"`` steps with no install data —
+        genuinely requires manual review and must still block.
         """
         if plan is not None and plan.requirement_activations:
             activation_by_id = {
@@ -648,6 +655,14 @@ class DevelopmentWorkflow:
                 f"Setup step '{step.id}' requires setup effect '{effect}' "
                 f"for which ADC has no controlled execution backend."
             )
+
+        if (
+            step.action == "install"
+            and step.install_method
+            and step.package
+            and step.package.strip()
+        ):
+            return
 
         raise WorkflowExecutionError(
             f"Setup step '{step.id}' requires manual review: "

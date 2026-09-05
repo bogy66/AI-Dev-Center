@@ -11,7 +11,6 @@ import app.canonical_composition as composition
 
 
 PRODUCTIVE_ADAPTERS = (
-    "app/api.py",
     "app/web_api.py",
     "app/mcp_server.py",
     "app/mcp_transport.py",

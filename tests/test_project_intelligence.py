@@ -411,7 +411,7 @@ def test_productive_adapters_guard_imports_intelligence():
     import ast
     from pathlib import Path as _Path
 
-    ADAPTERS = ("app/api.py", "app/web_api.py", "app/mcp_server.py",
+    ADAPTERS = ("app/web_api.py", "app/mcp_server.py",
                 "app/mcp_transport.py", "app/workflow_cli.py",
                 "app/workflow_execution_cli.py", "cli/agent_workflow_cli.py")
     FORBIDDEN = {"app.agent_orchestrator", "app.git_manager",

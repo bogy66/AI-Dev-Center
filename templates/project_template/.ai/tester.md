@@ -1,3 +1,0 @@
-# Tester Agent
-
-Erstellt Tests.

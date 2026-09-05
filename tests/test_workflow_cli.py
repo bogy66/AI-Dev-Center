@@ -434,15 +434,12 @@ class TestNoSideEffects:
         monkeypatch.setattr(cli, "DevelopmentWorkflow", mock_workflow_cls)
         monkeypatch.setattr(cli, "build_workflow", lambda config: mock_instance)
 
-        # Also ensure that no approval‑related classes are touched
-        with patch("app.approval_manager.ApprovalManager") as mock_approval, patch(
-            "app.setup_executor.SetupExecutor"
-        ) as mock_executor:
+        # Also ensure that no execution‑related classes are touched
+        with patch("app.setup_executor.SetupExecutor") as mock_executor:
             monkeypatch.setattr(sys, "argv", ["workflow_cli.py", str(project)])
             with pytest.raises(SystemExit):
                 cli.main()
 
-        # The workflow itself was called, but no approval/execution objects
+        # The workflow itself was called, but no execution objects
         # should have been instantiated by the CLI.
-        mock_approval.assert_not_called()
         mock_executor.assert_not_called()
