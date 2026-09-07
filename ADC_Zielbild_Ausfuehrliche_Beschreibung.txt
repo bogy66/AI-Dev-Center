@@ -1,0 +1,1091 @@
+AI-DEV-CENTER (ADC) – AUSFÜHRLICHE ZIELBILD-BESCHREIBUNG
+Stand: 2026-09-06
+
+1. ZIEL UND GRUNDIDEE
+
+AI-Dev-Center (ADC) entwickelt sich zu einer integrierten Engineering-Plattform für Software, Firmware und Hardware.
+
+ADC soll nicht nur Quellcode erzeugen, sondern einen vollständigen, nachvollziehbaren und kontrollierten Engineering-Prozess unterstützen:
+
+User-Auftrag
+→ Project Intelligence
+→ Requirement Intelligence
+→ Engineering Decision
+→ Environment & Setup
+→ Development & Change
+→ Quality & Verification
+→ Delivery & Outcome
+→ Evidence / Learning / FMEA
+
+Das System soll technische Entscheidungen vorbereiten, Varianten bewerten, die gewählte Lösung kontrolliert materialisieren, Änderungen umsetzen, reale Ergebnisse verifizieren und aus Fehlern dauerhaft lernen.
+
+ADC bleibt technologieoffen. Python, C, C++, JavaScript, TypeScript, ESPHome, PlatformIO, CMake, Docker, virtuelle Umgebungen, native Host-Setups, VMs und weitere Technologien dürfen vorkommen, aber keine davon darf die Architektur des ADC dominieren oder zum versteckten Standard für alle Projekte werden.
+
+Bestehende Projekte werden in ihrer vorhandenen Architektur, ihren Konventionen, ihren Build-Systemen und ihren Toolchains respektiert. ADC passt sich an das Projekt an – nicht umgekehrt.
+
+
+2. ZENTRALES GOVERNANCE-PRINZIP
+
+Der Engineering Council erzeugt mehrere technisch sinnvolle Varianten und bewertet sie.
+
+Die dokumentierte Rolle des Chairman lautet:
+
+Chairman: Synthese und Auswahl der Empfehlung.
+
+Das bedeutet:
+
+- Der Council erzeugt Alternativen.
+- Die Agenten prüfen die Alternativen aus unterschiedlichen Engineering-Perspektiven.
+- Der Chairman synthetisiert Vorschläge und Cross-Reviews.
+- Der Chairman wählt eine technisch begründete Empfehlung.
+- Diese Empfehlung wird dem Benutzer nachvollziehbar präsentiert.
+- Der Benutzer kann die Empfehlung akzeptieren oder sich bewusst für eine andere zulässige Variante entscheiden.
+
+ADC soll NICHT versuchen, bei identischem Input immer dieselbe Lösungsklasse zu erzwingen.
+
+Unterschiedliche Lösungen wie Host, venv, Docker, VM oder andere projektspezifische Varianten können alle korrekt sein.
+
+Die zentrale Qualitätsbedingung lautet:
+
+Jede gewählte Lösung
+→ erfüllt die bindenden Requirements
+→ verletzt keine Constraints
+→ ist technisch materialisierbar
+→ besitzt passende Setup-/Executor-Contracts
+→ besitzt eine definierte Verification-Strategie
+→ ist durch deterministische Subsystem- und gegebenenfalls Systemtests abgesichert
+→ kann vor mutierender Ausführung dem Menschen nachvollziehbar präsentiert werden.
+
+Variabilität ist erlaubt.
+
+Verhindert werden soll nur, dass eine ausgewählte Lösung technisch nicht ausführbar, nicht verifizierbar, nicht kontrollierbar oder nicht mit den bestehenden ADC-Verträgen kompatibel ist.
+
+
+3. MENSCHLICHE ENTSCHEIDUNGSAUTORITÄT
+
+Der Mensch bleibt die entscheidende Autorität an mutierenden und sicherheitsrelevanten Grenzen.
+
+Der Chairman spricht eine Empfehlung aus.
+
+Der Benutzer kann:
+
+- die Empfehlung annehmen,
+- eine andere vom Council als zulässig dargestellte Variante auswählen,
+- eine Änderung verlangen,
+- die Planung ablehnen,
+- eine neue Entscheidungsrunde anfordern.
+
+Eine Chairman-Empfehlung ist keine automatische Ausführungsfreigabe.
+
+Empfehlung:
+„Diese Lösung halte ich technisch für die beste Variante.“
+
+Human Approval:
+„Diese konkrete mutierende Aktion darf ausgeführt werden.“
+
+Diese Trennung ist ein Kernprinzip des Zielbilds.
+
+
+4. DIE SECHS OFFIZIELLEN SUBSYSTEME
+
+S1 – Requirement Intelligence
+
+Verantwortung:
+Verstehen, was das Projekt und der Benutzer tatsächlich benötigen.
+
+Aufgaben:
+- Benutzerauftrag analysieren
+- vorhandenes Projekt read-only untersuchen
+- Anforderungen identifizieren und strukturieren
+- Pflicht- und optionale Anforderungen unterscheiden
+- Konflikte, Unsicherheiten und fehlende Informationen erkennen
+- Requirements mit Evidence verbinden
+- Anforderungen für spätere Verification testbar formulieren
+
+S1 erzeugt keine technische Lösung und führt keine Setup-Aktion aus.
+
+
+S2 – Engineering Decision
+
+Verantwortung:
+Entscheiden, WAS technisch gebaut werden soll und MIT WELCHER Engineering-Lösung dies sinnvoll umgesetzt werden kann.
+
+Aufgaben:
+- mehrere Lösungsvarianten erzeugen
+- vorhandene Umgebung und Projektkonventionen berücksichtigen
+- technische Machbarkeit bewerten
+- Risiken vergleichen
+- Toolchain- und Umgebungsoptionen vergleichen
+- Verification-Konzept berücksichtigen
+- Council-Reviews auswerten
+- Chairman-Empfehlung erzeugen
+- Alternativen transparent erhalten
+
+S2 führt keine Installation aus und mutiert keine Umgebung.
+
+S2 erzeugt Engineering Decisions, keine Setup-Ausführung.
+
+
+S3 – Environment & Setup
+
+Verantwortung:
+Die durch S2 empfohlene oder vom Benutzer gewählte Engineering-Lösung kontrolliert in eine reale, nutzbare Entwicklungs- und Testumgebung überführen.
+
+Aufgaben:
+- Soll-Zustand aus Engineering Decision ableiten
+- Ist-Zustand beobachten
+- Soll/Ist vergleichen
+- unnötige Änderungen vermeiden
+- SetupPlan erzeugen
+- Setup-Schritte klassifizieren
+- prüfen, ob jeder ausführbare Schritt einen passenden kontrollierten Executor besitzt
+- Human Approval einholen
+- Setup kontrolliert ausführen
+- Ergebnis erneut verifizieren
+- EnvironmentState aktualisieren
+
+Zentrale Invariante:
+
+Kein ausführbarer SetupStep darf freigegeben werden, wenn ADC ihn mit seinem vorgesehenen kontrollierten Executor nicht tatsächlich ausführen kann.
+
+Producer und Consumer müssen denselben strukturierten Vertrag verstehen.
+
+Nicht zulässig ist:
+
+Council erzeugt frei formulierte Installationsmethode
+→ Materializer akzeptiert sie
+→ Human Approval genehmigt sie
+→ Executor lehnt sie erst später als nicht unterstützbar ab.
+
+Der Fehler muss vor Approval beziehungsweise spätestens an der Materialisierungsgrenze erkannt werden.
+
+
+S4 – Development & Change
+
+Verantwortung:
+Die eigentliche technische Änderung am Projekt kontrolliert durchführen.
+
+Aufgaben:
+- Anforderungen in strukturierte Entwicklungsarbeit umsetzen
+- bestehende Projektkonventionen respektieren
+- deklarative Änderungen erzeugen
+- Änderungen durch kontrollierte Applier anwenden
+- keine beliebigen LLM-Shell-Kommandos direkt ausführen
+- Dateigrenzen und Projekt-Root respektieren
+- Change Provenance führen
+- Änderungen vollständig nachverfolgbar machen
+
+Langfristig umfasst S4 Software, Firmware und Hardware-nahe Engineering-Artefakte.
+
+
+S5 – Quality & Verification
+
+Verantwortung:
+Mechanisch und real prüfen, ob die technische Lösung und die Änderungen tatsächlich funktionieren.
+
+Aufgaben:
+- VerificationPlan erzeugen
+- projektspezifische Build- und Testsysteme nutzen
+- Unit-, Subsystem-, System- und Real-System-Evidence trennen
+- Ergebnisse nicht durch KI-Selbstaussagen ersetzen
+- Toolchain-Verfügbarkeit erkennen
+- Verifikationsabhängigkeiten abbilden
+- reale Testergebnisse als autoritative Evidence behandeln
+- Failure Modes mit Testabdeckung verbinden
+
+Ein LLM darf nicht behaupten, dass etwas funktioniert, wenn die reale Verification das Gegenteil zeigt.
+
+
+S6 – Delivery & Outcome
+
+Verantwortung:
+Nur technisch verifizierte und menschlich freigegebene Ergebnisse kontrolliert in einen finalen Zustand überführen.
+
+Aufgaben:
+- finale Freigabe
+- Controlled Git
+- kontrolliertes Committen
+- kontrolliertes Publish
+- eindeutige Provenance
+- keine fremden Benutzeränderungen übernehmen
+- keine stillen Git-Reparaturen
+- kein Force Push
+- keine automatische Veröffentlichung außerhalb definierter Grenzen
+
+Delivery ist ein eigener Engineering-Schritt und nicht Nebenwirkung der Entwicklung.
+
+
+4A. SUBSUBSYSTEM-ARCHITEKTUR — S2 ENGINEERING DECISION (PILOT, CLAUDE-ARCH-S2-012A)
+
+Terminologie:
+Subsystem = Sx (S1 … S6).
+Subsubsystem = Sx.y (z. B. S2.1 … S2.5).
+Sx.y ist die tiefste NUMMERIERTE Architekturebene.
+Unterhalb von Sx.y stehen ausschließlich benannte Units/Komponenten/Funktionen/Typen — niemals eine weitere nummerierte Ebene Sx.y.z.
+
+S2 Engineering Decision wird intern in fünf Subsubsystem-Verantwortungen zerlegt. Dies ist ein PILOT für S2; S1 und S3–S6 werden NICHT in dieser Aufgabe umgebaut.
+
+S2.1 Engineering Alternatives
+  Zweck: unabhängige, technisch sinnvolle Engineering-Alternativen erzeugen und Cross-Review-Evidenz sammeln.
+  Owned Units: Council-Phase-1-Vorschlagserzeugung, Cross-Review (Phase 2), Proposal-/Review-Modellverarbeitung (app/engineering_council.py, Phasen 1–2; app/council_models.py: AgentProposal, ProposalSet, AgentVote, AgentVoteSet).
+  Input: CouncilInput (Requirements, Preflight, Projektkontext).
+  Producer: Requirement Intelligence (S1) über CouncilInput.
+  Output-Artifact: ProposalSet + Cross-Review-Evidenz (reviewte Alternativen).
+  Nächster Consumer: S2.2.
+  Authority: darf Alternativen erzeugen und cross-reviewen.
+  Verbotene Authority: keine Empfehlungsauswahl, keine Zulässigkeitsentscheidung, keine menschliche Auswahl, keine EngineeringDecision.
+  Tests: tests/test_engineering_council.py (Phase-1/2-Klassen).
+
+S2.2 Engineering Synthesis & Recommendation
+  Zweck: Chairman-Synthese und Empfehlung an den Benutzer.
+  Owned Units: Chairman-Synthese-Unit, Chairman-Empfehlungs-Unit, Chairman-Protokoll-Parser, gebundene Chairman-Reparatur-Unit (app/engineering_council.py: _phase3_chairman_synthesis, _parse_chairman_result, _build_chairman_repair_prompt).
+  Input: ProposalSet + Cross-Review-Evidenz (von S2.1).
+  Output-Artifact: CouncilResult mit `council_complete`/`chairman_error`/`recommendation` (konzeptionell: EngineeringSynthesisResult).
+  Nächster Consumer: S2.3.
+  Authority: Synthese, Empfehlung an den Benutzer, EIN gebundener gezielter Reparaturversuch bei strukturell/semantisch abgelehnter eigener Synthese.
+  Verbotene Authority: KEINE technische Zulässigkeitspolitik (Requirement-Abdeckung, Constraints, Materialisierbarkeit, Executor-Kompatibilität, Verification) — S2.2 fragt dafür ausschließlich S2.3s eigene, einzige Autorität ab (validate_variants()), niemals eine eigene, unabhängige Regel. Kein deterministisches Ersetzen der Empfehlung durch eine andere Variante.
+  Kritische Semantik: `council_complete=True` bedeutet AUSSCHLIESSLICH, dass das Synthese-Protokoll erfolgreich abgeschlossen wurde — NIEMALS technische Zulässigkeit, menschliche Auswahl oder S3-Bereitschaft.
+  Tests: tests/test_engineering_council.py (TestBoundedChairmanRepair u. a.).
+
+S2.3 Engineering Admissibility
+  Zweck: die EINZIGE technische Zulässigkeitsautorität innerhalb S2.
+  Owned Units: validate_variants(), validate_candidates(), admissible_variants(), CandidateValidation, alle _covers_*/_violates_*/_is_materializable_*-Regeln (app/engineering_decision.py).
+  Input: CouncilResult-Varianten + PreflightResult + Platform.
+  Output-Artifact: CandidateValidationSet (tuple[CandidateValidation, …]) mit admissible/reasons je Kandidat.
+  Nächster Consumer: S2.4 (bei Erfolg) bzw. S2.2 (EngineeringReworkRequest bei reparierbarem Fehler).
+  Authority: klassifiziert zulässig/unzulässig, liefert exakte sichere deterministische Gründe, erhält mehrere zulässige Alternativen.
+  Verbotene Authority: wählt niemals eine bevorzugte Lösung, verändert/mergt/repariert niemals einen Kandidaten.
+  Tests: tests/test_engineering_decision.py, tests/test_s2_subsubsystem_architecture.py.
+
+S2.4 Human Engineering Authority
+  Zweck: die finale menschliche Entscheidungsautorität repräsentieren.
+  Owned Units: resolve_human_engineering_selection(), describe_engineering_variant_selection(), EngineeringVariantSelection (app/engineering_decision.py).
+  Input: NUR bereits technisch bewertete S2.3-Ergebnisse (CandidateValidationSet) + Chairman-Empfehlung + optionale menschliche Auswahl.
+  Output-Artifact: EngineeringVariantSelection (bzw. das aufgelöste (CandidateValidation, Autorität)-Paar).
+  Nächster Consumer: S2.5.
+  Authority: Mensch darf Empfehlung annehmen, eine andere zulässige Alternative wählen, ablehnen/aufschieben/Rework anfordern.
+  Verbotene Authority: darf technische Zulässigkeit NIEMALS überstimmen; keine stille Ersetzung der gewünschten Kandidaten-ID.
+  Tests: tests/test_s2_subsubsystem_architecture.py (Human-Engineering-Authority-Emulator).
+
+S2.5 Engineering Decision & S3 Handoff
+  Zweck: das finale S2-Entscheidungsartefakt erzeugen und die S2→S3-Grenze besitzen.
+  Owned Units (ausschließlich S2-seitig; CLAUDE-ARCH-S2-012B korrigiert die
+  zuvor fehlerhafte Zuordnung): build_engineering_decision(), EngineeringDecision
+  (app/engineering_decision.py). KEINE weiteren Units — insbesondere NICHT
+  ToolchainMaterializer.materialize_decision(), das ausschließlich S3 gehört
+  (siehe unten).
+  Input: validierte S2.4-Auswahl.
+  Output-Artifact: EngineeringDecision (variant, solution_class, selection_authority) — das EINZIGE Artefakt, das die S2→S3-Grenze im Normalfall überquert.
+  Nächster Consumer: S3 Environment & Setup (konkret dessen ToolchainMaterializer.materialize_decision()-Einstiegspunkt — ein S3-Unit, kein S2.5-Unit).
+  Authority: bewahrt exakte Kandidaten-Identität, Auswahl-Autorität und Validierungs-Provenienz.
+  Verbotene Authority: erfindet keine Auswahl, wählt keinen Gewinner, repariert keinen Kandidaten.
+  Tests: tests/test_s2_subsubsystem_architecture.py (TC-B-S2.5-S3).
+
+S3 Environment & Setup owned Unit für den Handoff-Einstiegspunkt:
+ToolchainMaterializer.materialize_decision() (app/toolchain_materializer.py)
+ist ein S3-Unit — der S3-seitige Konsument/Entry-Point für das von S2.5
+publizierte EngineeringDecision-Artefakt. Es gehört NICHT zu S2.5 (auch
+wenn es das S2.5-Artefakt konsumiert — Konsum begründet keine
+S2-Ownership). S3 besitzt ausschließlich seine EIGENEN Verträge
+(SetupPlan-Korrektheit, Environment-/Execution-Autorisierung, Executor-
+Registrierung) — S3 interpretiert weder Chairman-Empfehlung noch
+menschliche Auswahl und wählt keinen Engineering-Kandidaten selbst.
+
+CURRENT/TARGET-Hinweis: ToolchainMaterializer.materialize(council_result, …) bleibt als Kompatibilitätspfad bestehen (löst intern select_engineering_variant() auf und delegiert an materialize_decision()) — für Aufrufer, die weiterhin nur ein rohes CouncilResult besitzen. Der EINE reale produktive Aufrufpfad (app/dev_workflow.py::run()) nutzt bereits den Zielzustand (S2 löst auf, S3 konsumiert EngineeringDecision).
+
+
+5. PRODUCER → ARTIFACT → CONSUMER
+
+Die Zielarchitektur beschreibt jeden wichtigen Übergang explizit.
+
+Beispiele:
+
+User / Adapter
+→ CommonRequest
+→ S1 Requirement Intelligence
+
+Project Inspector
+→ Project Intelligence
+→ S1 / S2
+
+S1
+→ RequirementSet
+→ S2
+
+S2 Engineering Council + Chairman
+→ Engineering Decision / CouncilResult
+→ S3
+
+S3 Materializer
+→ SetupPlan
+→ Human Approval / Controlled Setup Execution
+
+S3 Execution
+→ EnvironmentState
+→ S4 / S5
+
+S4
+→ Structured Changes / Change Provenance
+→ S5
+
+S5
+→ VerificationResult
+→ Final Approval / S6
+
+S6
+→ Outcome / Commit / Publish Evidence
+→ Benutzer / Projektstatus / Learning
+
+Für jedes wichtige Artifact sollen langfristig folgende Fragen eindeutig beantwortbar sein:
+
+- Wer erzeugt es?
+- Wer darf es verändern?
+- Wo wird es persistiert?
+- Wer konsumiert es?
+- Welche Authority gilt?
+- Welche Evidence beweist seinen Zustand?
+- Welche Contract-Version gilt?
+
+
+6. REQUIREMENTS ALS BINDENDE ENGINEERING-BASIS
+
+Requirements dürfen nicht nur LLM-Text sein.
+
+Sie bilden den technischen Vertrag, gegen den Lösungen bewertet werden.
+
+Eine Lösung darf nur zulässig sein, wenn sie die für die konkrete Operation bindenden Requirements erfüllt.
+
+Dazu gehören beispielsweise:
+
+- funktionale Anforderungen
+- Toolchain-Anforderungen
+- Versionsanforderungen
+- Build-Anforderungen
+- Test-Anforderungen
+- Hardware-Anforderungen
+- Sicherheitsanforderungen
+- Umgebungsconstraints
+- Projektkonventionen
+- Freigabeanforderungen
+- Verification-Anforderungen
+
+Requirements sollen Evidence besitzen und mit Tests verknüpft werden können.
+
+Ziel:
+
+Requirement
+→ Contract
+→ Verification
+→ Evidence
+
+
+7. ENGINEERING COUNCIL UND CHAIRMAN
+
+Der Council bleibt bewusst KI-basiert und darf kreativ unterschiedliche Engineering-Lösungen vorschlagen.
+
+Beispiel:
+
+Variante A:
+Native Host Toolchain
+
+Variante B:
+Project-local venv
+
+Variante C:
+Docker-basierte Isolation
+
+Variante D:
+VM oder andere abgeschottete Umgebung
+
+Alle vier Varianten können grundsätzlich gültig sein.
+
+ADC vergleicht sie anhand realer Engineering-Kriterien:
+
+- erfüllen sie Requirements?
+- passen sie zum vorhandenen Projekt?
+- welche Änderungen sind nötig?
+- sind vorhandene Capabilities wiederverwendbar?
+- welche Risiken entstehen?
+- ist die Lösung reproduzierbar?
+- ist sie materialisierbar?
+- kann ADC sie kontrolliert ausführen?
+- kann sie real verifiziert werden?
+- welche Kosten oder Komplexität entstehen?
+- welche Abhängigkeiten werden eingeführt?
+
+Der Chairman synthetisiert diese Informationen und wählt eine Empfehlung.
+
+Wichtig:
+
+Der Chairman ist kein deterministischer Solver, der immer dieselbe Architektur liefern muss.
+
+Der Chairman ist ein Engineering-Empfehlungsselektor.
+
+Unterschiedliche technisch gültige Empfehlungen bei gleicher Ausgangslage sind grundsätzlich erlaubt.
+
+Der Schutz liegt nicht in künstlicher Lösungsstabilität, sondern in den nachgelagerten technischen Verträgen und Prüfungen.
+
+
+8. MATERIALISIERBARKEIT ALS ZENTRALE QUALITÄTSGRENZE
+
+Eine Empfehlung ist nicht automatisch ausführbar.
+
+Vor jeder mutierenden Ausführung muss ADC beweisen können:
+
+- Welcher SetupEffect ist erforderlich?
+- Welcher SetupStep wird daraus erzeugt?
+- Welcher kontrollierte Executor ist zuständig?
+- Welches strukturierte Input-Schema erwartet dieser Executor?
+- Sind alle benötigten Felder vorhanden?
+- Ist die Installations-/Ausführungsdarstellung unterstützt?
+- Ist die Capability registriert?
+- Ist das Projekt-Scope korrekt?
+- Ist die Operation zulässig?
+- Ist Human Approval erforderlich und vorhanden?
+- Kann das Ergebnis danach verifiziert werden?
+
+Fehlt eine dieser Bedingungen, darf die Lösung nicht stillschweigend als automatisch ausführbar gelten.
+
+Mögliche Zustände:
+
+- already_satisfied
+- materializable
+- manual_review
+- unsupported
+- blocked
+- approval_required
+- executable
+- verification_required
+
+Das System arbeitet fail-closed:
+
+Nicht nachgewiesene Ausführbarkeit ist keine Ausführbarkeit.
+
+
+9. TECHNOLOGIEOFFENE SETUP-CONTRACTS
+
+ADC soll Setup nicht als Sammlung von Shell-Strings modellieren.
+
+Ein SetupEffect beschreibt semantisch, WAS geändert werden soll.
+
+Beispiele:
+
+- Python package installation
+- system package installation
+- project tool installation
+- container runtime setup
+- system configuration
+- device access
+- zukünftige Hardware-/Toolchain-Setup-Klassen
+
+Die konkrete Ausführung wird über strukturierte Contracts mit passenden Executoren abgebildet.
+
+Ziel:
+
+Engineering Decision
+→ semantischer Setup-Bedarf
+→ strukturierter Setup Contract
+→ kontrollierter Executor
+→ verifizierter EnvironmentState
+
+Kein frei formulierter Shell-String darf automatisch zu einer mutierenden Aktion werden.
+
+
+10. PROJECT INTELLIGENCE
+
+ADC soll bestehende Projekte deterministisch und read-only verstehen.
+
+Project Intelligence erfasst unter anderem:
+
+- Sprachen
+- Frameworks
+- Package-Systeme
+- Build-Systeme
+- Testsysteme
+- Firmware-Strukturen
+- Hardware-Indikatoren
+- CI-Konfiguration
+- Dokumentation
+- Repository-Struktur
+- Toolchain-Indikatoren
+- Projektbereiche
+- bestehende Konventionen
+
+Gemischte Projekte werden nicht künstlich vereinheitlicht.
+
+Beispiel:
+
+Backend: Python
+Frontend: TypeScript
+Firmware: C++
+Device Config: ESPHome
+Build: CMake + PlatformIO
+Tests: pytest + native tests
+
+ADC muss diese Bereiche getrennt verstehen und dennoch in einem gemeinsamen Engineering-Kontext zusammenführen können.
+
+
+11. PROJECT DEFINITIONS / MEMORY
+
+Project Intelligence beschreibt beobachtete Realität.
+
+Project Definitions beschreiben bewusst festgelegte Projektentscheidungen, Regeln, Begriffe und Zielzustände.
+
+Beispiele:
+
+- bevorzugte Hardwareplattform
+- definierte Schnittstelle
+- Architekturentscheidung
+- Sicherheitsregel
+- Naming-Konvention
+- festgelegte Zielumgebung
+- bewusst ausgeschlossene Technologie
+- Projektziel
+
+Project Definitions dürfen keine rohe Chat-Historie sein.
+
+Sie dürfen keine Approval-Autorität erzeugen.
+
+Sie sollen versionierbar sein:
+
+active
+superseded
+revoked
+
+Project Context führt beobachtete Realität, explizite Definitionen und technische Konfiguration zusammen, ohne widersprüchliche Quellen still zu überschreiben.
+
+
+12. QUALITY-ARCHITEKTUR
+
+ADC benötigt mehrere klar getrennte Testebenen.
+
+Unit Tests
+Prüfen lokale Funktionen und kleine Contracts.
+
+Subsystem Tests
+Prüfen jedes der sechs Subsysteme gegen seine fachlichen Invarianten.
+
+System Tests
+Prüfen Übergänge über Subsystemgrenzen.
+
+Real-System E2E
+Prüft die reale Integration mit Live-LLM, echten Toolchains, echten Filesystem-/Git-Effekten und realen externen Komponenten, soweit notwendig.
+
+Der Real-System-E2E ist Acceptance Evidence und nicht der primäre Debugger.
+
+
+13. E2E-LEARNING-LOOP
+
+Jeder lokal reproduzierbare Real-System-E2E-Defekt wird dauerhaft in die deterministische Testsuite überführt.
+
+Zielprozess:
+
+Real-System-E2E NIO
+→ Observation
+→ Root Cause
+→ Missing Contract
+→ Generalization
+→ FMEA Expansion
+→ Subsystem Permutations
+→ RED Tests
+→ Fix
+→ GREEN
+→ relevante Systemtests
+→ vollständige deterministische Suite
+→ Learning accepted
+→ erst dann nächster Real-System-E2E
+
+Nicht nur der konkrete Fehlerfall wird abgesichert.
+
+Es muss gefragt werden:
+
+Welche naheliegenden Fehler derselben Klasse hätten wir ohne diese Erweiterung beim nächsten E2E wahrscheinlich erst wieder teuer entdeckt?
+
+Beispiel:
+
+Beobachtung:
+Ein Compound-Shell-String erreicht einen Python-Package-Executor.
+
+Konkreter Fix:
+Dieser String wird nicht mehr akzeptiert.
+
+Generalisiertes Learning:
+Jeder Producer von ausführbaren SetupSteps muss mit dem Contract seines Consumers kompatibel sein.
+
+Weiterführende Testfrage:
+Welche anderen SetupEffect-/Executor-Paare könnten denselben Producer/Consumer-Vertragsbruch besitzen?
+
+
+14. FMEA ALS LEBENDES ENGINEERING-INSTRUMENT
+
+ADC soll langfristig für jedes Projekt eine lebende Engineering-FMEA führen.
+
+Sie wird abgeleitet aus:
+
+- Requirements
+- Architektur
+- Technologien
+- Toolchains
+- Hardware
+- Betriebsumgebung
+- bisherigen Fehlern
+- Tests
+- Real-System-Evidence
+
+Zusätzlich existiert eine zentrale wiederverwendbare Failure-Mode-Bibliothek.
+
+Jeder relevante Failure Mode soll verbunden sein mit:
+
+- Ursache
+- Wirkung
+- Kritikalität
+- Detection
+- Prevention
+- Control / Mitigation
+- Owner
+- Verification Evidence
+- Testfall
+- Timing-/Recovery-Aspekten
+- Residual Risk
+
+Wichtig ist die Trennung:
+
+PREVENT
+verhindert das Auftreten.
+
+DETECT
+erkennt den Fehler.
+
+CONTROL
+begrenzt die Wirkung.
+
+FMEA ist kein statisches Dokument, sondern Teil des Engineering-Lernsystems.
+
+
+15. DIAGNOSTIC TRACE
+
+Der Diagnostic Trace ist die technische Timeline des ADC-Laufs.
+
+Er soll zeigen:
+
+- welche Phase gestartet wurde
+- welche strukturierten Inputs vorhanden waren
+- welcher ADC-Baustein sie verarbeitet hat
+- welcher Provider / welches Modell eingesetzt wurde, soweit bekannt
+- welches strukturierte Ergebnis entstand
+- welche Approval-Grenze erreicht wurde
+- welcher Fehler auftrat
+- welche Evidence vorhanden ist
+- wo der Workflow beendet oder blockiert wurde
+
+Der Trace ist kein Chain-of-Thought-Speicher.
+
+Er enthält keine internen Modellgedanken.
+
+Er enthält keine Secrets, Tokens, Credential-Dumps oder unkontrolliert ausführbaren Befehle.
+
+Ziel:
+
+y = f(x)
+
+Für jeden relevanten Engineering-Handoff:
+
+x = strukturierter Input
+f = verantwortlicher ADC-Vertrag / Actor / Unit
+y = strukturierter Output
+
+
+16. CONTROLLED EXECUTION
+
+Jede mutierende Ausführung läuft über kontrollierte Grenzen.
+
+Controlled Execution prüft unter anderem:
+
+- Capability
+- Executor Identity
+- Operation Type
+- Project Scope
+- Working Directory
+- Approval Provenance
+- erlaubte Argumentstruktur
+- Timeout
+- Output-Grenzen
+- Environment-Allowlist
+
+Es gibt keinen allgemeinen „LLM darf Shell ausführen“-Pfad.
+
+Technische Kreativität bleibt im Decision Layer.
+
+Mutation bleibt in kontrollierten Executoren.
+
+
+17. GIT UND DELIVERY
+
+ADC darf fremde Benutzeränderungen nicht vereinnahmen.
+
+Change Provenance weist pro Run exakt nach:
+
+- Ausgangszustand
+- von ADC geänderte Dateien
+- resultierende Hashes
+- vorhandener Git-Zustand
+- Zugehörigkeit zum Run
+
+Controlled Git darf nur Dateien committen, deren Provenance vollständig belegt ist.
+
+Pre-existing User Changes dürfen bestehen bleiben, solange ADC sie nicht verändert.
+
+Wenn ADC eine bereits dirty Datei zusätzlich verändert, muss dies erkannt werden.
+
+Keine automatische Reparatur durch Reset, Stash, Clean, Rebase oder Force Push.
+
+Publish ist eine separate explizite Aktion nach lokalem Commit und separater Approval-Grenze.
+
+
+18. BEGRENZTE LOOPS UND RETRIES
+
+ADC darf keine unbegrenzten Engineering-Loops enthalten.
+
+Für kontrollierte Operationen sollen Budgets existieren:
+
+- operation timeout
+- stage timeout
+- run timeout
+- max attempts
+- max rework cycles
+- max same-state visits
+- LLM provider budgets
+
+Ein Workflow darf nicht endlos zwischen denselben Zuständen pendeln.
+
+Das betrifft Retry- und Rework-Mechanismen, nicht normale dauerhafte Service-Loops eines Servers.
+
+
+19. ENGINEERING SUPERVISOR – ZUKÜNFTIGE QUERSCHNITTSFUNKTION
+
+Langfristig entsteht ein Engineering Supervisor als querschnittliche Qualitätsschicht.
+
+Der Supervisor ist kein siebtes Subsystem.
+
+Er beobachtet S1 bis S6.
+
+Geplante Entwicklung:
+
+SUP-0.1 Timing Monitoring
+SUP-0.2 Loop & Retry Detection
+SUP-0.3 Runtime / Evidence Quality
+SUP-0.4 Project FMEA
+SUP-0.5 Engineering Reviewer
+SUP-0.6 Advisor
+SUP-0.7 Safety Gate
+SUP-1.0 Integrated Engineering Supervisor
+
+Der Supervisor beginnt read-only.
+
+Er soll zunächst erkennen, nicht automatisch reparieren.
+
+Später darf er begrenzt warnen, blockieren oder stoppen.
+
+Er soll niemals eigenmächtig Reset, Delete oder alternative Fixes ausführen.
+
+
+20. ADAPTIVE ENGINEERING INTELLIGENCE
+
+Langfristig soll ADC Engineering-Kompetenz aufbauen.
+
+Wissensarten bleiben getrennt:
+
+Knowledge
+= aktueller gültiger Projekt- und Systemvertrag
+
+Evidence
+= Tatsachen aus dem aktuellen Lauf
+
+Learning Memory
+= akzeptierte Erkenntnisse aus früheren Fehlern und Verbesserungen
+
+LLM / Neural Reasoning
+= flexible Analyse, Synthese und Vorschlagsbildung
+
+Deterministic Contracts
+= harte Regeln, die nicht vom LLM verhandelbar sind
+
+Ein Learning darf erst dauerhaft übernommen werden nach:
+
+Observation
+→ Analysis
+→ Test
+→ Evidence
+→ Acceptance
+→ Learning accepted
+
+Frühes Fine-Tuning ist nicht das Hauptziel.
+
+Solange ADC sich stark verändert, liegt die aktuelle Wahrheit in strukturierten Daten, Contracts und Evidence – nicht in Modellgewichten.
+
+
+21. SOFTWARE, FIRMWARE UND HARDWARE
+
+ADC entwickelt sich langfristig von einer Software-Entwicklungsplattform zu einer integrierten E/E-Engineering-Plattform.
+
+Zielrichtung Hardware:
+
+Requirement
+→ System Concept
+→ Block Diagram
+→ Schematic
+→ Simulation
+→ Component Selection
+→ BOM / Datasheets
+→ PCB / Layout
+→ ERC / DRC
+→ SI / PI / Thermal / Mechanical Checks
+→ DFM / DFT
+→ Manufacturing Data
+→ Prototype
+→ Bring-up
+→ Firmware / Programming
+→ Validation
+→ HIL
+→ Revision
+→ Documentation
+
+Auch dabei gelten dieselben Governance-Prinzipien:
+
+- Engineering Decision vor Mutation
+- kontrollierte Tool-/Device-Capabilities
+- Human Approval für physische Aktionen
+- reale Verification
+- Evidence
+- FMEA
+- nachvollziehbare Delivery
+
+
+22. TECHNOLOGIEOFFENHEIT
+
+ADC darf nicht implizit Python-zentriert werden.
+
+Python kann eine Implementierungstechnologie einzelner ADC-Komponenten sein.
+
+Die Architektur muss aber auf technologie-neutralen Begriffen beruhen:
+
+Requirement
+EngineeringDecision
+SetupEffect
+SetupPlan
+Capability
+Executor
+VerificationPlan
+VerificationResult
+EnvironmentState
+Outcome
+
+Ein neuer technischer Stack soll durch Adapter, Capabilities, Contracts und Executor-Implementierungen integrierbar sein, ohne das zentrale Architekturmodell umzubauen.
+
+
+23. EXISTING PROJECT FIRST
+
+Bestehende Projekte haben Vorrang vor ADC-Präferenzen.
+
+Wenn ein Repository bereits besitzt:
+
+- Buildsystem
+- Toolchain
+- Tests
+- CI
+- Projektstruktur
+- Konventionen
+
+dann erkennt und verwendet ADC diese zunächst.
+
+Ein Wechsel auf eine andere Toolchain oder Umgebung benötigt einen technischen Grund.
+
+Der Grund kann sein:
+
+- Requirement
+- Constraint
+- fehlende Capability
+- Sicherheitsgrenze
+- reproduzierbare Isolation
+- Plattforminkompatibilität
+- Benutzerentscheidung
+- nachgewiesener Engineering-Vorteil
+
+Nicht zulässig als alleiniger Grund:
+
+„ADC bevorzugt grundsätzlich Technologie X.“
+
+
+24. ENTSCHEIDUNGSVARIANZ IST ERLAUBT
+
+Ein wichtiges Zielbild-Prinzip lautet ausdrücklich:
+
+Mehrere unterschiedliche Engineering-Lösungen können gleichzeitig korrekt sein.
+
+Beispiel:
+
+Run 1 empfiehlt Host.
+Run 2 empfiehlt venv.
+Run 3 empfiehlt Docker.
+
+Das ist nicht automatisch ein Fehler.
+
+Es wird erst dann zum Problem, wenn eine Variante:
+
+- Requirements verletzt,
+- Constraints ignoriert,
+- nicht materialisierbar ist,
+- keinen kontrollierten Executor besitzt,
+- keine Verification besitzt,
+- Sicherheitsgrenzen umgeht,
+- unnötige oder unvertretbare Risiken erzeugt,
+- oder dem Benutzer als „ausführbar“ präsentiert wird, obwohl ADC sie nicht kontrolliert umsetzen kann.
+
+ADC soll Lösungsvielfalt ermöglichen, aber technische Ungültigkeit früh blockieren.
+
+
+25. BENUTZERDARSTELLUNG DER ENGINEERING-ENTSCHEIDUNG
+
+Der Benutzer soll nicht nur eine opaque Empfehlung sehen.
+
+Ziel ist eine strukturierte Darstellung:
+
+Empfehlung des Chairman
+- Name der Variante
+- kurze technische Begründung
+- erfüllte Requirements
+- benötigte Umgebung
+- benötigte Änderungen
+- Risiken
+- Verification-Strategie
+- erwartete Setup-Schritte
+- Human-Approval-Punkte
+
+Alternativen
+- Variante B
+- Variante C
+- Variante D
+
+Für jede Alternative:
+- Warum sie ebenfalls zulässig ist
+- Vor- und Nachteile
+- zusätzlicher Setup-Aufwand
+- zusätzliche Risiken
+- Verification-Folgen
+
+Der Benutzer kann dann bewusst entscheiden.
+
+
+26. VOLLSTÄNDIGER ZIEL-WORKFLOW
+
+Ein idealer ADC-Lauf sieht langfristig so aus:
+
+1. Benutzer formuliert Ziel oder Problem.
+
+2. ADC inspiziert das Projekt read-only.
+
+3. S1 erzeugt strukturierte Requirements mit Evidence.
+
+4. Requirements werden validiert.
+
+5. Der aktuelle EnvironmentState / Preflight wird beobachtet.
+
+6. S2 Engineering Council erzeugt mehrere Varianten.
+
+7. Council-Agenten reviewen die Varianten.
+
+8. Chairman synthetisiert und wählt eine Empfehlung.
+
+9. ADC prüft jede für Ausführung relevante Variante gegen:
+   Requirements,
+   Constraints,
+   Materialisierbarkeit,
+   Setup-/Executor-Contracts,
+   Verification-Möglichkeiten.
+
+10. Benutzer sieht Empfehlung und Alternativen.
+
+11. Benutzer entscheidet.
+
+12. S3 erzeugt einen konkreten SetupPlan.
+
+13. Nicht ausführbare oder manuelle Teile werden sichtbar markiert.
+
+14. Human Approval für mutierende Setup-Schritte.
+
+15. Controlled Setup Execution.
+
+16. Environment Re-Verification.
+
+17. S4 Development & Change.
+
+18. S5 reale Tests und Verification.
+
+19. Bei Fehler:
+    Diagnosis
+    → Missing Contract / Failure Mode
+    → Regression Test
+    → Fix
+    → Re-Verification.
+
+20. Final Approval.
+
+21. S6 Controlled Git.
+
+22. Separate Publish Approval.
+
+23. Controlled Publish.
+
+24. Outcome und Evidence werden persistiert.
+
+25. FMEA / Learning Memory werden nur nach akzeptierter Evidence aktualisiert.
+
+
+27. ZENTRALE NICHT-ZIELE
+
+ADC soll NICHT:
+
+- blind beliebige Shell-Kommandos von LLMs ausführen
+- eine bestimmte Technologie für alle Projekte erzwingen
+- identische Chairman-Empfehlungen bei identischem Input erzwingen
+- Human Approval durch KI ersetzen
+- E2E als Debugger für deterministisch testbare Fehler missbrauchen
+- fremde Benutzeränderungen committen
+- technische Entscheidungen allein aus Prompt-Text ohne Project Evidence treffen
+- LLM-Aussagen höher gewichten als reale Tests
+- unbegrenzte Retry-/Rework-Schleifen ausführen
+- Setup und Verification vermischen
+- Hardware-Aktionen ohne spezielle Capability und Human Approval ausführen
+- historische Learnings als aktuelle Evidence ausgeben
+- den Engineering Council zu einem starren deterministischen Solver reduzieren
+
+
+28. DEFINITION VON „AUF DEM RICHTIGEN WEG“
+
+ADC ist auf dem richtigen Weg, wenn jede neue Funktion die Kernarchitektur stärkt:
+
+- klare Subsystem-Verantwortung
+- technologie-neutrale Contracts
+- Producer/Artifact/Consumer-Klarheit
+- Human Authority an mutierenden Grenzen
+- kontrollierte Ausführung
+- reale Verification
+- Evidence statt Behauptung
+- systematisches Lernen aus Fehlern
+- zunehmende deterministische Testabdeckung
+- Erhalt technischer Lösungsfreiheit
+- keine künstliche Verengung des Engineering Councils
+
+Der Kern des Zielbilds lautet:
+
+ADC soll nicht die Vielfalt technischer Lösungen eliminieren.
+
+ADC soll sicherstellen, dass eine gewählte Lösung technisch valide, kontrolliert materialisierbar, verifizierbar und nachvollziehbar ist.
+
+Der Chairman bleibt der Synthese- und Empfehlungsselektor.
+
+Der Benutzer bleibt die Entscheidungs- und Freigabeautorität.
+
+Die deterministischen ADC-Contracts sichern Ausführbarkeit und Qualität ab.
+
+Damit entsteht eine Engineering-Plattform, die kreative technische Entscheidungsfindung mit kontrollierter, evidenzbasierter Ausführung verbindet.
