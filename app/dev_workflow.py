@@ -18,6 +18,17 @@ from app.requirement_validator import RequirementValidator
 from app.setup_executor import ExecutionResult, SetupExecutor
 from app.setup_planner import SetupPlanner
 from app.toolchain_materializer import ToolchainMaterializer
+from app.verification import all_trusted_verification_groups
+from app.engineering_decision import (
+    CandidateValidation,
+    EngineeringVariantSelection,
+    admissible_variants,
+    binding_materializer_diagnostics,
+    describe_engineering_variant_selection,
+    resolve_human_engineering_selection,
+    select_engineering_variant,
+    validate_candidates,
+)
 from app.development_testing_stage import DevelopmentTestingResult, DevelopmentTestingStage
 from app.controlled_rework_stage import ControlledReworkResult, ControlledReworkStage
 from app.diagnostic_trace import DiagnosticTraceError
@@ -39,14 +50,39 @@ class WorkflowBlockedError(WorkflowExecutionError):
 
 @dataclass(frozen=True)
 class WorkflowResult:
-    """Immutable result of discovery through Council-based planning."""
+    """Immutable result of discovery through Council-based planning.
 
-    discovery_result: DiscoveryResult
-    validation_result: ValidationResult
+    CLAUDE-ARCH-S2-013C: run() now stops at the productive S2.4 Human
+    Engineering Authority boundary whenever S2.3 found at least one
+    admissible candidate -- `setup_plan` is None and
+    `engineering_selection` (a display-only, non-binding
+    EngineeringVariantSelection -- see app.engineering_decision) is set
+    instead. Only an explicit call to
+    DevelopmentWorkflow.resolve_engineering_selection() -- never run()
+    itself -- may produce a populated `setup_plan`; that resumed
+    WorkflowResult carries `engineering_selection=None` and (since the
+    discovery/validation stages already ran before the pause and are not
+    part of the state that survives it) `discovery_result=None`,
+    `validation_result=None`.
+    """
+
+    discovery_result: DiscoveryResult | None
+    validation_result: ValidationResult | None
     preflight_result: PreflightResult
     council_result: CouncilResult
-    setup_plan: SetupPlan
+    setup_plan: SetupPlan | None = None
+    engineering_selection: "EngineeringVariantSelection | None" = None
+    platform: str | None = None
     project_context: object | None = None
+    # CLAUDE-ARCH-S2-013G: the raw ProjectIntelligence run() itself always
+    # computes (independent of whether a full ProjectContext could be
+    # composed -- see run()'s own docstring) -- the independent, ADC-owned
+    # evidence S2.3 Verification Feasibility's mechanism-compatibility
+    # check needs so a candidate's own provides_verification declaration
+    # can never be the last word (see app.verification.
+    # all_trusted_verification_groups()). Carried across the S2.4
+    # pause the same way preflight_result/platform already are.
+    project_intelligence: object | None = None
 
 
 @dataclass(frozen=True)
@@ -81,6 +117,7 @@ class DevelopmentWorkflow:
         development_testing_stage: DevelopmentTestingStage | None = None,
         controlled_rework_stage: ControlledReworkStage | None = None,
         diagnostic_trace: object | None = None,
+        execution_state_store: object | None = None,
     ) -> None:
         self._discovery = discovery
         self._validator = validator
@@ -96,6 +133,15 @@ class DevelopmentWorkflow:
         self._development_testing_stage = development_testing_stage
         self._controlled_rework_stage = controlled_rework_stage
         self._diagnostic_trace = diagnostic_trace
+        # Optional, additive (CLAUDE-E2E-003H): when supplied (always
+        # true in real productive composition -- see
+        # canonical_composition.py and mcp_transport.py), each SetupStep
+        # execution is guarded by a persisted, project/plan/step-scoped
+        # execution-state record instead of being launched unconditionally
+        # every time execute_approved() runs. Omitted, execute_approved()
+        # behaves exactly as it did before this task -- existing direct
+        # unit-test callers that do not need retry-safety are unaffected.
+        self._execution_state_store = execution_state_store
 
     def set_diagnostic_trace(self, diagnostic_trace) -> None:
         self._diagnostic_trace = diagnostic_trace
@@ -103,11 +149,28 @@ class DevelopmentWorkflow:
     def materialize_setup_plan(
         self, council_result: CouncilResult, project_id: str,
         preflight: PreflightResult | None = None,
+        platform: str | None = None,
+        project_root: str | None = None,
     ) -> SetupPlan:
-        """Provide the workflow-owned Council-to-SetupPlan boundary."""
+        """Provide the workflow-owned Council-to-SetupPlan boundary.
+
+        CLAUDE-PRE-E2E-009C: platform defaults to None (unchanged prior
+        behaviour -- no platform Constraint enforcement) so every existing
+        caller keeps working unmodified; a caller that has a platform to
+        supply (e.g. a future MissingToolchainSetupRequest.platform) can
+        now have it enforced here too, the same way the productive
+        run()-owned materialize() call already does.
+
+        `project_root` (CLAUDE-ADC-S23-VERIFICATION-IDENTITY-TARGET-
+        BINDING-FIX-003): optional and additive, forwarded unchanged to
+        ToolchainMaterializer.materialize() -- see its own docstring.
+        """
         if self._materializer is None:
             raise WorkflowExecutionError("No toolchain materializer has been configured.")
-        return self._materializer.materialize(council_result, project_id, preflight=preflight)
+        return self._materializer.materialize(
+            council_result, project_id, preflight=preflight, platform=platform,
+            project_root=project_root,
+        )
 
     def _trace(self, run_id, phase, event_type, status, summary, **kwargs):
         if self._diagnostic_trace is not None:
@@ -197,10 +260,21 @@ class DevelopmentWorkflow:
         self, project_info: object, project_id: str, run_id: str | None = None,
         project_context: object | None = None,
         user_request: str | None = None, source_interface: str | None = None,
+        project_intelligence: object | None = None,
     ) -> WorkflowResult:
         """Run discovery through Council-based planning only.
 
         This method never approves, rejects or executes setup steps.
+
+        `project_intelligence` (CLAUDE-ARCH-S2-013G): the real
+        ProjectIntelligence the caller's own inspection pass already
+        computed -- passed separately from `project_context` because a
+        ProjectContext is only composed when technical_config is
+        available, while ProjectIntelligence itself is always available.
+        Threaded, unmodified, into S2.3 Verification Feasibility's
+        mechanism-compatibility check (validate_candidates()) so a
+        candidate's own provides_verification declaration is never
+        accepted on its own say-so.
         """
 
         run_id = run_id or project_id
@@ -327,6 +401,9 @@ class DevelopmentWorkflow:
                 validation_result.normalized_requirements,
                 project_id,
                 validation_result.activations,
+                project_root=(
+                    project_context.project_root if project_context is not None else None
+                ),
             )
         except Exception as error:
             self._trace(run_id, "preflight", "failed", "failed", f"Preflight failed: {type(error).__name__}")
@@ -502,11 +579,93 @@ class DevelopmentWorkflow:
                 "Engineering Council did not reach a complete decision; planning was blocked."
             )
 
+        # CLAUDE-ARCH-S2-013C: closes CLAUDE-ARCH-S2-013A's CRITICAL
+        # finding. run() previously called select_engineering_variant()
+        # (which silently treats an admissible Chairman recommendation as
+        # the final selection, authority="chairman", whenever no explicit
+        # human_selected_variant_id is given) and materialize_decision()
+        # in the SAME synchronous call -- there was no productive human
+        # engineering-selection boundary at all. run() now ONLY ever
+        # determines S2.3 admissibility (never S2.4 selection, never S2.5,
+        # never S3) and, whenever at least one candidate is admissible,
+        # STOPS here and returns a display-only EngineeringVariantSelection
+        # (S2.4's own describe_engineering_variant_selection(), never a
+        # duplicated notion of admissibility/authority). Only an explicit,
+        # separate call to resolve_engineering_selection() -- always given
+        # a real human_selected_variant_id -- may proceed to S2.4's actual
+        # authority resolution, S2.5 and S3. A genuine dead end (ZERO
+        # admissible candidates) is still a terminal failure here: there is
+        # nothing for a human to decide between, so the existing
+        # NoEligibleEngineeringCandidateError (S2.3/S2.4's own, never
+        # duplicated) is still raised immediately, preserving the exact
+        # per-candidate evidence CLAUDE-E2E-NIO-010A already established.
         self._trace(run_id, "toolchain_materialization", "started", "started", "Toolchain materialization started")
+        platform = council_input.platform
+        trusted_verification_groups = all_trusted_verification_groups(project_intelligence)
+        # CLAUDE-ADC-S23-STRICT-IDENTITY-ENVIRONMENT-BINDING-FIX-004: the
+        # SAME project_root expression already used above for Preflight
+        # (project_context is only composed when technical_config is
+        # available) -- threaded into S2.3 admissibility so its pip_show
+        # verification-capability check can determine whether a "venv"
+        # candidate has an actual, resolvable target before it is ever
+        # exposed as admissible, exactly like materialization itself will
+        # later require.
+        run_project_root = (
+            project_context.project_root if project_context is not None else None
+        )
         try:
-            setup_plan = self._materializer.materialize(council_result, project_id, preflight=preflight_result)
+            validations = validate_candidates(
+                council_result, preflight_result, platform, trusted_verification_groups,
+                project_root=run_project_root,
+            )
+            # CLAUDE-ADC-S23-MATERIALIZER-DIAGNOSTICS-001: purely
+            # observational -- computed from, but never fed back into,
+            # `validations` above, and emitted regardless of whether the
+            # admissibility check below ends up raising. Never changes
+            # which candidates are admissible or which SetupPlan gets
+            # produced later.
+            for candidate_validation in validations:
+                for item_diagnostic in binding_materializer_diagnostics(
+                    candidate_validation.variant, preflight_result,
+                ):
+                    item_facts = {
+                        key: item_diagnostic[key] for key in (
+                            "variant_id", "requirement_ref", "type", "name",
+                            "technical_identity_present", "technical_identity_python_type",
+                            "technical_identity_check_applicable", "technical_identity_valid",
+                            "name_valid_as_identifier", "install_method_python_type",
+                        )
+                    }
+                    materializer_result = {
+                        key: item_diagnostic[key] for key in (
+                            "safe_identifier", "install_method_classification",
+                            "install_method_compatible", "materializer_action",
+                            "materializer_rejection_category",
+                        )
+                    }
+                    self._interface(
+                        run_id, "toolchain_materialization",
+                        "S2.3 materializer diagnostic for a binding toolchain item",
+                        info_x={
+                            "variant_id": item_diagnostic["variant_id"],
+                            "requirement_ref": item_diagnostic["requirement_ref"],
+                        },
+                        info_y={
+                            "materializer_action": item_diagnostic["materializer_action"],
+                            "materializer_rejection_category": item_diagnostic["materializer_rejection_category"],
+                        },
+                        verbose_x=item_facts,
+                        verbose_y=materializer_result,
+                        upstream_stage="engineering_council", downstream_stage="setup_plan",
+                        status="completed", identity=execution_identity("toolchain_materializer"),
+                        x_type="toolchain_item", y_type="materializer_binding_diagnostic",
+                    )
+            if not admissible_variants(validations):
+                resolve_human_engineering_selection(validations)
         except Exception as error:
-            self._trace(run_id, "toolchain_materialization", "failed", "failed", f"Toolchain materialization failed: {type(error).__name__}")
+            evidence = getattr(error, "validations", None) or getattr(error, "rejected", None)
+            details = {"failure_summary": str(error)[:3000]} if evidence else {}
+            self._trace(run_id, "toolchain_materialization", "failed", "failed", f"Toolchain materialization failed: {type(error).__name__}", details=details)
             self._interface(
                 run_id, "toolchain_materialization", "Toolchain Materializer produced no SetupPlan",
                 info_x={"result_id": council_result.id},
@@ -516,17 +675,195 @@ class DevelopmentWorkflow:
                 x_type="council_result", y_type="setup_plan",
             )
             raise
+
+        selection = describe_engineering_variant_selection(
+            council_result, preflight_result, platform,
+            chairman_recommendation=council_result.recommendation,
+            trusted_verification_groups=trusted_verification_groups,
+            project_root=run_project_root,
+        )
+        admissible_ids = [v.variant.id for v in validations if v.admissible]
+        self._trace(
+            run_id, "human_engineering_authority", "pending", "pending",
+            "Human engineering selection is pending", details={
+                "recommendation": council_result.recommendation,
+                "admissible_variant_ids": admissible_ids,
+            },
+            related_result_id=f"human-engineering-authority:{council_result.id}:pending",
+        )
+        self._interface(
+            run_id, "human_engineering_authority",
+            "S2.3 exposed the Chairman recommendation and admissible alternatives for human decision",
+            info_x={"result_id": council_result.id, "recommendation": council_result.recommendation},
+            info_y={"admissible_variant_ids": admissible_ids},
+            verbose_x={"result_id": council_result.id, "recommendation": council_result.recommendation,
+                       "variant_ids": [v.id for v in council_result.variants]},
+            verbose_y={"recommendation": self._variant_presentation(
+                next(v for v in validations if v.variant.id == council_result.recommendation)
+            ) if council_result.recommendation in {v.variant.id for v in validations} else None,
+                       "alternatives": [
+                           self._variant_presentation(v) for v in validations
+                           if v.variant.id != council_result.recommendation
+                       ]},
+            very_verbose_y={"validations": [self._variant_presentation(v) for v in validations]},
+            upstream_stage="engineering_council", downstream_stage="human_engineering_authority",
+            status="completed", identity=execution_identity("engineering_admissibility"),
+            x_type="council_result", y_type="engineering_variant_selection",
+        )
+        self._trace(
+            run_id, "workflow_end", "completed", "pending",
+            "Workflow stopped at pending human engineering selection",
+            details={"end_state": "human_engineering_authority_pending"},
+            related_result_id=f"workflow-end:{council_result.id}:pending",
+        )
+
+        return WorkflowResult(
+            discovery_result=discovery_result,
+            validation_result=validation_result,
+            preflight_result=preflight_result,
+            council_result=council_result,
+            setup_plan=None,
+            engineering_selection=selection,
+            platform=platform,
+            project_context=project_context,
+            project_intelligence=project_intelligence,
+        )
+
+    @staticmethod
+    def _variant_presentation(validation: "CandidateValidation") -> dict:
+        """CLAUDE-ARCH-S2-013C: the user-facing comparison evidence for one
+        candidate (ADC_Zielbild Abschnitt 25) -- Pro/Contra, risks,
+        verification strategy, rank/score and technical admissibility.
+        Reads only already-structured CouncilVariant/CandidateValidation
+        fields; invents nothing."""
+        variant = validation.variant
+        return {
+            "id": variant.id,
+            "name": variant.name,
+            "environment": variant.environment,
+            "admissible": validation.admissible,
+            "reasons": list(validation.reasons),
+            "advantages": list(variant.advantages),
+            "disadvantages": list(variant.disadvantages),
+            "risks": list(variant.risks),
+            "verification": variant.verification,
+            "rank": variant.rank,
+            "total_score": variant.total_score,
+            "consensus_level": variant.consensus_level,
+            "requirement_coverage": sorted({
+                item.requirement_ref for item in variant.toolchain
+            }),
+            "toolchain": [
+                {
+                    "requirement_ref": item.requirement_ref, "name": item.name,
+                    "type": item.type, "state": item.state,
+                }
+                for item in variant.toolchain
+            ],
+        }
+
+    def resolve_engineering_selection(
+        self,
+        council_result: CouncilResult,
+        preflight_result: PreflightResult | None,
+        platform: str | None,
+        project_id: str,
+        *,
+        human_selected_variant_id: str,
+        run_id: str | None = None,
+        project_intelligence: object | None = None,
+        project_root: str | None = None,
+    ) -> "WorkflowResult":
+        """Resumes a run() paused at the productive S2.4 Human Engineering
+        Authority boundary (CLAUDE-ARCH-S2-013C).
+
+        `project_root` (CLAUDE-ADC-S23-VERIFICATION-IDENTITY-TARGET-
+        BINDING-FIX-003): optional and additive, forwarded unchanged to
+        ToolchainMaterializer.materialize_decision() so the selected
+        candidate's own `environment` ("host"/"venv") is bound to a real
+        Python target before materialization -- see that method's own
+        docstring. Omitting it preserves the exact prior behavior.
+
+        `human_selected_variant_id` is REQUIRED and always an explicit
+        human action -- accepting the Chairman's own recommendation means
+        passing that exact id here, never omitting it; this is the one and
+        only place production code may call select_engineering_variant()
+        with a human_selected_variant_id, which guarantees
+        EngineeringDecision.selection_authority == "human" for every
+        candidate this method ever hands to S2.5, regardless of whether it
+        happens to equal the Chairman's recommendation. S2.3 admissibility
+        is (re)computed by select_engineering_variant() itself, exactly as
+        it was for every prior caller -- never weakened, never duplicated,
+        never overridable by the human_selected_variant_id: an unknown or
+        technically inadmissible id still raises
+        EngineeringVariantNotFoundError / ChairmanRecommendationInadmissibleError
+        unchanged. This method never re-invokes the Engineering Council
+        and never touches its bounded, automatic S2.3->S2.2 admissibility
+        repair budget (CLAUDE-ARCH-S2-012B/012D) -- it only ever resolves
+        an ALREADY-COMPLETE CouncilResult's admissible candidates."""
+        run_id = run_id or project_id
+        if self._materializer is None:
+            raise WorkflowExecutionError("No ToolchainMaterializer has been configured.")
+
+        self._trace(
+            run_id, "human_engineering_authority", "completed", "started",
+            "Explicit human engineering selection received",
+            details={"human_selected_variant_id": human_selected_variant_id},
+        )
+        try:
+            engineering_decision = select_engineering_variant(
+                council_result, preflight_result, platform,
+                chairman_recommendation=council_result.recommendation,
+                human_selected_variant_id=human_selected_variant_id,
+                trusted_verification_groups=all_trusted_verification_groups(project_intelligence),
+                project_root=project_root,
+            )
+        except Exception as error:
+            self._trace(
+                run_id, "human_engineering_authority", "failed", "failed",
+                f"Human engineering selection rejected: {type(error).__name__}",
+                details={"failure_summary": str(error)[:3000]},
+            )
+            raise
+        self._trace(
+            run_id, "human_engineering_authority", "completed", "completed",
+            "Human engineering selection resolved",
+            details={
+                "selected_variant_id": engineering_decision.variant.id,
+                "selection_authority": engineering_decision.selection_authority,
+            },
+            related_result_id=f"human-engineering-authority:{project_id}:{engineering_decision.variant.id}",
+        )
+
+        self._trace(run_id, "toolchain_materialization", "started", "started", "Toolchain materialization started")
+        try:
+            setup_plan = self._materializer.materialize_decision(
+                engineering_decision, project_id, preflight=preflight_result,
+                project_root=project_root,
+            )
+        except Exception as error:
+            evidence = getattr(error, "validations", None) or getattr(error, "rejected", None)
+            details = {"failure_summary": str(error)[:3000]} if evidence else {}
+            self._trace(run_id, "toolchain_materialization", "failed", "failed", f"Toolchain materialization failed: {type(error).__name__}", details=details)
+            self._interface(
+                run_id, "toolchain_materialization", "Toolchain Materializer produced no SetupPlan",
+                info_x={"result_id": council_result.id},
+                info_y={"available": False, "error_category": type(error).__name__},
+                upstream_stage="human_engineering_authority", downstream_stage="setup_plan",
+                status="failed", identity=execution_identity("toolchain_materializer"),
+                x_type="council_result", y_type="setup_plan",
+            )
+            raise
         self._trace(run_id, "toolchain_materialization", "completed", "completed", "Toolchain materialization completed", details={"plan_id": setup_plan.id, "step_count": len(setup_plan.steps)}, related_result_id=setup_plan.id)
         self._interface(
-            run_id, "toolchain_materialization", "Toolchain Materializer transformed CouncilResult into SetupPlan",
+            run_id, "toolchain_materialization", "Toolchain Materializer transformed the EngineeringDecision into a SetupPlan",
             info_x={"result_id": council_result.id},
             info_y={"plan_id": setup_plan.id, "step_count": len(setup_plan.steps)},
             verbose_x={"result_id": council_result.id,
-                       "recommendation": council_result.recommendation,
-                       "council_complete": council_result.council_complete,
-                       "council_degraded": council_result.council_degraded},
+                       "selected_variant_id": engineering_decision.variant.id,
+                       "selection_authority": engineering_decision.selection_authority},
             verbose_y={"plan_id": setup_plan.id, "step_count": len(setup_plan.steps)},
-            upstream_stage="engineering_council", downstream_stage="setup_plan",
+            upstream_stage="human_engineering_authority", downstream_stage="setup_plan",
             identity=execution_identity("toolchain_materializer"),
             x_type="council_result", y_type="setup_plan",
         )
@@ -535,12 +872,14 @@ class DevelopmentWorkflow:
         self._trace(run_id, "workflow_end", "completed", "pending", "Workflow stopped at pending setup approval", details={"end_state": "setup_approval_pending"}, related_result_id=f"workflow-end:{setup_plan.id}:pending")
 
         return WorkflowResult(
-            discovery_result=discovery_result,
-            validation_result=validation_result,
+            discovery_result=None,
+            validation_result=None,
             preflight_result=preflight_result,
             council_result=council_result,
             setup_plan=setup_plan,
-            project_context=project_context,
+            engineering_selection=None,
+            platform=platform,
+            project_context=None,
         )
 
     @staticmethod
@@ -603,7 +942,7 @@ class DevelopmentWorkflow:
         keys = (
             "project_kind", "area_count", "languages", "frameworks",
             "package_systems", "build_systems", "test_systems",
-            "firmware_indicators", "truncated",
+            "firmware_indicators", "truncated", "areas",
         )
         result: dict = {}
         for key in keys:
@@ -681,10 +1020,21 @@ class DevelopmentWorkflow:
         lets the configured executor route its actual subprocess work
         through the central controlled execution boundary (cwd
         confinement, environment allowlist, capability validation)
-        instead of an unconfined default. Omitting it preserves the
-        exact prior call shape for callers that do not yet have a
-        project root available at this point (e.g. MCP's
-        execute_setup_plan, which only carries a project_id).
+        instead of an unconfined default.
+
+        CLAUDE-E2E-003I: supplying project_root is exactly the signal
+        that this is a confined, productive mutation attempt -- and for
+        that shape, a configured execution_state_store is now MANDATORY,
+        not optional. There is no "productive mutation without replay
+        protection" mode: a DevelopmentWorkflow built without one
+        (real productive composition -- canonical_composition.py,
+        mcp_transport.py -- always builds one) fails closed with
+        WorkflowExecutionError the moment a confined execution is
+        attempted, rather than silently executing unguarded. Omitting
+        project_root entirely remains the one legitimate way to use this
+        method as a narrow, non-productive, unconfined low-level unit
+        helper (never reachable through Web/MCP/the application service,
+        all of which always supply a real project_root).
         """
 
         if plan.status != "approved":
@@ -719,13 +1069,85 @@ class DevelopmentWorkflow:
 
         def _execute(step: SetupStep) -> ExecutionResult:
             if project_root is not None:
-                return self._executor.execute(step, project_root)
+                if self._execution_state_store is None:
+                    raise WorkflowExecutionError(
+                        "Confined setup execution (project_root supplied) "
+                        "requires a configured execution_state_store; "
+                        "refusing to execute a mutating SetupStep without "
+                        "replay/restart-safety authority (CLAUDE-E2E-003I)."
+                    )
+                return self._execute_with_state_guard(step, project_root, plan.generation_id)
             return self._executor.execute(step)
 
         return tuple(
             _execute(step)
             for step in executable_steps
         )
+
+    def _execute_with_state_guard(
+        self, step: SetupStep, project_root: str, generation_id: str,
+    ) -> ExecutionResult:
+        """Persisted, project/generation/step-scoped retry/restart guard
+        (CLAUDE-E2E-003H, generation-aware since CLAUDE-E2E-003I) around
+        a single SetupStep's execution.
+
+        KNOWN SUCCESS/FAILURE is never silently repeated: the persisted
+        terminal result is returned as-is, through the exact same
+        ExecutionResult contract a real execution would produce -- no
+        second launch. A persisted IN_PROGRESS record (this step was
+        started by an earlier, now-gone attempt whose outcome was never
+        established) fails closed via SetupExecutionStateError rather
+        than guessing whether it is safe to run again. This function
+        makes no claim of exactly-once execution across an ADC crash
+        between launching the real mutation and persisting its result --
+        only that a KNOWN outcome is never blindly repeated, and an
+        UNKNOWN one is never silently treated as safe to repeat either.
+        """
+        import uuid
+
+        from app.setup_execution_state import FAILED, SUCCEEDED, SetupStepIdentity
+
+        identity = SetupStepIdentity.for_step(project_root, generation_id, step)
+        owner_id = uuid.uuid4().hex
+        # claim_or_report() -- not a separate get() then begin() -- is
+        # what makes this safe across genuinely separate OS processes
+        # (CLAUDE-E2E-003I): the whole check-and-claim decision is made
+        # under one real, cross-process advisory file lock, so two
+        # processes racing on the same identity cannot both observe
+        # NOT_STARTED and both proceed to execute.
+        status, record = self._execution_state_store.claim_or_report(identity, owner_id)
+        if status in (SUCCEEDED, FAILED):
+            payload = record.get("result") or {}
+            return ExecutionResult(
+                step_id=step.id,
+                success=bool(payload.get("success", status == SUCCEEDED)),
+                message=payload.get(
+                    "message",
+                    f"Setup step already {status}; not re-executed.",
+                ),
+                verification_passed=bool(payload.get("verification_passed", False)),
+            )
+        # status == "claimed": this call itself just persisted a fresh
+        # IN_PROGRESS record for this identity; a matching IN_PROGRESS/
+        # RECOVERY_REQUIRED record found instead would already have
+        # raised SetupExecutionStateError inside claim_or_report() above.
+        try:
+            result = self._executor.execute(step, project_root)
+        except Exception as error:
+            self._execution_state_store.finish(identity, owner_id, FAILED, {
+                "success": False,
+                "message": f"Execution raised {type(error).__name__}: {error}",
+                "verification_passed": False,
+            })
+            raise
+        self._execution_state_store.finish(
+            identity, owner_id, SUCCEEDED if result.success else FAILED,
+            {
+                "success": result.success, "message": result.message,
+                "verification_passed": result.verification_passed,
+            },
+        )
+        return result
 
     def execute_approved_and_run_development(
         self,
@@ -761,7 +1183,39 @@ class DevelopmentWorkflow:
             )
         self._trace(run_id, "setup_execution", "completed", "completed", "Setup execution completed", details={"result_count": len(setup_execution_results)})
 
-        controlled_rework_result = controlled_rework_stage.run(development_request)
+        try:
+            controlled_rework_result = controlled_rework_stage.run(development_request)
+        except Exception as error:
+            # CLAUDE-E2E-NIO-007A: a terminal provider/infrastructure
+            # exception during the rework attempt must not erase the
+            # last meaningful engineering failure that caused rework to
+            # be attempted in the first place (e.g. a real ESPHome
+            # verification failure). ControlledReworkStage.run() attaches
+            # the preserved initial_result/rework_request to the
+            # exception precisely so this can still be traced here,
+            # before the original exception is re-raised unchanged.
+            preserved_initial = getattr(error, "controlled_rework_initial_result", None)
+            preserved_request = getattr(error, "controlled_rework_request", None)
+            if preserved_initial is not None:
+                self._trace_development_cycles(
+                    run_id,
+                    ControlledReworkResult(initial_result=preserved_initial, rework_executed=False),
+                )
+                reason = getattr(preserved_request, "reason", "") or "unknown reason"
+                diagnostics = getattr(preserved_request, "diagnostics", "") or ""
+                # diagnostics (not reason) is where TestingStage.run()
+                # actually places the specific engineering-failure
+                # summary (e.g. an ESPHome validate/compile failure);
+                # reason is a fixed, generic string ("tests require
+                # rework"). Prefer diagnostics for the human-readable
+                # summary; keep both available in details.
+                self._trace(
+                    run_id, "controlled_rework", "failed", "failed",
+                    f"Controlled rework attempt failed ({type(error).__name__}) "
+                    f"after rework was required: {diagnostics or reason}",
+                    details={"diagnostics": diagnostics},
+                )
+            raise
         self._trace_development_cycles(run_id, controlled_rework_result)
         return SetupDevelopmentTestingResult(
             setup_execution_results=setup_execution_results,

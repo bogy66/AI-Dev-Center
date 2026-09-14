@@ -989,6 +989,76 @@ function closeModal() {
     document.getElementById('new-project-modal').classList.add('hidden');
 }
 
+// ---------- Repository import ----------
+let importRepoInFlight = false;
+
+function openImportRepoModal() {
+    document.getElementById('import-repo-modal').classList.remove('hidden');
+    document.getElementById('import-repo-source').value = '';
+    document.getElementById('import-repo-parent').value = '';
+    document.getElementById('import-repo-target-name').value = '';
+    hideImportRepoError();
+}
+
+function closeImportRepoModal() {
+    if (importRepoInFlight) return;
+    document.getElementById('import-repo-modal').classList.add('hidden');
+}
+
+function showImportRepoError(message) {
+    const el = document.getElementById('import-repo-error');
+    el.textContent = message;
+    el.classList.remove('hidden');
+}
+
+function hideImportRepoError() {
+    const el = document.getElementById('import-repo-error');
+    el.textContent = '';
+    el.classList.add('hidden');
+}
+
+function setImportRepoBusy(busy) {
+    importRepoInFlight = busy;
+    const confirmBtn = document.getElementById('confirm-import-repo-btn');
+    const cancelBtn = document.getElementById('cancel-import-repo-btn');
+    confirmBtn.disabled = busy;
+    cancelBtn.disabled = busy;
+    confirmBtn.textContent = busy ? 'Importiere...' : 'Importieren';
+}
+
+async function handleConfirmImportRepo() {
+    if (importRepoInFlight) return;
+
+    const source = document.getElementById('import-repo-source').value.trim();
+    const destinationParent = document.getElementById('import-repo-parent').value.trim();
+    const targetName = document.getElementById('import-repo-target-name').value.trim();
+
+    hideImportRepoError();
+    if (!source || !destinationParent) {
+        showImportRepoError('Repository-URL und Zielverzeichnis sind erforderlich.');
+        return;
+    }
+
+    setImportRepoBusy(true);
+    try {
+        const body = {source: source, destination_parent: destinationParent};
+        if (targetName) {
+            body.target_name = targetName;
+        }
+        await fetchJson('/api/projects/import', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body),
+        });
+        setImportRepoBusy(false);
+        document.getElementById('import-repo-modal').classList.add('hidden');
+        await fetchAndRenderProjects();
+    } catch (error) {
+        setImportRepoBusy(false);
+        showImportRepoError(error.message);
+    }
+}
+
 async function handleCreateProject() {
     const name = document.getElementById('project-name-input').value.trim();
     const dir = document.getElementById('project-dir-input').value.trim();
@@ -1393,12 +1463,12 @@ const helpSlides = [
     {title: '2. Beyond isolated code generation', html: () => `<p>A useful change needs project understanding, technical decisions, tools, tests, review and delivery controls. A code snippet alone does not provide that continuity.</p>`},
     {title: '3. The idea', html: () => `<p>Bring project facts, durable decisions, specialist AI roles, controlled tools and observable workflow state together around one project.</p>`},
     {title: '4. How the user works', html: () => `<p>Choose a Project, describe the desired outcome, follow live progress, inspect results and decide each Human Approval request.</p>`},
-    {title: '5. Existing projects', html: () => `<p>The current Web GUI opens an exact existing project root. AI Dev Center observes its languages, frameworks, tests, toolchains and conventions before proposing change.</p>`},
+    {title: '5. Existing projects', html: () => `<p>The Web GUI opens an exact existing project root, or imports one by cloning an existing remote Git repository (HTTPS, SSH, any provider) into a directory you choose, preserving its full history unchanged. Either way, AI Dev Center observes its languages, frameworks, tests, toolchains and conventions before proposing change, and never executes repository code automatically during import.</p>`},
     {title: '6. New projects', html: () => `<p>Greenfield projects are part of the product direction. The central workflow creates them through a controlled GreenfieldProjectMaterializer — safe, explicit and Git-initialized. The Real-System E2E test already exercises this greenfield path end to end.</p>`},
     {title: '7. More than conventional software', html: () => `<p>The scope includes software, firmware, embedded and hardware-near development. Physical device actions remain behind a separate appropriate approval boundary and are not automatically available.</p>`},
     {title: '8. AI team and Engineering Council', html: () => `<p>Specialist roles examine the project and alternatives. The Engineering Council compares approaches, and a Chairman participates in the technical recommendation before controlled action is considered. The Real-System E2E test exercises A1/A2/A3 and Chairman with real LLM providers and models.</p>`},
     {title: '9. Human control', html: () => `<p>Setup, capability use, final development acceptance and publish each have separate approvals. An approval never becomes permission for arbitrary shell commands or another approval boundary. The Real-System E2E test provides test-owned approval for Setup, Final and toolchain boundaries without granting arbitrary execution.</p>`},
-    {title: '10. Tools when needed', html: () => `<p>Missing toolchains are reported, not self-installed. Approved structured setup through the MissingToolchainSetup path and capability registration can extend future technologies without turning a fixed list into the product architecture. Only a command-free SetupPlan materialized from Project Intelligence and the Chairman Council result, followed by separate Human Approval, may invoke a registered structured installer — all exercised by the Real-System E2E test.</p>`},
+    {title: '10. Tools when needed', html: () => `<p>Missing toolchains are reported, not self-installed. Approved structured setup through the MissingToolchainSetup path and capability registration can extend future technologies without turning a fixed list into the product architecture. Only a command-free SetupPlan materialized from Project Intelligence and the Chairman Council result, followed by separate Human Approval, may invoke a registered structured installer — all exercised by the Real-System E2E test. Python-package installs are matched by real PyPI distribution identity, not a display name, and install, availability and post-install verification always target the same resolved Python interpreter — that target must actually resolve (a project-isolated interpreter that does not yet exist blocks automatic setup rather than falling back to another target) before a candidate is even considered admissible.</p>`},
     {title: '11. One project, multiple frontends', html: () => `<p>Web, Signal, API, CLI and MCP connect to the same central workflow. Signal is an adapter contract today; a concrete deployed provider remains future integration work. Active Signal chat and project bindings are strict 1:1.</p>`},
     {title: '12. Project Definitions / Memory', html: () => `<p>Observed project reality stays separate from explicit durable decisions and technical configuration. Conflicts are visible instead of silently merged, and raw chat history is not Project Memory.</p>`},
     {title: '13. Transparency while work happens', html: () => `<p>The central Diagnostic Trace records typed input x, the versioned processor identity f, and typed output y across planning handoffs. Type, interface, source and destination show the actual user intent entering through Web and reaching Requirement Discovery alongside separate observed Project Intelligence. This makes workflow execution more reproducible while keeping ADC entity versions distinct from configured AI provider and model identity. NONE suppresses diagnostic presentation without affecting central audit collection; NORMAL shows essential progress; INFO shows concise x/f/y; VERBOSE and VERY VERBOSE progressively reveal allowlisted structured data and safe metadata. At VERY VERBOSE level, sanitized effective LLM prompts (after template substitution) provide diagnostic transparency. Raw responses, private reasoning, credentials, and executable command payloads remain excluded at every level. Partial successful proposals and reviews remain inspectable after an incomplete Council. Trace rows use local HH:MM:SS.</p>`},
@@ -1412,6 +1482,17 @@ document.getElementById('cancel-project-btn').addEventListener('click', closeMod
 document.getElementById('create-project-btn').addEventListener('click', handleCreateProject);
 document.getElementById('cancel-delete-project-btn').addEventListener('click', closeDeleteProjectModal);
 document.getElementById('confirm-delete-project-btn').addEventListener('click', confirmDeleteProject);
+document.getElementById('import-repo-btn').addEventListener('click', openImportRepoModal);
+document.getElementById('cancel-import-repo-btn').addEventListener('click', closeImportRepoModal);
+document.getElementById('confirm-import-repo-btn').addEventListener('click', handleConfirmImportRepo);
+document.getElementById('import-repo-choose-parent-btn').addEventListener('click', async () => {
+    try {
+        const result = await fetchJson('/api/project/select-directory', {method: 'POST'});
+        document.getElementById('import-repo-parent').value = result.project_path;
+    } catch (error) {
+        showImportRepoError(`Directory selection: ${error.message}`);
+    }
+});
 document.getElementById('choose-directory-btn').addEventListener('click', async () => {
     try {
         const result = await fetchJson('/api/project/select-directory', {method: 'POST'});

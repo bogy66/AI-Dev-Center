@@ -56,6 +56,7 @@ from app.project_context import (
 )
 from app.execution_identity import execution_identity
 from app.greenfield_project import GreenfieldProjectApproval, GreenfieldProjectMaterializer
+from app.approved_plan_content import ApprovedPlanContentStore
 
 
 class ProjectSetupApplicationService:
@@ -75,6 +76,7 @@ class ProjectSetupApplicationService:
         project_definition_store: ProjectDefinitionStore | None = None,
         technical_config: object | None = None,
         greenfield_materializer: GreenfieldProjectMaterializer | None = None,
+        approved_content_store: ApprovedPlanContentStore | None = None,
     ) -> None:
         self._development_workflow = development_workflow
         self._project_inspector = project_inspector or ProjectInspector()
@@ -82,6 +84,7 @@ class ProjectSetupApplicationService:
         self._controlled_git_stage = controlled_git_stage or ControlledGitStage()
         self._controlled_publish_stage = controlled_publish_stage or ControlledPublishStage()
         self._capability_registry = capability_registry or DEFAULT_CAPABILITY_REGISTRY
+        self._approved_content_store = approved_content_store or ApprovedPlanContentStore()
         self._structured_installers = structured_installers or StructuredInstallerRegistry()
         self._verification_registry = verification_registry
         self._project_definition_store = project_definition_store or ProjectDefinitionStore()
@@ -323,6 +326,15 @@ class ProjectSetupApplicationService:
                 raise MissingToolchainSetupError("No matching TOOL_UNAVAILABLE verification step")
             materialized = self._development_workflow.materialize_setup_plan(
                 request.council_result, request.project_id,
+                platform=request.platform,
+                # CLAUDE-ADC-S23-STRICT-IDENTITY-ENVIRONMENT-BINDING-
+                # FIX-004: `root` is already validated above as this
+                # exact project's own project_root -- forwarding it here
+                # is what lets a "venv" candidate's own environment
+                # actually bind to a real target instead of silently
+                # inheriting whatever generic, pre-candidate target
+                # Preflight happened to stamp.
+                project_root=root,
             )
             setup_steps = tuple(
                 step for step in materialized.steps
@@ -615,11 +627,13 @@ class ProjectSetupApplicationService:
                         request.project_info, request.project_id,
                         user_request=request.user_request,
                         source_interface=request.source_interface,
+                        project_intelligence=intelligence,
                     )
                 return self._development_workflow.run(
                     request.project_info, request.project_id, run_id,
                     user_request=request.user_request,
                     source_interface=request.source_interface,
+                    project_intelligence=intelligence,
                 )
             if run_id is None:
                 return self._development_workflow.run(
@@ -627,12 +641,14 @@ class ProjectSetupApplicationService:
                     project_context=project_context,
                     user_request=request.user_request,
                     source_interface=request.source_interface,
+                    project_intelligence=intelligence,
                 )
             return self._development_workflow.run(
                 request.project_info, request.project_id, run_id,
                 project_context=project_context,
                 user_request=request.user_request,
                 source_interface=request.source_interface,
+                project_intelligence=intelligence,
             )
         except WorkflowBlockedError:
             # The central workflow already persisted the authoritative blocked
@@ -642,6 +658,43 @@ class ProjectSetupApplicationService:
             self._trace(trace_run_id, "workflow_end", "failed", "failed", f"Planning workflow failed: {type(error).__name__}", details={"end_state": "failed"}, related_result_id=f"planning:{trace_run_id}:failed")
             raise
 
+    def record_setup_approval_event(
+        self, project_id: str, plan_id: str, generation_id: str,
+        run_id: str | None = None,
+    ) -> None:
+        """Durably record, in the same central DiagnosticTraceStore
+        execute_approved_setup_and_development already uses, that a
+        real human-approval transition just happened for (project_id,
+        plan_id, generation_id) — under the same related_result_id
+        convention every other lifecycle transition in this file
+        already uses (final_approval, controlled_git, publish_approval,
+        ...).
+
+        CLAUDE-E2E-003I: generation_id (SetupPlan.generation_id) is
+        included in the related_result_id precisely so that Approval
+        for one generation is never indistinguishable from Approval
+        for another materialization of the same plan.id -- "Approval
+        for Generation A ≠ Approval for Generation B" even when every
+        other identifier (project_id, plan_id, step_id, target
+        identity) happens to be identical.
+
+        The resulting related_result_id
+        (f"setup-approval:{plan_id}:{generation_id}:approved") is later
+        reused, unchanged, as ApprovalProvenance.human_approval_ref: a
+        genuine reference to a real, persisted approval event this
+        method itself just recorded, not a value fabricated only at the
+        point of use. Only the service may write to its own trace
+        store, so this stays a method; the surrounding load/approve/save
+        sequence does not need service state and lives in the plain,
+        adapter-shared approve_setup_plan() function below instead.
+        """
+        self._trace(
+            run_id or plan_id, "setup_approval", "approved", "approved",
+            "Setup approval granted",
+            details={"project_id": project_id, "plan_id": plan_id, "generation_id": generation_id},
+            related_result_id=f"setup-approval:{plan_id}:{generation_id}:approved",
+        )
+
     def execute_approved_setup_and_development(
         self,
         plan,
@@ -649,20 +702,55 @@ class ProjectSetupApplicationService:
         project_path: str | Path,
         task: str,
         run_id: str | None = None,
+        *,
+        engineering_council_ref: str | None = None,
+        chairman_approval_ref: str | None = None,
     ) -> SetupDevelopmentTestingResult:
-        """Execute approved setup, then delegate development/testing once."""
+        """Execute approved setup, then delegate development/testing once.
+
+        engineering_council_ref / chairman_approval_ref, when both
+        supplied for an already-approved plan, let each step's already-
+        resolved, ecosystem-neutral target_executable be authorized for
+        this exact project scope via the existing, unmodified
+        CapabilityRegistry.register_approved() approval-provenance flow
+        (see app.execution.register_setup_step_targets) — pinning it
+        against later PATH lookup changes, without broadening any
+        bootstrap capability and without a second authorization
+        mechanism. This is strictly additive: when either reference is
+        omitted (the default, fully backward-compatible with every
+        existing caller), execution proceeds exactly as before,
+        continuing to rely on the bootstrap capability's live PATH-based
+        resolution. Selection during planning never authorizes anything
+        by itself — only an already-"approved" plan (checked here) can
+        ever result in a registration, and Human Approval — not this
+        method — is what made that status transition possible.
+        """
         if not isinstance(project_id, str) or not project_id.strip():
             raise ValueError("project_id must be a non-empty string")
         if not isinstance(task, str) or not task.strip():
             raise ValueError("task must be a non-empty string")
 
+        authorize_setup_plan_targets(
+            plan, project_path, engineering_council_ref, chairman_approval_ref,
+            self._capability_registry, self._approved_content_store,
+        )
+
         execution_run_id = run_id or plan.id
+        provenance_recorder = RunChangeProvenance(self._workflow_manager, execution_run_id, project_path)
+        # CLAUDE-E2E-NIO-006B: captured here, once, before any of this
+        # run's own mutating actions (setup execution, development,
+        # verification) begin -- see RunChangeProvenance.
+        # capture_working_tree_baseline() and ControlledGitStage.run()
+        # for why this is what lets a later Controlled Git delivery
+        # distinguish pre-existing foreign working-tree content from a
+        # genuinely new, run-introduced unapproved side effect.
+        provenance_recorder.capture_working_tree_baseline()
         request = DevelopmentRequest(
             project_id=project_id,
             project_path=project_path,
             task=task,
             run_id=execution_run_id,
-            provenance_recorder=RunChangeProvenance(self._workflow_manager, execution_run_id, project_path),
+            provenance_recorder=provenance_recorder,
         )
         stage = "development"
         try:
@@ -821,6 +909,9 @@ class ProjectSetupApplicationService:
             ready_for_git=approval.get("status") == "approved",
             provenance=state.get("change_provenance", {}).get(run_id, {}),
             all_provenance=state.get("change_provenance", {}),
+            pre_run_dirty_state=dict(
+                state.get("working_tree_baselines", {}).get(run_id) or {},
+            ),
         )
 
     def _trace_git_result(self, result: GitCommitResult):
@@ -914,3 +1005,181 @@ class ProjectSetupApplicationService:
         if development_status != "accepted":
             return FinalApprovalResult(run_id, "not_applicable", False, False)
         return self._workflow_manager.create_final_approval(run_id, development_status)
+
+
+# ---------------------------------------------------------------------------
+# Shared adapter-agnostic setup-plan lifecycle helpers (CLAUDE-E2E-003F).
+#
+# Web/API and MCP must both call these three functions instead of each
+# independently deciding how to persist a plan, approve one, or gather
+# the references needed to execute one -- a single, central
+# implementation for exactly the parts of the productive lifecycle that
+# would otherwise be duplicated per adapter. They are plain functions,
+# not ProjectSetupApplicationService methods, because none of them need
+# service-owned state beyond what is already passed in explicitly
+# (plan_store, service); ProjectSetupApplicationService itself
+# deliberately still does not own a WorkflowPlanStore reference (see
+# CLAUDE-E2E-003D/E) -- persistence remains the caller's dependency,
+# just no longer the caller's own bespoke logic.
+# ---------------------------------------------------------------------------
+
+def persist_setup_plan(plan_store, plan, council_result=None) -> None:
+    """Adapter-agnostic persistence step for a freshly materialized
+    SetupPlan and (when available) the Engineering Council reference it
+    was materialized from.
+
+    Reuses the existing WorkflowPlanStore introduced in
+    CLAUDE-E2E-003E -- there is no second, competing store. When
+    council_result carries no usable id/recommendation (an incomplete
+    Council run), the council reference is simply not saved rather than
+    saved with a fabricated value; a later execute_approved_plan_from_store()
+    call for this plan then finds no council reference and executes
+    exactly as it did before CLAUDE-E2E-003E/F, falling back to the
+    bootstrap capability's PATH-based resolution.
+    """
+    plan_store.save(plan)
+    if (
+        council_result is not None
+        and getattr(council_result, "id", None)
+        and getattr(council_result, "recommendation", None)
+    ):
+        plan_store.save_council_reference(
+            plan.project_id, plan.id,
+            council_result.id, council_result.recommendation,
+        )
+
+
+def approve_setup_plan(
+    service: "ProjectSetupApplicationService", plan_store,
+    project_id: str, plan_id: str, run_id: str | None = None,
+):
+    """Single authorization point for transitioning a persisted
+    SetupPlan to "approved". Web/API and MCP must both call this
+    instead of invoking SetupApproval.approve() directly: it keeps this
+    logic in exactly one shared place, and it durably records this
+    exact approval as a real DiagnosticTraceEvent via
+    service.record_setup_approval_event() -- see that method for why
+    the resulting reference is a genuine approval-event reference, not
+    a value fabricated only at the point of use.
+    """
+    plan = plan_store.load(project_id, plan_id)
+    approved_plan = SetupApproval.approve(plan)
+    plan_store.save(approved_plan)
+    # CLAUDE-E2E-003I-B: this is the one real Human Approval transition
+    # both Web and MCP go through -- record the exact execution-relevant
+    # content this approval authorizes for this exact generation, before
+    # any authorization or execution can ever be attempted. See
+    # app.approved_plan_content for why this closes a gap
+    # REQ-S3-GENERATION-CONTENT-IMMUTABILITY cannot: no SetupExecutionState
+    # record exists yet at this point.
+    service._approved_content_store.record_approved(approved_plan)
+    service.record_setup_approval_event(
+        project_id, plan_id, approved_plan.generation_id, run_id,
+    )
+    return approved_plan
+
+
+def execute_approved_plan_from_store(
+    service: "ProjectSetupApplicationService", plan_store,
+    project_id: str, plan_id: str,
+    project_path, task: str, run_id: str | None = None,
+) -> SetupDevelopmentTestingResult:
+    """Single execution entry point for adapters whose product scope
+    includes the full setup + development/testing/rework lifecycle
+    (today, Web/API): loads the persisted approved plan and its
+    ADC-owned Engineering Council reference from plan_store itself,
+    never from caller-supplied arguments. Neither adapter can supply or
+    substitute engineering_council_ref/chairman_approval_ref through
+    this function -- there is no parameter for a caller to do so;
+    whatever plan_store actually holds for (project_id, plan_id) is
+    what gets used, exactly as approve_setup_plan() and
+    persist_setup_plan() left it.
+
+    An adapter whose product scope is setup execution only (today,
+    MCP's execute_setup_plan tool) should call the narrower
+    execute_approved_setup_from_store() below instead -- it reaches
+    the exact same authorization gate (authorize_setup_plan_targets)
+    without also triggering a full development/testing/rework cycle.
+    """
+    plan = plan_store.load(project_id, plan_id)
+    council_refs = plan_store.load_council_reference(project_id, plan_id)
+    engineering_council_ref, chairman_approval_ref = (
+        council_refs if council_refs is not None else (None, None)
+    )
+    return service.execute_approved_setup_and_development(
+        plan, project_id, project_path, task, run_id,
+        engineering_council_ref=engineering_council_ref,
+        chairman_approval_ref=chairman_approval_ref,
+    )
+
+
+def authorize_setup_plan_targets(
+    plan, project_path,
+    engineering_council_ref: str | None, chairman_approval_ref: str | None,
+    capability_registry=None,
+    approved_content_store: ApprovedPlanContentStore | None = None,
+) -> None:
+    """The one shared gate deciding whether register_setup_step_targets()
+    should run at all for a given (plan, references) combination.
+
+    execute_approved_setup_and_development() and
+    execute_approved_setup_from_store() (MCP's narrower, setup-only
+    execution path) both call this exact function instead of each
+    independently re-deciding when registration is appropriate --
+    there is exactly one place this conditional (both references
+    present, and the plan is genuinely "approved") is written.
+
+    CLAUDE-E2E-003I-B: this is also the one shared place that verifies
+    the plan's CURRENT execution-relevant content still matches what
+    Human Approval actually authorized for this exact generation
+    (REQ-S3-APPROVED-PLAN-CONTENT-IMMUTABILITY) -- before any dynamic
+    capability registration is even attempted. Placed after the
+    reference/approval-status gate so this never runs for a plan that
+    is not genuinely approved (an unapproved plan is already rejected
+    by other, pre-existing means) and never for the fallback bootstrap-
+    capability shape (no council/chairman references at all), matching
+    exactly the shape register_setup_step_targets() itself protects.
+    """
+    if not (engineering_council_ref and chairman_approval_ref and plan.status == "approved"):
+        return
+    (approved_content_store or ApprovedPlanContentStore()).verify(plan)
+    from app.execution import DEFAULT_CAPABILITY_REGISTRY, register_setup_step_targets
+    register_setup_step_targets(
+        plan, project_path,
+        engineering_council_ref=engineering_council_ref,
+        chairman_approval_ref=chairman_approval_ref,
+        # CLAUDE-E2E-003I: generation_id is embedded so that Approval
+        # for one setup generation can never be mistaken for -- or reused
+        # as -- Approval for a different one, even for the identical
+        # plan.id/project/target. See record_setup_approval_event().
+        human_approval_ref=f"setup-approval:{plan.id}:{plan.generation_id}:approved",
+        capability_registry=capability_registry or DEFAULT_CAPABILITY_REGISTRY,
+    )
+
+
+def execute_approved_setup_from_store(
+    service: "ProjectSetupApplicationService", plan_store,
+    project_id: str, plan_id: str, project_path,
+):
+    """Central, single setup-only execution entry point for adapters
+    whose product scope does not include a development/testing/rework
+    cycle (today, MCP's execute_setup_plan tool). Loads the persisted
+    approved plan and its ADC-owned Council reference from plan_store
+    itself, authorizes via the exact same authorize_setup_plan_targets()
+    gate execute_approved_setup_and_development() uses, then executes
+    through DevelopmentWorkflow.execute_approved() -- the same
+    setup-execution primitive execute_approved_setup_and_development()
+    itself reaches internally (via
+    DevelopmentWorkflow.execute_approved_and_run_development()). Never
+    reimplements register_setup_step_targets()'s invocation logic.
+    """
+    plan = plan_store.load(project_id, plan_id)
+    council_refs = plan_store.load_council_reference(project_id, plan_id)
+    engineering_council_ref, chairman_approval_ref = (
+        council_refs if council_refs is not None else (None, None)
+    )
+    authorize_setup_plan_targets(
+        plan, project_path, engineering_council_ref, chairman_approval_ref,
+        service._capability_registry, service._approved_content_store,
+    )
+    return service._development_workflow.execute_approved(plan, project_path)

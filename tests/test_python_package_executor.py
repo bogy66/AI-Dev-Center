@@ -370,3 +370,193 @@ def test_custom_runner_falls_back_to_sys_executable():
 
     assert executor._uses_default_runner is False
     assert executor.python_executable == sys.executable
+
+
+# ---------------------------------------------------------------------------
+# CLAUDE-E2E-003: package/install_method distribution-identity comparison
+# ---------------------------------------------------------------------------
+
+def test_real_e2e_shape_case_mismatch_is_accepted():
+    """Exact real-E2E shape: package='ESPHome', install_method='pip
+    install esphome' must be accepted -- both identify the same
+    distribution and previously failed only due to case-sensitive
+    string comparison."""
+    runner = FakeRunner()
+    executor = PythonPackageExecutor(runner=runner, verifier=FakeVerifier(True))
+    step = make_step(package="ESPHome", install_method="pip install esphome")
+
+    executor.execute(step)
+
+    assert runner.calls == [[sys.executable, "-m", "pip", "install", "ESPHome"]]
+
+
+@pytest.mark.parametrize(
+    "package, install_method",
+    [
+        ("ESPHome", "pip install esphome"),
+        ("esphome", "pip install ESPHome"),
+        ("Requests", "pip install requests"),
+        ("REQUESTS", "python -m pip install requests"),
+    ],
+)
+def test_case_differences_are_accepted(package, install_method):
+    runner = FakeRunner()
+    executor = PythonPackageExecutor(runner=runner, verifier=FakeVerifier(True))
+    step = make_step(package=package, install_method=install_method)
+
+    executor.execute(step)
+
+    assert runner.calls == [[sys.executable, "-m", "pip", "install", package]]
+
+
+@pytest.mark.parametrize(
+    "package, install_method",
+    [
+        ("foo_bar", "pip install foo-bar"),
+        ("foo-bar", "pip install foo_bar"),
+        ("foo.bar", "pip install foo-bar"),
+        ("foo-bar", "python -m pip install foo.bar"),
+    ],
+)
+def test_hyphen_underscore_dot_differences_are_accepted(package, install_method):
+    runner = FakeRunner()
+    executor = PythonPackageExecutor(runner=runner, verifier=FakeVerifier(True))
+    step = make_step(package=package, install_method=install_method)
+
+    executor.execute(step)
+
+    assert runner.calls == [[sys.executable, "-m", "pip", "install", package]]
+
+
+def test_genuinely_different_distribution_still_rejected():
+    """Normalization equivalence must never smuggle a different package
+    through: 'esp-home' does not normalize to 'esphome'."""
+    runner = FakeRunner()
+    executor = PythonPackageExecutor(runner=runner, verifier=FakeVerifier(True))
+    step = make_step(package="ESPHome", install_method="pip install esp-home")
+
+    with pytest.raises(UnsupportedInstallMethodError):
+        executor.execute(step)
+
+    assert runner.calls == []
+
+
+@pytest.mark.parametrize(
+    "install_method",
+    [
+        "pip install ESPHome extra-package",
+        "pip install --user ESPHome",
+        "pip install ESPHome; echo pwned",
+        "pip install ESPHome && rm -rf /",
+        "python -c 'print(1)'",
+        "apt install esphome",
+    ],
+)
+def test_additional_options_and_shell_syntax_still_rejected(install_method):
+    runner = FakeRunner()
+    executor = PythonPackageExecutor(runner=runner, verifier=FakeVerifier(True))
+    step = make_step(package="ESPHome", install_method=install_method)
+
+    with pytest.raises(UnsupportedInstallMethodError):
+        executor.execute(step)
+
+    assert runner.calls == []
+
+
+def test_install_method_text_is_never_executed_directly():
+    """The install_method string itself must never appear as an argv
+    element passed to the runner -- only the internally-constructed,
+    fixed-shape pip command does."""
+    runner = FakeRunner()
+    executor = PythonPackageExecutor(runner=runner, verifier=FakeVerifier(True))
+    step = make_step(package="ESPHome", install_method="pip install esphome")
+
+    executor.execute(step)
+
+    assert len(runner.calls) == 1
+    assert "pip install esphome" not in runner.calls[0]
+    assert runner.calls[0] == [sys.executable, "-m", "pip", "install", "ESPHome"]
+
+
+def test_real_e2e_shape_reaches_default_execute_controlled_exactly_once(
+    monkeypatch, tmp_path,
+):
+    """CLAUDE-E2E-003 productive proof: the exact real-E2E shape
+    (package='ESPHome', install_method='pip install esphome') must
+    reach the central controlled execution boundary exactly once for
+    the *default* (productive) runner -- not raise
+    UnsupportedInstallMethodError, and not execute pip twice."""
+    import app.execution as execution_module
+
+    calls = []
+
+    def fake_execute_controlled(request, project_root):
+        calls.append((tuple(request.args), project_root))
+        return subprocess.CompletedProcess(list(request.args), 0, "1.0\n", "")
+
+    monkeypatch.setattr(execution_module, "execute_controlled", fake_execute_controlled)
+
+    executor = PythonPackageExecutor()  # default (productive) runner/verifier
+    step = make_step(
+        package="ESPHome", install_method="pip install esphome", version=None,
+    )
+
+    result = executor.execute(step, str(tmp_path))
+
+    assert result.success is True
+    # install + verification each call execute_controlled once == 2 total,
+    # never more (no double install).
+    assert len(calls) == 2
+    install_calls = [c for c in calls if "install" in c[0]]
+    assert len(install_calls) == 1
+    assert install_calls[0][0] == (
+        executor.python_executable, "-m", "pip", "install", "ESPHome",
+    )
+
+
+def test_real_default_verification_construction_uses_step_target_executable(
+    monkeypatch, tmp_path,
+):
+    """CLAUDE-ADC-S23-STRICT-IDENTITY-ENVIRONMENT-BINDING-FIX-004 (item
+    11c): a focused integration regression through the REAL, unmodified
+    `execute()` -> `_run_verification()` -> `distribution_query_command()`
+    construction path -- never bypassed via an injected verifier/runner
+    that would hide a target-binding bug -- with only the lowest-level
+    command execution faked (the same style as
+    test_real_e2e_shape_reaches_default_execute_controlled_exactly_once
+    above). Proves install target == post-install verification target
+    for an EXPLICIT `step.target_executable` (the productive case, once
+    RequirementPreflight/ToolchainMaterializer have resolved a real,
+    environment-bound target) -- not merely the constructor's own
+    fallback `self.python_executable`."""
+    import app.execution as execution_module
+
+    calls = []
+    explicit_target = "/fake/prepared-venv/bin/python"
+
+    def fake_execute_controlled(request, project_root):
+        calls.append(tuple(request.args))
+        if "install" in request.args:
+            return subprocess.CompletedProcess(list(request.args), 0, "", "")
+        return subprocess.CompletedProcess(list(request.args), 0, "1.2.3\n", "")
+
+    monkeypatch.setattr(execution_module, "execute_controlled", fake_execute_controlled)
+
+    executor = PythonPackageExecutor()  # default (productive) runner/verifier
+    step = make_step(
+        package="acme-widgets", install_method="pip", version=None,
+        target_executable=explicit_target,
+    )
+
+    result = executor.execute(step, str(tmp_path))
+
+    assert result.success is True
+    assert result.verification_passed is True
+    assert len(calls) == 2
+    install_call, verify_call = calls
+    assert install_call == (explicit_target, "-m", "pip", "install", "acme-widgets")
+    assert verify_call[0] == explicit_target
+    assert verify_call[-1] == "acme-widgets"
+    # The SAME target for both -- install target == verification target.
+    assert install_call[0] == verify_call[0] == explicit_target
+    assert install_call[0] != executor.python_executable

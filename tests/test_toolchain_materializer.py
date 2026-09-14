@@ -1,3 +1,5 @@
+import venv
+
 import pytest
 
 from app.council_models import CouncilResult, CouncilVariant, ToolchainItem
@@ -5,6 +7,7 @@ from app.requirement_model import (
     Requirement, RequirementActivation, RequirementType,
     PreflightRequirementResult, PreflightResult,
 )
+from app.requirement_preflight import RequirementPreflight
 from app.toolchain_materializer import (
     ToolchainMaterializationError,
     ToolchainMaterializer,
@@ -20,6 +23,7 @@ def make_item(
     version=None,
     state="needs_install",
     provided_by=None,
+    technical_identity=None,
 ):
     return ToolchainItem(
         requirement_ref=requirement_ref,
@@ -29,6 +33,7 @@ def make_item(
         version=version,
         state=state,
         provided_by=provided_by,
+        technical_identity=technical_identity,
     )
 
 
@@ -258,7 +263,7 @@ def test_active_manual_requirement_still_materializes_as_blocking_review():
     requirement = project_requirement("req-manual", RequirementType.CAPABILITY)
     activation = RequirementActivation(requirement.id, True, True)
     variant = make_variant(toolchain=(make_item(
-        requirement_ref=requirement.id, type=RequirementType.CAPABILITY,
+        requirement_ref=requirement.id, name=requirement.name, type=RequirementType.CAPABILITY,
         install_method="manual",
     ),))
 
@@ -277,7 +282,7 @@ def test_active_controlled_setup_remains_materializable_after_approval_boundary(
     activation = RequirementActivation(requirement.id, True, True)
     variant = make_variant(toolchain=(make_item(
         requirement_ref=requirement.id, name=requirement.name,
-        install_method="structured-installer",
+        install_method="python_package",
     ),))
 
     plan = ToolchainMaterializer().materialize(
@@ -321,6 +326,44 @@ def test_unsupported_variant_is_assessed_as_manual_review():
     assert assessment["items"][0]["status"] == "manual_review"
 
 
+def test_python_item_with_incompatible_compound_install_method_becomes_manual_review():
+    """CLAUDE-E2E-NIO-008A: a real Real-System-E2E reached 50% and
+    failed immediately on an approved SetupStep whose install_method was
+    a free-form, compound shell command sequence ("python3 -m venv
+    .venv && source .venv/bin/activate && pip install esphome") --
+    PythonPackageExecutor correctly rejected it (it must never execute
+    arbitrary shell chains), but ToolchainMaterializer had already let
+    it through into an "install" action step with no check that this
+    install_method is actually something the controlled executor for
+    this setup_effect can consume. Every executable SetupStep must be
+    compatible with its controlled executor BEFORE the SetupPlan can
+    become approvable/executable -- this must be demoted to
+    manual_review at materialization time instead, technology-neutrally
+    (not an ESPHome/venv/"source" special case: any package name would
+    reproduce this)."""
+    variant = make_variant(
+        toolchain=(
+            make_item(
+                requirement_ref="req-esphome",
+                name="esphome",
+                install_method=(
+                    "python3 -m venv .venv && source .venv/bin/activate "
+                    "&& pip install esphome"
+                ),
+            ),
+        )
+    )
+
+    result = ToolchainMaterializer().materialize(
+        make_result(variants=(variant,)),
+        "project-1",
+    )
+
+    step = result.steps[0]
+    assert step.action == "manual_review"
+    assert step.setup_effect is None
+
+
 def test_python_item_without_install_method_becomes_manual_review():
     variant = make_variant(
         toolchain=(
@@ -340,6 +383,172 @@ def test_python_item_without_install_method_becomes_manual_review():
     step = result.steps[0]
     assert step.action == "manual_review"
     assert step.package == "requests"
+
+
+# =========================================================================
+# CLAUDE-ADC-S23-INSTALL-METHOD-PRODUCER-REPAIR-FIX-001: install_method
+# producer/repair fixes (council_prompts.py contract + Chairman rework
+# hint routing) never change ToolchainMaterializer's own policy -- these
+# regressions prove the materializer side of that: a canonical,
+# post-fix install_method now reaches action="install" regardless of a
+# display name that still carries environment/placement wording (proof
+# A), a genuinely incompatible/arbitrary install_method still stays
+# manual_review no matter how "correct" the resolved identity looks
+# (proof D), and no install command or technical_identity is ever
+# inferred from the display name text (proof E).
+# =========================================================================
+
+
+def test_canonical_install_method_reaches_install_regardless_of_environment_worded_name():
+    """A (CLAUDE-ADC-S23-INSTALL-METHOD-PRODUCER-REPAIR-FIX-001): the
+    exact live-run shape (merged-2's item name carried "(in container)")
+    but with install_method corrected to one of the four canonical
+    forms council_prompts.py now documents -- must materialize as
+    action="install" with no install_method_incompatible rejection,
+    proving the fix is about install_method's SHAPE, never about
+    stripping/parsing the display name."""
+    variant = make_variant(
+        toolchain=(
+            make_item(
+                requirement_ref="req-bb77bad0",
+                name="ESPHome Python Package (in container)",
+                technical_identity="esphome",
+                install_method="pip install esphome",
+            ),
+        )
+    )
+
+    result = ToolchainMaterializer().materialize(
+        make_result(variants=(variant,)),
+        "project-1",
+    )
+
+    step = result.steps[0]
+    assert step.action == "install"
+    assert step.package == "esphome"
+
+
+@pytest.mark.parametrize(
+    "install_method",
+    ["pip", "python_package", "python -m pip install esphome"],
+)
+def test_every_canonical_install_method_form_reaches_install(install_method):
+    """A (permutation): all four documented canonical forms -- not just
+    "pip install <name>" -- must materialize as action="install"."""
+    variant = make_variant(
+        toolchain=(
+            make_item(
+                requirement_ref="req-bb77bad0",
+                name="ESPHome Python Package",
+                technical_identity="esphome",
+                install_method=install_method,
+            ),
+        )
+    )
+
+    result = ToolchainMaterializer().materialize(
+        make_result(variants=(variant,)),
+        "project-1",
+    )
+
+    step = result.steps[0]
+    assert step.action == "install"
+
+
+@pytest.mark.parametrize(
+    "install_method",
+    [
+        "python3 -m venv .venv && source .venv/bin/activate && pip install esphome",
+        "docker exec esphome-container pip install esphome",
+        "pip install esphome && esphome version",
+        "curl -sSL https://example.invalid/install.sh | sh",
+    ],
+)
+def test_compound_or_arbitrary_install_method_stays_manual_review_even_with_valid_identity(
+    install_method,
+):
+    """D (CLAUDE-ADC-S23-INSTALL-METHOD-PRODUCER-REPAIR-FIX-001): a
+    genuinely compound/arbitrary install_method must remain
+    manual_review even though technical_identity is perfectly valid --
+    the producer-prompt and Chairman-rework-hint fixes must never
+    weaken ToolchainMaterializer's/PythonPackageExecutor's own
+    controlled-executor compatibility contract."""
+    variant = make_variant(
+        toolchain=(
+            make_item(
+                requirement_ref="req-bb77bad0",
+                name="ESPHome Python Package",
+                technical_identity="esphome",
+                install_method=install_method,
+            ),
+        )
+    )
+
+    result = ToolchainMaterializer().materialize(
+        make_result(variants=(variant,)),
+        "project-1",
+    )
+
+    step = result.steps[0]
+    assert step.action == "manual_review"
+    assert step.setup_effect is None
+
+
+def test_install_method_incompatibility_is_never_masked_by_a_coincidentally_valid_name():
+    """E (CLAUDE-ADC-S23-INSTALL-METHOD-PRODUCER-REPAIR-FIX-001): even
+    when the display `name` alone happens to already be a valid
+    distribution identifier (so identity resolves via the existing,
+    unchanged name-fallback), ToolchainMaterializer must still classify
+    strictly from the item's OWN install_method field -- never infer,
+    rewrite, or wave through an install_method because the resolved
+    identity looks fine. Proves no new display-name-based install
+    command inference was introduced by this fix."""
+    variant = make_variant(
+        toolchain=(
+            make_item(
+                requirement_ref="req-bb77bad0",
+                name="esphome",
+                technical_identity=None,
+                install_method="docker exec devbox pip install esphome",
+            ),
+        )
+    )
+
+    result = ToolchainMaterializer().materialize(
+        make_result(variants=(variant,)),
+        "project-1",
+    )
+
+    step = result.steps[0]
+    assert step.package == "esphome"
+    assert step.action == "manual_review"
+
+
+def test_install_command_shaped_display_name_is_never_used_as_install_method():
+    """E (permutation): a display name that IS itself a full,
+    command-shaped string must never be read as install_method or used
+    to derive one -- only the item's own install_method field is ever
+    consulted, and the item's own name/technical_identity fields are
+    still the only source of identity."""
+    variant = make_variant(
+        toolchain=(
+            make_item(
+                requirement_ref="req-bb77bad0",
+                name="docker exec my-container pip install esphome",
+                technical_identity=None,
+                install_method=None,
+            ),
+        )
+    )
+
+    result = ToolchainMaterializer().materialize(
+        make_result(variants=(variant,)),
+        "project-1",
+    )
+
+    step = result.steps[0]
+    assert step.action == "manual_review"
+    assert step.package is None
 
 
 def test_missing_recommendation_raises():
@@ -554,6 +763,132 @@ def test_satisfied_preflight_item_keeps_variant_automatically_materializable():
 
     assert assessment["automatically_materializable"] is True
     assert assessment["items"][0]["status"] == "satisfied"
+
+
+# ---------------------------------------------------------------------------
+# CLAUDE-ADC-S23-STRICT-IDENTITY-ENVIRONMENT-BINDING-FIX-004 (#7): a
+# preflight "satisfied" result may suppress a PYTHON_PACKAGE item's
+# installation only when it is PROVEN to refer to the SAME effective
+# target this materialization actually selects -- RequirementPreflight
+# always stamps a pre-candidate, host-style target, which is only
+# coincidentally the same target a "venv" candidate's own environment
+# resolves to.
+# ---------------------------------------------------------------------------
+
+def _venv_python_package_variant(req_id, environment):
+    return CouncilVariant(
+        id="variant-1", name="variant-1", environment=environment,
+        toolchain=(make_item(
+            requirement_ref=req_id, name="acme-widgets",
+            technical_identity="acme-widgets", install_method="pip",
+        ),),
+    )
+
+
+def _satisfied_preflight_with_target(req_id, target_executable):
+    return PreflightResult(
+        id="pre-1", project_id="project-1", overall_ready=True,
+        results=(PreflightRequirementResult(
+            requirement_id=req_id, present=True, satisfied=True,
+            target_executable=target_executable,
+        ),),
+    )
+
+
+def test_host_satisfied_preflight_does_not_suppress_selected_venv_target(tmp_path):
+    """Reproduced defect: a host preflight reports the package already
+    present, but the selected candidate's environment is "venv" and no
+    real venv interpreter exists at project_root -- the host evidence
+    must never suppress this item; it must independently fail closed to
+    manual_review for the actually-selected (unresolved) venv target."""
+    preflight = _satisfied_preflight_with_target("req-venv", "/fake/host/bin/python")
+    variant = _venv_python_package_variant("req-venv", "venv")
+
+    plan = ToolchainMaterializer().materialize(
+        make_result(variants=(variant,)), "project-1",
+        preflight=preflight, project_root=str(tmp_path),
+    )
+
+    assert len(plan.steps) == 1, (
+        "host-satisfied evidence must not suppress a selected venv target"
+    )
+    step = plan.steps[0]
+    assert step.action == "manual_review"
+    assert step.target_executable is None
+
+
+def test_venv_a_satisfied_preflight_does_not_suppress_selected_venv_b(tmp_path):
+    """A "satisfied" result stamped against project A's own venv target
+    must not suppress installation for project B's venv -- even though
+    both candidates declare the SAME environment label ("venv"), a
+    different project_root resolves to a genuinely different target."""
+    project_a = tmp_path / "a"
+    project_b = tmp_path / "b"
+    venv.EnvBuilder(with_pip=False, clear=True).create(project_a / ".venv")
+    target_a = str(project_a / ".venv" / "bin" / "python")
+
+    preflight = _satisfied_preflight_with_target("req-venv", target_a)
+    variant = _venv_python_package_variant("req-venv", "venv")
+
+    plan = ToolchainMaterializer().materialize(
+        make_result(variants=(variant,)), "project-1",
+        preflight=preflight, project_root=str(project_b),
+    )
+
+    assert len(plan.steps) == 1, (
+        "a different project's venv target must not suppress this project's venv install"
+    )
+    step = plan.steps[0]
+    # project_b has no .venv at all -> fails closed, never inherits target_a.
+    assert step.action == "manual_review"
+    assert step.target_executable is None
+    assert step.target_executable != target_a
+
+
+def test_exact_same_venv_target_satisfied_still_suppresses(tmp_path):
+    """Positive control: when the preflight-stamped target IS proven
+    identical to the selected materialization target, "satisfied" keeps
+    suppressing installation exactly as before this fix."""
+    venv.EnvBuilder(with_pip=False, clear=True).create(tmp_path / ".venv")
+    target = str(tmp_path / ".venv" / "bin" / "python")
+
+    preflight = _satisfied_preflight_with_target("req-venv", target)
+    variant = _venv_python_package_variant("req-venv", "venv")
+
+    plan = ToolchainMaterializer().materialize(
+        make_result(variants=(variant,)), "project-1",
+        preflight=preflight, project_root=str(tmp_path),
+    )
+
+    assert len(plan.steps) == 0, "same-target satisfied evidence must still suppress installation"
+
+
+def test_unresolved_host_environment_does_not_pretend_target_equality(monkeypatch):
+    """When even "host" cannot resolve (every candidate is itself a venv
+    interpreter -- see TestResolveHostPythonExecutable), a "satisfied"
+    result stamped against some OTHER target must not be trusted for a
+    "host" candidate either -- target identity, never mere environment
+    label equality, gates suppression."""
+    import shutil
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    monkeypatch.setattr("sys.executable", "/fake/only-venv-available/bin/python")
+    import app.python_distribution as python_distribution_module
+    monkeypatch.setattr(
+        python_distribution_module, "_is_adc_controller_venv_interpreter",
+        lambda executable: True,
+    )
+    preflight = _satisfied_preflight_with_target("req-host", "/fake/host/bin/python")
+    variant = _venv_python_package_variant("req-host", "host")
+
+    plan = ToolchainMaterializer().materialize(
+        make_result(variants=(variant,)), "project-1",
+        preflight=preflight, project_root="/irrelevant/for/host",
+    )
+
+    assert len(plan.steps) == 1
+    step = plan.steps[0]
+    assert step.action == "manual_review"
+    assert step.target_executable is None
 
 
 def test_unsatisfied_requirement_still_materializes():
@@ -1305,7 +1640,7 @@ def test_provided_by_preserves_requirement_activation_and_preflight():
     )
     platform_req = Requirement(
         id="req-platform-active",
-        name="Active Platform",
+        name="ActivePlatform",
         type=RequirementType.PYTHON_PACKAGE,
         purpose="provider",
         required=True,
@@ -1335,7 +1670,7 @@ def test_provided_by_preserves_requirement_activation_and_preflight():
     variant = make_variant(toolchain=(
         make_item(
             requirement_ref=platform_req.id,
-            name="Active Platform",
+            name="ActivePlatform",
             type=RequirementType.PYTHON_PACKAGE,
             install_method="pip",
         ),
@@ -1481,7 +1816,7 @@ def test_unrelated_active_unsatisfied_requirement_still_blocks_with_provided_req
     )
     platform = Requirement(
         id="req-providing-platform",
-        name="Providing Platform",
+        name="ProvidingPlatform",
         type=RequirementType.PYTHON_PACKAGE,
         purpose="provider",
         required=True,
@@ -1508,7 +1843,7 @@ def test_unrelated_active_unsatisfied_requirement_still_blocks_with_provided_req
     variant = make_variant(toolchain=(
         make_item(
             requirement_ref=platform.id,
-            name="Providing Platform",
+            name="ProvidingPlatform",
             type=RequirementType.PYTHON_PACKAGE,
             install_method="pip",
         ),
@@ -1684,11 +2019,11 @@ def test_provided_by_longer_cycle_fails_closed():
         project_requirements=(a_req, b_req, c_req),
     )
     variant = make_variant(toolchain=(
-        make_item(requirement_ref=a_req.id, name="A",
+        make_item(requirement_ref=a_req.id, name=a_req.name,
                   type=RequirementType.SDK, install_method="manual", provided_by=b_req.id),
-        make_item(requirement_ref=b_req.id, name="B",
+        make_item(requirement_ref=b_req.id, name=b_req.name,
                   type=RequirementType.SDK, install_method="manual", provided_by=c_req.id),
-        make_item(requirement_ref=c_req.id, name="C",
+        make_item(requirement_ref=c_req.id, name=c_req.name,
                   type=RequirementType.SDK, install_method="manual", provided_by=a_req.id),
     ))
 
@@ -1724,11 +2059,11 @@ def test_provided_by_multi_hop_chain_to_materializable_root():
         project_requirements=(a_req, b_req, c_req),
     )
     variant = make_variant(toolchain=(
-        make_item(requirement_ref=a_req.id, name="A",
+        make_item(requirement_ref=a_req.id, name=a_req.name,
                   type=RequirementType.SDK, install_method="manual", provided_by=b_req.id),
-        make_item(requirement_ref=b_req.id, name="B",
+        make_item(requirement_ref=b_req.id, name=b_req.name,
                   type=RequirementType.SDK, install_method="manual", provided_by=c_req.id),
-        make_item(requirement_ref=c_req.id, name="C",
+        make_item(requirement_ref=c_req.id, name=c_req.name,
                   type=RequirementType.PYTHON_PACKAGE, install_method="pip"),
     ))
 
@@ -1779,9 +2114,9 @@ def test_provided_by_multi_hop_chain_to_satisfied_root():
         project_requirements=(a_req, b_req, c_req),
     )
     variant = make_variant(toolchain=(
-        make_item(requirement_ref=a_req.id, name="A",
+        make_item(requirement_ref=a_req.id, name=a_req.name,
                   type=RequirementType.SDK, install_method="manual", provided_by=b_req.id),
-        make_item(requirement_ref=b_req.id, name="B",
+        make_item(requirement_ref=b_req.id, name=b_req.name,
                   type=RequirementType.SDK, install_method="manual", provided_by=c_req.id),
         make_item(requirement_ref=c_req.id, name="Python",
                   type=RequirementType.EXECUTABLE, install_method=None,
@@ -1819,9 +2154,9 @@ def test_provided_by_chain_ending_in_manual_review_fails_closed():
         project_requirements=(a_req, b_req),
     )
     variant = make_variant(toolchain=(
-        make_item(requirement_ref=a_req.id, name="A",
+        make_item(requirement_ref=a_req.id, name=a_req.name,
                   type=RequirementType.SDK, install_method="manual", provided_by=b_req.id),
-        make_item(requirement_ref=b_req.id, name="B",
+        make_item(requirement_ref=b_req.id, name=b_req.name,
                   type=RequirementType.SDK, install_method="manual"),
     ))
 
@@ -1870,19 +2205,19 @@ def test_provided_by_resolution_is_order_independent():
         )
 
     order_1 = (
-        make_item(requirement_ref=a_req.id, name="A",
+        make_item(requirement_ref=a_req.id, name=a_req.name,
                   type=RequirementType.SDK, install_method="manual", provided_by=b_req.id),
-        make_item(requirement_ref=b_req.id, name="B",
+        make_item(requirement_ref=b_req.id, name=b_req.name,
                   type=RequirementType.SDK, install_method="manual", provided_by=c_req.id),
-        make_item(requirement_ref=c_req.id, name="C",
+        make_item(requirement_ref=c_req.id, name=c_req.name,
                   type=RequirementType.PYTHON_PACKAGE, install_method="pip"),
     )
     order_2 = (
-        make_item(requirement_ref=c_req.id, name="C",
+        make_item(requirement_ref=c_req.id, name=c_req.name,
                   type=RequirementType.PYTHON_PACKAGE, install_method="pip"),
-        make_item(requirement_ref=b_req.id, name="B",
+        make_item(requirement_ref=b_req.id, name=b_req.name,
                   type=RequirementType.SDK, install_method="manual", provided_by=c_req.id),
-        make_item(requirement_ref=a_req.id, name="A",
+        make_item(requirement_ref=a_req.id, name=a_req.name,
                   type=RequirementType.SDK, install_method="manual", provided_by=b_req.id),
     )
 
@@ -1919,13 +2254,13 @@ def test_independent_provider_ignores_its_own_provided_by():
     variant = make_variant(toolchain=(
         make_item(
             requirement_ref=platform.id,
-            name="Platform",
+            name=platform.name,
             install_method="pip",
             provided_by=sdk.id,
         ),
         make_item(
             requirement_ref=sdk.id,
-            name="Ignored SDK",
+            name=sdk.name,
             type=RequirementType.SDK,
             install_method="manual",
         ),
@@ -2106,3 +2441,272 @@ def test_controlled_backend_available_in_assessment():
     assert pkg_item["controlled_backend_available"] is True
     assert sdk_item["setup_effect"] == SetupEffect.PROJECT_TOOL_INSTALL
     assert sdk_item["controlled_backend_available"] is False
+
+
+def test_missing_config_file_item_is_deferred_not_a_blocking_manual_step():
+    """CLAUDE-E2E-001 end-to-end reproduction: a missing config_file
+    requirement -- a development-created artifact, not a prerequisite --
+    must not materialize into a blocking manual_review SetupStep at all.
+    Because its non-blocking, non-controlled activation now routes it
+    through the materializer's existing DEFERRED classification (the same
+    mechanism already used for any non-controlled, non-blocking item), it
+    is excluded from plan.steps and instead represented in
+    deferred_requirement_ids/deferred_requirements -- still visible in
+    the plan, just not an executable or blocking step. Uses
+    RequirementPreflight.check() directly (the real preflight->activation
+    chain), not a hand-built activation."""
+    requirement = Requirement(
+        id="req-config", name="project configuration file",
+        type=RequirementType.CONFIG_FILE, purpose="project configuration",
+        required=True, confidence=0.9,
+    )
+    preflight = RequirementPreflight.check((requirement,), "project-config")
+
+    variant = make_variant(toolchain=(make_item(
+        requirement_ref="req-config", name="project configuration file",
+        type=RequirementType.CONFIG_FILE, install_method=None,
+    ),))
+    plan = ToolchainMaterializer().materialize(
+        make_result(variants=(variant,)), "project-config",
+        preflight=preflight,
+    )
+
+    assert plan.steps == ()
+    assert "req-config" in plan.deferred_requirement_ids
+    assert any(r.id == "req-config" for r in plan.deferred_requirements)
+
+    activation = next(
+        a for a in plan.requirement_activations if a.requirement_id == "req-config"
+    )
+    assert activation.active is True
+    assert activation.blocks_current_operation is False
+
+
+def test_missing_config_file_item_with_explicit_blocking_activation_still_materializes():
+    """When an explicit activation overrides the development-artifact
+    default to blocking (e.g. a future enhancement determines the file
+    genuinely must pre-exist), the item is materialized as a blocking
+    manual_review step exactly as any other non-automatable prerequisite
+    would be -- proving the DEFERRED routing above is driven by the
+    activation, not a config_file-specific special case in the
+    materializer itself."""
+    requirement = Requirement(
+        id="req-config", name="project configuration file",
+        type=RequirementType.CONFIG_FILE, purpose="project configuration",
+        required=True, confidence=0.9,
+    )
+    explicit = RequirementActivation(
+        "req-config", True, True, "explicitly required by this workflow",
+    )
+    preflight = RequirementPreflight.check((requirement,), "project-config", (explicit,))
+
+    variant = make_variant(toolchain=(make_item(
+        requirement_ref="req-config", name="project configuration file",
+        type=RequirementType.CONFIG_FILE, install_method=None,
+    ),))
+    plan = ToolchainMaterializer().materialize(
+        make_result(variants=(variant,)), "project-config",
+        preflight=preflight,
+    )
+
+    assert len(plan.steps) == 1
+    step = plan.steps[0]
+    assert step.action == "manual_review"
+    assert step.setup_effect is None
+    assert plan.deferred_requirement_ids == ()
+
+
+def test_missing_hardware_prerequisite_item_remains_blocking():
+    """A genuine external prerequisite (hardware) materialized as a
+    manual_review item must keep the plan-level activation blocking,
+    proving the fix does not weaken prerequisite handling generally."""
+    requirement = Requirement(
+        id="req-device", name="ESP32 development board",
+        type=RequirementType.HARDWARE_COMPONENT, purpose="target hardware",
+        required=True, confidence=0.9,
+    )
+    preflight = RequirementPreflight.check((requirement,), "project-device")
+
+    variant = make_variant(toolchain=(make_item(
+        requirement_ref="req-device", name="ESP32 development board",
+        type=RequirementType.HARDWARE_COMPONENT, install_method=None,
+    ),))
+    plan = ToolchainMaterializer().materialize(
+        make_result(variants=(variant,)), "project-device",
+        preflight=preflight,
+    )
+
+    assert len(plan.steps) == 1
+    assert plan.steps[0].action == "manual_review"
+
+    activation = next(
+        a for a in plan.requirement_activations if a.requirement_id == "req-device"
+    )
+    assert activation.blocks_current_operation is True
+
+
+def test_real_e2e_shape_package_identity_passes_through_verbatim():
+    """CLAUDE-E2E-003 PART 3 / CLAUDE-E2E-003B/003C PART C proof: when
+    ToolchainItem.name is already a valid single structured technical
+    identifier (e.g. "ESPHome", no technical_identity supplied), it is
+    used verbatim as the compatibility fallback -- no second, competing
+    identity field is invented for this case, and no reparsing happens
+    in the materializer. install_method's differently-cased text passes
+    through unchanged too, since normalization lives at the comparison
+    points (PythonPackageExecutor, RequirementPreflight), not here."""
+    item = make_item(
+        requirement_ref="req-esphome", name="ESPHome",
+        type=RequirementType.PYTHON_PACKAGE, install_method="pip install esphome",
+    )
+    variant = make_variant(toolchain=(item,))
+    plan = ToolchainMaterializer().materialize(
+        make_result(variants=(variant,)), "project-esphome",
+    )
+
+    assert len(plan.steps) == 1
+    step = plan.steps[0]
+    assert step.package == "ESPHome"
+    assert step.install_method == "pip install esphome"
+    assert step.setup_effect == SetupEffect.PYTHON_PACKAGE_INSTALL
+
+
+def test_display_label_is_not_accepted_as_technical_identity():
+    """CLAUDE-E2E-003B/003C PART C core proof: a free-form, human-readable
+    display label such as "ESPHome CLI" must never be guessed at or
+    silently treated as a valid technical identity. With no
+    technical_identity supplied and a name that is not itself a valid
+    single structured token, the item cannot become a controlled
+    install."""
+    item = make_item(
+        requirement_ref="req-esphome", name="ESPHome CLI",
+        type=RequirementType.PYTHON_PACKAGE, install_method="pip install esphome",
+    )
+    variant = make_variant(toolchain=(item,))
+    plan = ToolchainMaterializer().materialize(
+        make_result(variants=(variant,)), "project-esphome",
+    )
+
+    assert len(plan.steps) == 1
+    step = plan.steps[0]
+    assert step.action == "manual_review"
+    assert step.package is None
+    assert step.setup_effect is None
+
+
+@pytest.mark.parametrize(
+    "display_name",
+    ["ESPHome CLI", "Requests Python Library", "Beautiful Soup package"],
+)
+def test_various_display_labels_are_rejected_as_technical_identities(display_name):
+    item = make_item(
+        requirement_ref="req-x", name=display_name,
+        type=RequirementType.PYTHON_PACKAGE, install_method="pip install some-package",
+    )
+    variant = make_variant(toolchain=(item,))
+    plan = ToolchainMaterializer().materialize(
+        make_result(variants=(variant,)), "project-x",
+    )
+
+    assert plan.steps[0].action == "manual_review"
+    assert plan.steps[0].package is None
+
+
+def test_structured_technical_identity_survives_to_setup_step():
+    """CLAUDE-E2E-003B/003C PART C: Council's explicit, structured
+    technical identity (ToolchainItem.technical_identity) is the
+    authoritative source for SetupStep.package when supplied -- it
+    survives materialization correctly even though the display name
+    ("ESPHome CLI") is not itself a valid technical identifier."""
+    item = ToolchainItem(
+        requirement_ref="req-esphome", name="ESPHome CLI",
+        technical_identity="esphome",
+        type=RequirementType.PYTHON_PACKAGE,
+        install_method="pip install esphome",
+    )
+    variant = make_variant(toolchain=(item,))
+    plan = ToolchainMaterializer().materialize(
+        make_result(variants=(variant,)), "project-esphome",
+    )
+
+    assert len(plan.steps) == 1
+    step = plan.steps[0]
+    assert step.action == "install"
+    assert step.package == "esphome"
+    assert step.setup_effect == SetupEffect.PYTHON_PACKAGE_INSTALL
+
+
+def test_technical_identity_takes_priority_over_name_when_both_valid():
+    """When both technical_identity and name are already valid,
+    structured tokens, technical_identity (the explicit technical
+    identity) is authoritative -- there is exactly one winner, never an
+    ambiguous or silently-inconsistent choice."""
+    item = ToolchainItem(
+        requirement_ref="req-x", name="requests",
+        technical_identity="Requests",
+        type=RequirementType.PYTHON_PACKAGE,
+        install_method="pip install requests",
+    )
+    variant = make_variant(toolchain=(item,))
+    plan = ToolchainMaterializer().materialize(
+        make_result(variants=(variant,)), "project-x",
+    )
+
+    assert plan.steps[0].package == "Requests"
+
+
+def test_multi_toolchain_fixture_generic_target_and_identity_representation():
+    """CLAUDE-E2E-003C PART 6 / multi-toolchain architecture proof: the
+    generic central identity/target concepts (ToolchainItem.technical_identity,
+    SetupStep.target_executable) can represent a Python package target,
+    a plain executable/tool target, and a hypothetical second-ecosystem
+    target fixture side by side in one plan -- WITHOUT any central
+    schema change and without executing anything or introducing a real
+    new installer. This is an architectural proof, not a new feature.
+    """
+    python_item = ToolchainItem(
+        requirement_ref="req-py", name="ESPHome CLI",
+        technical_identity="esphome",
+        type=RequirementType.PYTHON_PACKAGE,
+        install_method="pip install esphome",
+    )
+    tool_item = make_item(
+        requirement_ref="req-tool", name="CMake Build Tool",
+        technical_identity="cmake",
+        type=RequirementType.TOOLCHAIN, install_method="apt install cmake",
+    )
+    # A hypothetical, non-implemented second ecosystem (e.g. a future
+    # npm adapter): the SAME generic technical_identity field carries
+    # its package identity too, with no new field and no real installer.
+    hypothetical_npm_item = make_item(
+        requirement_ref="req-npm", name="Frontend build tool",
+        technical_identity="vite",
+        type="npm_package", install_method="npm install vite",
+    )
+
+    preflight = PreflightResult(
+        id="pre-multi", project_id="project-multi", overall_ready=True,
+        results=(
+            PreflightRequirementResult(
+                requirement_id="req-py", present=False,
+                target_executable="/isolated/toolchain/bin/python",
+            ),
+        ),
+    )
+
+    variant = make_variant(toolchain=(python_item, tool_item, hypothetical_npm_item))
+    plan = ToolchainMaterializer().materialize(
+        make_result(variants=(variant,)), "project-multi", preflight=preflight,
+    )
+
+    by_ref = {step.requirement_id: step for step in plan.steps}
+    assert by_ref["req-py"].package == "esphome"
+    assert by_ref["req-py"].target_executable == "/isolated/toolchain/bin/python"
+    # A non-PYTHON_PACKAGE step never receives a target_executable --
+    # the generic field exists but is meaningless outside the adapter
+    # that actually uses it (see SetupStep docstring).
+    assert by_ref["req-tool"].target_executable is None
+    assert by_ref["req-npm"].target_executable is None
+    # The hypothetical npm item's own technical_identity round-trips
+    # through the exact same generic field/materializer path used for
+    # Python, with no schema change and no npm-specific code added.
+    assert hypothetical_npm_item.technical_identity == "vite"
