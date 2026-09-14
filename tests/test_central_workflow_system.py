@@ -114,9 +114,23 @@ def _toolchain_item(req_ref, *,
                     state="needs_install",
                     version=None,
                     provided_by=None):
+    if name is None:
+        # A plain, hyphenated req_ref (e.g. "req-ctrl-pkg") is already a
+        # valid single structured distribution identifier, unlike the
+        # previous ".replace('-', ' ').title()" default -- which would
+        # have produced a free-form display label ("Req Ctrl Pkg") that
+        # CLAUDE-E2E-003B's materializer correctly refuses to treat as a
+        # technical Python distribution identity for PYTHON_PACKAGE
+        # items. For every OTHER type, CLAUDE-ARCH-S2-014C (F4) now
+        # mechanically compares this item's identity against the
+        # corresponding _requirement()'s own name -- which DOES use the
+        # ".replace('-', ' ').title()" form -- so the default here must
+        # match it for non-PYTHON_PACKAGE items to stay semantically
+        # coherent with the Requirement they claim to satisfy.
+        name = req_ref if type_ == RequirementType.PYTHON_PACKAGE else req_ref.replace("-", " ").title()
     return ToolchainItem(
         requirement_ref=req_ref,
-        name=name if name is not None else req_ref.replace("-", " ").title(),
+        name=name,
         type=type_,
         install_method=install_method,
         version=version,

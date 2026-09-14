@@ -31,8 +31,11 @@ from app.requirement_preflight import RequirementPreflight
 from app.workflow_plan_store import WorkflowPlanStore
 from app.setup_approval import SetupApproval
 from app.dev_workflow import DevelopmentWorkflow, WorkflowExecutionError
+from app.project_setup_application import ProjectSetupApplicationService
 from app.python_package_executor import PythonPackageExecutor
 from app.requirement_validator import RequirementValidator
+from app.setup_execution_state import SetupExecutionStateStore
+from app.approved_plan_content import ApprovedPlanContentStore
 from app.toolchain_materializer import ToolchainMaterializer
 
 
@@ -310,6 +313,19 @@ def _create_mcp_server() -> MCPServer:
         executor=executor,
         council=council,
         materializer=ToolchainMaterializer(),
+        execution_state_store=SetupExecutionStateStore(),
+    )
+    # A real ProjectSetupApplicationService wrapping this exact
+    # DevelopmentWorkflow instance -- not a second, divergent workflow
+    # -- solely so MCP's approve_setup_plan can durably record approval
+    # events through the same central DiagnosticTraceStore mechanism
+    # Web/API uses (CLAUDE-E2E-003F). Its own plan_project_setup/
+    # execute_approved_setup_and_development are not called by MCP;
+    # MCP keeps its own tool methods, only reusing this one shared
+    # trace-recording capability.
+    service = ProjectSetupApplicationService(
+        workflow, ProjectInspector(), technical_config=config,
+        approved_content_store=ApprovedPlanContentStore(),
     )
 
     return MCPServer(
@@ -321,6 +337,7 @@ def _create_mcp_server() -> MCPServer:
         plan_store=WorkflowPlanStore(),
         approval=SetupApproval,
         development_workflow=workflow,
+        service=service,
     )
 
 

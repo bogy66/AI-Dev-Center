@@ -17,6 +17,21 @@ class GitCommitRequest:
     ready_for_git: bool
     provenance: dict
     all_provenance: dict = field(default_factory=dict)
+    # CLAUDE-E2E-NIO-006B/006C: the full STATE (not merely path
+    # membership) of every path already untracked or modified in the
+    # project's working tree BEFORE this run's own mutating actions
+    # began (RunChangeProvenance.capture_working_tree_baseline()):
+    # {path: {"status": str, "content_hash": str | None}}. A path
+    # remaining dirty at commit time is exempt from the post-staging
+    # cleanliness check below ONLY if both its status and content hash
+    # are still identical to this baseline -- genuinely unchanged
+    # throughout the run. A path absent from this baseline (new), or
+    # present but with a different status/content hash (an additional,
+    # unauthorized mutation of an already-dirty path), still blocks
+    # delivery. Empty by default so direct GitCommitRequest construction
+    # (e.g. existing unit tests) is unaffected unless a caller
+    # explicitly supplies a baseline.
+    pre_run_dirty_state: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -96,6 +111,61 @@ class ControlledGitStage:
         staged_after = set(self._nul_paths(staged_check.stdout))
         if staged_after != set(repo_paths):
             return self._failed(request, ("staged paths differ from validated run paths",))
+
+        # CLAUDE-E2E-NIO-006A: a real Real-System-E2E reached 93% and
+        # failed immediately after this method reported "committed"
+        # while the project working tree still contained an untracked
+        # .gitignore -- a side effect of a controlled, ADC-invoked
+        # external verification tool (esphome compile), never staged
+        # or accounted for because it was never part of the run's
+        # provenance. "committed" must mean the working tree is fully
+        # accounted for by the approved provenance, not merely that the
+        # intended paths were themselves correctly staged.
+        #
+        # CLAUDE-E2E-NIO-006B: that check was too broad -- it also
+        # blocked commits over pre-existing, user-owned foreign content
+        # that has nothing to do with this run and must remain safely
+        # committable, exactly as ADC guaranteed before 006A. The
+        # distinction is request.pre_run_dirty_state -- the exact STATE
+        # of every path already untracked/modified BEFORE this run's own
+        # mutating actions began (captured once, at run start, by
+        # RunChangeProvenance.capture_working_tree_baseline(); see
+        # app/change_provenance.py).
+        #
+        # CLAUDE-E2E-NIO-006C: path membership alone is not enough -- a
+        # pre-existing dirty path could be mutated AGAIN, by an
+        # unapproved external/tool side effect, during the run, while
+        # remaining the same path. A path found in the baseline is only
+        # exempt when BOTH its git status class and its content hash are
+        # still identical to what was captured at run start; any
+        # difference (or a path entirely absent from the baseline) is
+        # never silently staged, committed, reverted or deleted, but
+        # always named and blocks delivery.
+        scope = root.relative_to(repo_root).as_posix()
+        remaining_check = self._git(repo_root, "status", "--porcelain", "-z", "--", scope)
+        if remaining_check.returncode:
+            return self._failed(
+                request, ("working-tree cleanliness check failed",),
+                remaining_check.stderr.strip(),
+            )
+        unaccounted = []
+        for entry in self._nul_paths(remaining_check.stdout):
+            status, path = entry[:2], entry[3:]
+            if path in repo_paths:
+                continue
+            baseline_state = request.pre_run_dirty_state.get(path)
+            if baseline_state is None:
+                unaccounted.append((path, "new working-tree change outside approved provenance"))
+                continue
+            current_hash = self._hash(repo_root / path)
+            if baseline_state.get("status") != status or baseline_state.get("content_hash") != current_hash:
+                unaccounted.append((path, "additional unauthorized mutation of an already pre-existing change"))
+        unaccounted.sort()
+        if unaccounted:
+            return self._failed(
+                request,
+                tuple(f"{reason}: {path}" for path, reason in unaccounted),
+            )
 
         committed = self._git(repo_root, "commit", "-m", request.commit_message)
         if committed.returncode:

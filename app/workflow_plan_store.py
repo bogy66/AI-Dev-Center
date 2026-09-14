@@ -77,6 +77,70 @@ class WorkflowPlanStore:
         value = data.get("project_root") if isinstance(data, dict) else None
         return value if isinstance(value, str) and value.strip() else None
 
+    def _council_reference_marker_path(self, project_id: str, plan_id: str) -> Path:
+        return self._project_root(project_id) / f"{plan_id}._council_reference.json"
+
+    def save_council_reference(
+        self, project_id: str, plan_id: str,
+        engineering_council_ref: str, chairman_approval_ref: str,
+    ) -> None:
+        """Associate one plan's Engineering Council/Chairman references
+        with (project_id, plan_id).
+
+        Not a second registry, and not a shortcut around approval: it
+        lives in the same project_id-scoped directory this store already
+        owns, alongside that plan's own SetupPlan file, solely so a
+        caller that only has (project_id, plan_id) after the persisted
+        approval gap — having lost the in-memory CouncilResult the plan
+        was originally materialized from — can still recover the small,
+        stable identifiers needed to build a real, non-fabricated
+        ApprovalProvenance for capability authorization, without
+        reloading (or inventing a way to reload) the full CouncilResult.
+        """
+        if not engineering_council_ref or not str(engineering_council_ref).strip():
+            raise WorkflowPlanStoreError("engineering_council_ref must be a non-empty string.")
+        if not chairman_approval_ref or not str(chairman_approval_ref).strip():
+            raise WorkflowPlanStoreError("chairman_approval_ref must be a non-empty string.")
+
+        directory = self._project_root(project_id)
+        directory.mkdir(parents=True, exist_ok=True)
+        marker = self._council_reference_marker_path(project_id, plan_id)
+        try:
+            marker.write_text(
+                json.dumps({
+                    "engineering_council_ref": str(engineering_council_ref),
+                    "chairman_approval_ref": str(chairman_approval_ref),
+                }),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            raise WorkflowPlanStoreError(
+                f"Could not persist council reference for '{plan_id}'."
+            ) from exc
+
+    def load_council_reference(
+        self, project_id: str, plan_id: str,
+    ) -> tuple[str, str] | None:
+        """Return (engineering_council_ref, chairman_approval_ref) for
+        (project_id, plan_id), or None if never saved."""
+        marker = self._council_reference_marker_path(project_id, plan_id)
+        if not marker.is_file():
+            return None
+        try:
+            data = json.loads(marker.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        council_ref = data.get("engineering_council_ref")
+        chairman_ref = data.get("chairman_approval_ref")
+        if (
+            isinstance(council_ref, str) and council_ref.strip()
+            and isinstance(chairman_ref, str) and chairman_ref.strip()
+        ):
+            return council_ref, chairman_ref
+        return None
+
     def save(self, plan: SetupPlan) -> Path:
         if not isinstance(plan, SetupPlan):
             raise TypeError("plan must be an instance of SetupPlan")
@@ -128,22 +192,53 @@ class WorkflowPlanStore:
             ) from exc
 
     @staticmethod
-    def _deserialize(data: dict) -> SetupPlan:
+    def _deserialize_step(step: dict):
         from app.requirement_model import SetupStep
 
+        return SetupStep(
+            id=step["id"],
+            requirement_id=step["requirement_id"],
+            action=step["action"],
+            install_method=step.get("install_method"),
+            package=step.get("package"),
+            version=step.get("version"),
+            command=step.get("command"),
+            verification_after=step.get("verification_after"),
+            is_approved=step["is_approved"],
+            setup_effect=step.get("setup_effect"),
+            # target_executable is the current (CLAUDE-E2E-003C) generic
+            # field name. A plan persisted by the short-lived, uncommitted
+            # CLAUDE-E2E-003B format used "target_python" instead -- read
+            # it as a compatibility fallback so an already-saved 003B-era
+            # plan still round-trips correctly, without ever writing that
+            # old key back out (save() always uses the current schema).
+            target_executable=step.get("target_executable", step.get("target_python")),
+        )
+
+    @staticmethod
+    def _deserialize_activation(activation: dict):
+        from app.requirement_model import RequirementActivation
+
+        return RequirementActivation(
+            requirement_id=activation["requirement_id"],
+            active=activation["active"],
+            blocks_current_operation=activation["blocks_current_operation"],
+            reason=activation.get("reason", ""),
+        )
+
+    @staticmethod
+    def _deserialize(data: dict) -> SetupPlan:
         steps = tuple(
-            SetupStep(
-                id=step["id"],
-                requirement_id=step["requirement_id"],
-                action=step["action"],
-                install_method=step.get("install_method"),
-                package=step.get("package"),
-                version=step.get("version"),
-                command=step.get("command"),
-                verification_after=step.get("verification_after"),
-                is_approved=step["is_approved"],
-            )
+            WorkflowPlanStore._deserialize_step(step)
             for step in data["steps"]
+        )
+        rollback_steps = tuple(
+            WorkflowPlanStore._deserialize_step(step)
+            for step in data.get("rollback_steps", ())
+        )
+        requirement_activations = tuple(
+            WorkflowPlanStore._deserialize_activation(activation)
+            for activation in data.get("requirement_activations", ())
         )
 
         created_at_raw = data.get("created_at")
@@ -153,14 +248,44 @@ class WorkflowPlanStore:
             else None
         )
 
+        generation_id = WorkflowPlanStore._resolve_generation_id(data)
+
         return SetupPlan(
             id=data["id"],
             project_id=data["project_id"],
             steps=steps,
             requires_user_approval=data["requires_user_approval"],
-            rollback_steps=tuple(data.get("rollback_steps", ())),
+            rollback_steps=rollback_steps,
             warnings=tuple(data.get("warnings", ())),
             status=data["status"],
             created_at=created_at,
+            requirement_activations=requirement_activations,
+            deferred_requirement_ids=tuple(data.get("deferred_requirement_ids", ())),
+            unsupported_backend_effects=tuple(data.get("unsupported_backend_effects", ())),
             provided_requirement_ids=tuple(data.get("provided_requirement_ids", ())),
+            generation_id=generation_id,
         )
+
+    @staticmethod
+    def _resolve_generation_id(data: dict) -> str:
+        """CLAUDE-E2E-003I legacy/corrupt generation_id handling.
+
+        A plan persisted before generation_id existed (003E-003H) has no
+        such key at all -- that is the ONLY case treated as legacy: a
+        deterministic, restart-stable identity bound to this exact
+        plan.id (f"legacy-{plan.id}"), distinct in shape from any real,
+        randomly-generated generation_id, so it can never collide with a
+        genuinely new materialization's generation and never lets an old
+        SUCCEEDED execution-state record silently apply to a future new
+        one. A PRESENT but malformed value (not a non-empty string) is
+        corrupt, not legacy, and fails closed rather than being guessed at.
+        """
+        if "generation_id" not in data:
+            return f"legacy-{data['id']}"
+        value = data.get("generation_id")
+        if not isinstance(value, str) or not value.strip():
+            raise WorkflowPlanStoreError(
+                f"Setup plan '{data.get('id')}' has a corrupt generation_id; "
+                "refusing to guess a safe value."
+            )
+        return value

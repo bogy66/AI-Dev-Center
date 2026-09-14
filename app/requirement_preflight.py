@@ -1,10 +1,13 @@
 """Minimal generic requirement preflight implementation."""
 
-import importlib.metadata
-import importlib.util
 import shutil
 import uuid
 
+from app.python_distribution import (
+    check_distribution_installed,
+    is_valid_distribution_identifier,
+    resolve_target_python_executable,
+)
 from app.requirement_model import (
     PreflightRequirementResult,
     PreflightResult,
@@ -37,10 +40,42 @@ class RequirementPreflight:
         return requirement.name
 
     @staticmethod
-    def check(requirements, project_id: str, activations=None) -> PreflightResult:
-        """Run generic preflight logic over the given requirements."""
+    def check(
+        requirements, project_id: str, activations=None,
+        target_executable: str | None = None, project_root: str | None = None,
+    ) -> PreflightResult:
+        """Run generic preflight logic over the given requirements.
+
+        target_executable, when supplied, is the exact, already-resolved
+        executable identity every PYTHON_PACKAGE requirement in this
+        call is checked against (currently the only requirement type
+        with an execution-target concept) — used as given, with no
+        fallback substitution. When omitted, resolve_target_python_executable()
+        is called exactly ONCE here, up front, and that single resolved
+        value is reused for every PYTHON_PACKAGE requirement in this
+        call (never re-resolved per requirement) and stamped onto each
+        such requirement's own PreflightRequirementResult.target_executable
+        — deliberately per-requirement, not a single value for the whole
+        result, since a project can contain multiple ecosystems and a
+        future non-Python requirement type would resolve and own its own
+        target independently. Later stages of the same workflow/setup
+        operation (materialization, installation, verification) carry
+        and reuse this exact per-requirement identity instead of each
+        independently re-resolving PATH at a later, possibly different,
+        moment.
+
+        project_root, when supplied, lets PYTHON_PACKAGE requirements be
+        checked through the central controlled execution boundary
+        (execute_controlled) — there is no direct, unconfined subprocess
+        fallback of any kind. Without it (or when a requirement's name
+        is not itself already a valid, single structured technical
+        identifier), PYTHON_PACKAGE presence is reported as not locally
+        verifiable, the same treatment already given to every other
+        requirement type this function cannot safely check.
+        """
 
         requirements_tuple = tuple(requirements)
+        resolved_target_executable = target_executable or resolve_target_python_executable()
         explicit_activation = activations is not None
         normalized_activations = normalize_requirement_activations(
             requirements_tuple, activations,
@@ -60,6 +95,7 @@ class RequirementPreflight:
             present = False
             satisfied = False
             warning = None
+            target_executable_used = None
 
             if requirement.type == RequirementType.EXECUTABLE:
                 executable = RequirementPreflight._resolvable_executable(requirement)
@@ -67,21 +103,38 @@ class RequirementPreflight:
                 present = bool(install_path)
                 satisfied = present
             elif requirement.type == RequirementType.PYTHON_PACKAGE:
-                try:
-                    spec = importlib.util.find_spec(requirement.name)
-                except Exception:
-                    spec = None
-
-                present = spec is not None
-                satisfied = present
-
-                if present:
-                    try:
-                        detected_version = importlib.metadata.version(
-                            requirement.name
-                        )
-                    except Exception:
-                        detected_version = None
+                # Distribution-installed semantics, not import-module
+                # semantics: a distribution's importable module name can
+                # differ from its distribution name (PyYAML -> yaml,
+                # scikit-learn -> sklearn, beautifulsoup4 -> bs4), so
+                # find_spec(requirement.name) is not a valid presence
+                # test. This is the same central, target-Python-aware
+                # distribution check PythonPackageExecutor's own
+                # post-install verification uses, always routed through
+                # the central controlled execution boundary.
+                #
+                # requirement.name is a human/display label at this
+                # stage (Council has not yet run, so no structured
+                # technical_identity exists yet) -- it is only used here
+                # when it already looks like a single, valid technical
+                # identifier; a free-form label like "ESPHome CLI" is
+                # never guessed at, and is instead reported not-locally-
+                # verifiable, exactly like any other unverifiable case.
+                if project_root is None or not is_valid_distribution_identifier(
+                    requirement.name,
+                ):
+                    warning = RequirementPreflight.NOT_LOCALLY_VERIFIABLE_WARNING
+                else:
+                    check_result = check_distribution_installed(
+                        requirement.name, resolved_target_executable,
+                        project_root=project_root,
+                    )
+                    present = check_result.installed
+                    satisfied = present
+                    detected_version = check_result.version
+                    target_executable_used = resolved_target_executable
+                    if not check_result.target_python_available:
+                        warning = RequirementPreflight.NOT_LOCALLY_VERIFIABLE_WARNING
             elif requirement.type == RequirementType.SYSTEM_PACKAGE:
                 executable = RequirementPreflight._resolvable_executable(requirement)
                 install_path = shutil.which(executable)
@@ -104,6 +157,7 @@ class RequirementPreflight:
                     warning=warning,
                     active=activation.active,
                     blocks_current_operation=activation.blocks_current_operation,
+                    target_executable=target_executable_used,
                 )
             )
 

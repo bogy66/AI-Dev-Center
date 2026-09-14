@@ -190,7 +190,20 @@ class ProjectIntelligence:
         return tuple(sorted({ts.name for ts in self.test_systems}))
 
     def to_summary(self) -> dict:
-        """Compatibility dict for consumers that expect the old shape."""
+        """Compatibility dict for consumers that expect the old shape.
+
+        `areas` (CLAUDE-ARCH-S2-014D): the SAME per-`ProjectArea.path`
+        breakdown `self.areas` already carries, never re-derived --
+        preserves the Project/Area/Path association the flat
+        `test_systems`/`build_systems`/`firmware_indicators` keys above
+        lose by construction (they are a project-wide DEDUPED UNION
+        across every area, see those properties). Additive only: every
+        existing key is unchanged, so no existing consumer of this dict
+        shape breaks. Consumers that need to know WHICH area a detected
+        capability actually came from (e.g. the trusted-verification
+        scope-binding path, app.verification.
+        trusted_verification_identity_groups()) must read this key
+        instead of the flat ones."""
         return {
             "project_kind": self.project_kind,
             "area_count": self.area_count,
@@ -200,6 +213,18 @@ class ProjectIntelligence:
             "build_systems": list(self.build_system_names),
             "test_systems": list(self.test_system_names),
             "firmware_indicators": [f.name for f in self.firmware_indicators],
+            "areas": [
+                {
+                    "path": area.path,
+                    "test_systems": [ts.name for ts in area.test_systems],
+                    "build_systems": [bs.name for bs in area.build_systems],
+                    "firmware_indicators": [
+                        {"name": fw.name, "has_untrusted_hooks": fw.has_untrusted_hooks}
+                        for fw in area.firmware_indicators
+                    ],
+                }
+                for area in self.areas
+            ],
             "git_repository_present": self.git_repository_present,
             "sensitive_configuration_present": self.sensitive_configuration_present,
             "truncated": self.truncated,

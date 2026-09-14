@@ -99,7 +99,29 @@ class ControlledReworkStage:
             previous_testing_stage_result=initial_result.testing_stage_result,
             rework_request=rework_request,
         )
-        rework_result = self._development_testing_stage.run(rework_development_request)
+        try:
+            rework_result = self._development_testing_stage.run(rework_development_request)
+        except Exception as error:
+            # CLAUDE-E2E-NIO-007A: a Real-System-E2E failed with a
+            # terminal provider exception (OpenRouterError) raised
+            # DURING this exact rework attempt, well after a real
+            # ESPHome verification failure had already produced
+            # initial_result/rework_request -- the very reason rework
+            # was attempted in the first place. Uncaught, this method
+            # would propagate the exception with initial_result and
+            # rework_request as plain local variables the caller can
+            # never see again -- silently erasing the last meaningful
+            # engineering failure (e.g. "esphome-validate failed and
+            # esphome-compile was blocked") behind a bare infrastructure
+            # error. Attaching them to the exception (not raising a new,
+            # narrower one) preserves the original exception type/chain
+            # exactly as before for any caller that does not need this
+            # evidence, while making it available, safely (only already
+            # ADC-produced diagnostic text -- never a raw provider
+            # response or secret), to any caller that does.
+            error.controlled_rework_initial_result = initial_result
+            error.controlled_rework_request = rework_request
+            raise
         return ControlledReworkResult(
             initial_result=initial_result,
             rework_executed=True,

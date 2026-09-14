@@ -362,15 +362,17 @@ def test_mcp_plan_then_execute_round_trip_persists_and_resolves_project_root(tmp
     plan_store = WorkflowPlanStore(tmp_path / "plans")
     development_workflow = Mock()
     setup_plan = SetupPlan(id="plan-1", project_id="proj-mcp", steps=(), status="pending_approval")
-    development_workflow.run.return_value = Mock(setup_plan=setup_plan)
+    service = Mock()
+    service.plan_project_setup.return_value = Mock(setup_plan=setup_plan, council_result=None)
 
     server = MCPServer(
         project_scanner=Mock(), discovery=Mock(), preflight=Mock(), planner=None,
         plan_store=plan_store, approval=Mock(),
         development_workflow=development_workflow,
+        service=service,
     )
 
-    server.plan_project_setup({}, "proj-mcp", str(project_root))
+    server.plan_project_setup("proj-mcp", str(project_root))
 
     assert plan_store.load_project_root("proj-mcp") == str(project_root.resolve())
 
@@ -398,13 +400,19 @@ def test_mcp_execute_setup_plan_routes_through_execute_controlled_with_correct_c
     plan_store.save(plan)
     plan_store.save_project_root("proj-mcp", str(project_root))
 
+    from app.setup_execution_state import SetupExecutionStateStore
+
     executor = PythonPackageExecutor()
     workflow = DevelopmentWorkflow(
         discovery=Mock(), validator=Mock(), preflight=Mock(), executor=executor,
+        execution_state_store=SetupExecutionStateStore(tmp_path / "exec-state.json"),
     )
+    from app.project_setup_application import ProjectSetupApplicationService
+    service = ProjectSetupApplicationService(development_workflow=workflow)
     server = MCPServer(
         project_scanner=Mock(), discovery=Mock(), preflight=Mock(), planner=None,
         plan_store=plan_store, approval=Mock(), development_workflow=workflow,
+        service=service,
     )
 
     calls = []
@@ -440,6 +448,7 @@ def test_mcp_execute_setup_plan_fails_closed_when_no_project_root_was_ever_assoc
     server = MCPServer(
         project_scanner=Mock(), discovery=Mock(), preflight=Mock(), planner=None,
         plan_store=plan_store, approval=Mock(), development_workflow=Mock(),
+        service=Mock(),
     )
 
     with pytest.raises(SetupApprovalError):

@@ -506,6 +506,69 @@ class PythonUnittestRunner(VerificationRunner):
 # Verification Planner
 # ---------------------------------------------------------------------------
 
+# CLAUDE-ARCH-S2-013G: hoisted to module level (unchanged values, unchanged
+# behavior inside build_verification_plan() below) so app.engineering_
+# decision's S2.3 Verification Feasibility can IMPORT the exact same,
+# single, ADC-owned mapping from a detected Project Intelligence identity
+# to its canonical runner/mechanism identity -- as independent, trusted
+# evidence that a claimed verification mechanism corresponds to something
+# ADC itself already knows how to run -- rather than re-declaring a
+# second, competing copy of this mapping. Never edited to special-case a
+# single candidate; a change here changes what S5 Generalized Verification
+# itself would build a plan for.
+RUNNER_MAP: dict[str, tuple[str, str]] = {
+    "pytest": ("pytest", "controlled_execution"),
+    "unittest": ("python_unittest", "controlled_execution"),
+    "vitest": ("vitest", "deferred"),
+    "jest": ("jest", "deferred"),
+    "mocha": ("mocha", "deferred"),
+    "ctest": ("ctest", "deferred"),
+}
+
+BUILD_RUNNER_MAP: dict[str, tuple[str, str]] = {
+    "cmake": ("cmake", "controlled_execution"),
+    "make": ("make", "deferred"),
+    "platformio": ("platformio", "unsupported"),
+}
+
+# The firmware branch below has always special-cased "esphome" and
+# "platformio" inline rather than through a dict; hoisted here (same
+# values, same behavior) purely so the mapping is importable evidence.
+FIRMWARE_RUNNER_MAP: dict[str, str] = {
+    "esphome": "esphome_check",
+    "platformio": "platformio",
+}
+
+# CLAUDE-ARCH-S2-014E: FIRMWARE_RUNNER_MAP["esphome"] names S5's own
+# internal runner_type ("esphome_check", the VerificationStep.runner_type
+# ESPHomeCheckRunner registers under -- see build_verification_plan()'s
+# firmware branch above). That is NOT the mechanism vocabulary
+# app.council_prompts/app.council_models actually instruct Council
+# candidates to declare for ESPHome's "validate" step: both modules'
+# own docstrings, and app.engineering_decision's
+# `_is_structured_verification_token()` docstring, give "esphome_validate"
+# as the canonical example (mirroring the "validate"/"compile"
+# VerificationStep.verification_kind split build_verification_plan()
+# itself produces for every esphome firmware indicator). Before this fix,
+# a genuinely-detected ESPHome project could never independently
+# corroborate a correctly-vocabularied candidate: `_independently_
+# corroborated()` requires the claimed mechanism to be a member of the
+# SAME trusted identity group as the evidence identity, and that group
+# never contained "esphome_validate" -- so real ESPHome capability was
+# rejected as if it were self-certified, exactly the CLAUDE-ADC-E2E-
+# VERIFICATION-EVIDENCE-FIX-001 Real-System-E2E failure (binding
+# requirement inadmissible: "no independent Project Intelligence
+# evidence linking both to the same real capability"). Both names are
+# now interchangeable identities for the SAME real, always-controlled
+# ESPHome capability (ESPHome has no untrusted-hooks concept, unlike
+# PlatformIO) -- "esphome_check" is kept, unchanged, so every existing
+# caller/test that already legitimately uses it stays exactly as
+# productive as before; this only ADDS the one missing, genuinely
+# documented alias, it never weakens `_independently_corroborated()`'s
+# own fail-closed matching rule.
+_ESPHOME_MECHANISM_ALIASES = frozenset({"esphome_validate"})
+
+
 def build_verification_plan(intelligence, run_id: str) -> VerificationPlan:
     """Convert ProjectIntelligence into a typed VerificationPlan.
 
@@ -528,21 +591,6 @@ def build_verification_plan(intelligence, run_id: str) -> VerificationPlan:
     project_kind = getattr(intelligence, "project_kind", "greenfield")
     areas = getattr(intelligence, "areas", ()) or ()
     steps: list[VerificationStep] = []
-
-    RUNNER_MAP: dict[str, tuple[str, str]] = {
-        "pytest": ("pytest", "controlled_execution"),
-        "unittest": ("python_unittest", "controlled_execution"),
-        "vitest": ("vitest", "deferred"),
-        "jest": ("jest", "deferred"),
-        "mocha": ("mocha", "deferred"),
-        "ctest": ("ctest", "deferred"),
-    }
-
-    BUILD_RUNNER_MAP: dict[str, tuple[str, str]] = {
-        "cmake": ("cmake", "controlled_execution"),
-        "make": ("make", "deferred"),
-        "platformio": ("platformio", "unsupported"),
-    }
 
     for area in areas:
         area_path = getattr(area, "path", "") or "."
@@ -657,6 +705,308 @@ def build_verification_plan(intelligence, run_id: str) -> VerificationPlan:
         project_kind=project_kind, area_count=len(areas),
         steps=tuple(steps),
     )
+
+
+PROJECT_GLOBAL_SCOPE = "."
+
+
+@dataclass(frozen=True)
+class TrustedVerificationGroup:
+    """CLAUDE-ARCH-S2-014D: one independently-detected capability's
+    interchangeable identities (unchanged meaning from before this task),
+    PLUS the exact `ProjectArea.path` Project Intelligence detected it in
+    -- never lost/flattened away.
+
+    `scope` is always a concrete `ProjectArea.path` string
+    (`PROJECT_GLOBAL_SCOPE` == "." for the project root). Root-scoped
+    evidence is the one, explicit, mechanically-derived (never merely
+    asserted) "project-global" case S2.3's scope-binding check exempts
+    from area/path matching: the root area's own working directory is,
+    by simple filesystem containment, an ancestor of every other area,
+    so capability genuinely detected there is honestly project-wide --
+    never an assumption, never a default applied to evidence Project
+    Intelligence actually found somewhere else. A capability detected
+    ONLY inside a non-root area (e.g. "backend", "firmware/esp32") keeps
+    that area's own path as its scope and is NEVER treated as covering
+    an unrelated area."""
+    identities: frozenset[str]
+    scope: str
+
+
+# CLAUDE-ADC-S23-VERIFICATION-EVIDENCE-ARCHITECTURE-001: the one central,
+# closed-set mechanism token for Python distribution package-presence
+# verification -- ADC's own controlled equivalent of running `pip show
+# <technical_identity>`. This is NOT a second, competing mechanism
+# vocabulary: it is one more concrete, single-token identity a candidate
+# may legitimately declare in ToolchainItem.provides_verification /
+# VerificationCoverage.mechanism, exactly like "pytest" or
+# "esphome_validate" already are (see app.council_models.ToolchainItem's
+# own docstring). Fixed and importable so a candidate can never invent
+# its own spelling and have it silently treated as this trusted category.
+#
+# CLAUDE-ADC-S23-VERIFICATION-EVIDENCE-ARCHITECTURE-FIX-002: this module
+# no longer produces any TrustedVerificationGroup for this mechanism (see
+# all_trusted_verification_groups()'s own docstring) -- the trust
+# boundary for a "pip_show" VerificationCoverage claim now lives entirely
+# in app.engineering_decision._python_package_verification_capability(),
+# as an item-scoped, pre-install CAPABILITY check, never an
+# environment-wide presence fact.
+PACKAGE_PRESENCE_MECHANISM = "pip_show"
+
+
+def _area_groups_from_pairs(
+    areas: list[tuple[str, list[str], list[str], list]],
+) -> tuple[TrustedVerificationGroup, ...]:
+    """Shared group-building step for both the real-dataclass and dict
+    shapes below -- takes each area's own (path, test_names, build_names,
+    firmware_entries) and applies the SAME controlled-capability rules
+    013G/014C already established, just now emitting one scope-tagged
+    group per area instead of one project-wide group."""
+    groups: list[TrustedVerificationGroup] = []
+
+    def _controlled_group(name: str, table: dict) -> frozenset | None:
+        entry = table.get(name)
+        if entry is None or entry[1] != "controlled_execution":
+            return None
+        return frozenset({name, entry[0]})
+
+    for area_path, test_names, build_names, firmware_entries in areas:
+        for name in test_names:
+            group = _controlled_group(name, RUNNER_MAP)
+            if group:
+                groups.append(TrustedVerificationGroup(group, area_path))
+        for name in build_names:
+            group = _controlled_group(name, BUILD_RUNNER_MAP)
+            if group:
+                groups.append(TrustedVerificationGroup(group, area_path))
+        for fw_name, has_untrusted_hooks in firmware_entries:
+            if fw_name == "esphome":
+                groups.append(TrustedVerificationGroup(
+                    frozenset({fw_name, FIRMWARE_RUNNER_MAP.get(fw_name, fw_name)})
+                    | _ESPHOME_MECHANISM_ALIASES,
+                    area_path,
+                ))
+            elif fw_name == "platformio" and has_untrusted_hooks is False:
+                groups.append(TrustedVerificationGroup(
+                    frozenset({fw_name, FIRMWARE_RUNNER_MAP.get(fw_name, fw_name)}), area_path,
+                ))
+    return tuple(groups)
+
+
+def trusted_verification_identity_groups(project_intelligence) -> tuple[TrustedVerificationGroup, ...]:
+    """CLAUDE-ARCH-S2-013G/014C: the independent, ADC-owned evidence that
+    a verification identity genuinely exists in a given project AND has
+    an actual controlled, registered execution route -- derived from
+    Project Intelligence's own read-only, evidence-based detection
+    (app.project_intelligence), deterministic and computed BEFORE the
+    Engineering Council ever runs, so it can never be produced or
+    influenced by the same Agent/Chairman call that authors an S2
+    candidate.
+
+    CLAUDE-ARCH-S2-014C (F2) closes a gap CDX-REVIEW-S2-014A reproduced:
+    013G granted trust to any RECOGNIZED name (e.g. "ctest", "jest")
+    regardless of whether S5's own Generalized Verification would ever
+    actually run it in a controlled way. RUNNER_MAP/BUILD_RUNNER_MAP's
+    OWN policy field ("controlled_execution" | "deferred" | "unsupported")
+    already, correctly distinguishes a genuinely registered, controlled
+    runner (pytest, python_unittest, cmake) from a recognized-but-not-
+    controllable one (vitest, jest, mocha, ctest, make are "deferred" --
+    no runner is registered for them in build_default_registry() at
+    all). A group is only ever emitted when policy == "controlled_
+    execution" -- recognition/name-mapping alone is NEVER treated as
+    capability proof; this function proves recognized capability -> ADC-
+    owned capability evidence -> a controlled, registered route, which is
+    exactly the "applicable to this project/scope" + "controlled route
+    exists" links S2.3 needs before "result can be observed" and
+    "admissible" can even be considered.
+
+    Firmware indicators need one extra dimension build_verification_plan()
+    itself already models: PlatformIO's controllability depends on
+    DetectedFirmware.has_untrusted_hooks (untrusted build-code hooks make
+    its own VerificationStep policy "unsupported", never "controlled_
+    execution" -- see build_verification_plan()'s firmware branch, reused
+    here rather than re-derived). ESPHome has no such hook concept and is
+    always controlled. The dict summary shape
+    (CouncilInput.project_intelligence, used for Council/Chairman
+    prompts) LOSES has_untrusted_hooks entirely (ProjectIntelligence.
+    to_summary() only keeps firmware names) -- from that lossy shape,
+    PlatformIO can therefore never be trusted (fail-closed: absence of
+    the hook signal is never treated as "no untrusted hooks"), while
+    esphome (no hook concept) still can be.
+
+    Each returned group is the set of interchangeable identity strings
+    (a detected test/build/firmware system name AND its canonical
+    runner identity) for ONE real, controllable capability. Reusing
+    RUNNER_MAP/BUILD_RUNNER_MAP/FIRMWARE_RUNNER_MAP (never copied) means
+    this function carries no mechanism-name knowledge beyond what
+    build_verification_plan() itself already encodes, and never becomes
+    a second, competing verification source of truth.
+
+    S2.3 Verification Feasibility (app.engineering_decision) is the
+    intended consumer, but ALWAYS via an already-computed
+    `trusted_verification_groups` parameter passed in by S2.3's caller
+    (app.dev_workflow, app.engineering_council) -- app.engineering_
+    decision itself never imports this module, so S2.3 stays free of any
+    dependency on S5 execution code (see
+    tests/test_s2_subsubsystem_architecture.py's own source-inspection
+    boundary test), and S2.3 never executes S5 verification itself.
+
+    Accepts either the real ProjectIntelligence dataclass or its dict
+    summary -- both already-existing shapes, nothing new invented.
+    Returns an empty tuple when no independent evidence is available at
+    all (project_intelligence is None), which the S2.3 caller's own
+    fail-closed compatibility check then treats as "no mechanism/
+    evidence pair can be proven compatible" -- absence of independent
+    evidence is never treated as permission.
+
+    CLAUDE-ARCH-S2-014D closes the scope leak CDX-REVIEW-S2-014D
+    reproduced: every group emitted above 014D was already implicitly
+    "project-global" because it was built from
+    ProjectIntelligence.test_system_names/build_system_names -- a
+    DEDUPED UNION across every ProjectArea that discards exactly which
+    area each capability was actually detected in (example: Area A has
+    pytest, Area B has nothing to do with pytest at all -- the old
+    project-wide union still handed S2.3 a single unscoped {"pytest",
+    "pytest"} group that could corroborate a claim made anywhere in the
+    project, including Area B). Every group returned now instead comes
+    from ONE ProjectArea's own test_systems/build_systems/
+    firmware_indicators and carries that exact `ProjectArea.path` as its
+    `scope` -- an identity detected only in Area A never again produces a
+    group usable to corroborate Area B. `PROJECT_GLOBAL_SCOPE` ("." , the
+    project root) is the sole, mechanically-derived exception (see
+    TrustedVerificationGroup's own docstring): root-detected evidence is
+    honestly project-wide by filesystem containment, never merely
+    defaulted.
+
+    Both accepted shapes preserve their EXISTING project-wide behavior
+    (scope=PROJECT_GLOBAL_SCOPE for every emitted group) whenever they
+    carry no per-area breakdown at all -- the real dataclass's own
+    `areas` tuple empty (as every pre-014D caller/test that hand-builds a
+    ProjectIntelligence with `areas=()` already does), or the dict
+    summary missing the new `"areas"` key (as every pre-014D caller/test
+    that hand-builds the old flat dict shape already does) -- so no
+    existing single-area caller loses any previously-productive
+    corroboration. A project whose OWN inspection genuinely found more
+    than one area (`inspect_project()`'s real, current-production output
+    always populates both the flat project-wide fields AND the new
+    `"areas"`/`.areas` breakdown) gets the full per-area scope binding
+    from area breakdown alone.
+
+    CLAUDE-ADC-S23-VERIFICATION-EVIDENCE-ARCHITECTURE-FIX-002: a prior
+    revision of this module additionally produced Python-package
+    "presence" groups from distributions installed in ADC's OWN
+    CONTROLLER PROCESS environment (via importlib.metadata.distributions())
+    and merged them into every caller's evidence as PROJECT_GLOBAL_SCOPE
+    trust (see all_trusted_verification_groups()). Independent review
+    (CDX-ADC-S23-VERIFICATION-EVIDENCE-ARCHITECTURE-REVIEW-001) correctly
+    rejected that: the controller process's own Python environment can
+    differ from whatever environment/interpreter a candidate's install
+    would actually target, so "importable by ADC itself" never honestly
+    corroborates "will be present in the real install target". That
+    producer has been removed entirely (never repaired) -- S2.3's
+    Python-package verification-coverage check
+    (app.engineering_decision._python_package_verification_capability())
+    no longer consults this function's output, or any other
+    environment-wide evidence, for the "pip_show" mechanism at all; it
+    instead proves an item-scoped, pre-install CAPABILITY directly from
+    the SAME candidate's own toolchain materialization outcome. This
+    function's own contract (file-based test/build/firmware detection
+    only) is therefore now its ONLY contract, not merely its default
+    one."""
+    if project_intelligence is None:
+        return ()
+
+    if isinstance(project_intelligence, dict):
+        raw_areas = project_intelligence.get("areas") or []
+        if raw_areas:
+            return _area_groups_from_pairs([
+                (
+                    str(area.get("path") or PROJECT_GLOBAL_SCOPE),
+                    list(area.get("test_systems") or []),
+                    list(area.get("build_systems") or []),
+                    [
+                        (fw.get("name"), fw.get("has_untrusted_hooks", True))
+                        for fw in (area.get("firmware_indicators") or [])
+                        if isinstance(fw, dict)
+                    ],
+                )
+                for area in raw_areas if isinstance(area, dict)
+            ])
+        # No per-area breakdown available at all (legacy/lossy summary
+        # shape) -- fall back to the pre-014D project-wide behavior,
+        # scoped to PROJECT_GLOBAL_SCOPE so every existing single-area
+        # caller/test stays exactly as productive as before.
+        test_names = project_intelligence.get("test_systems", []) or []
+        build_names = project_intelligence.get("build_systems", []) or []
+        # PlatformIO's hook status is lost in this legacy summary shape --
+        # never trusted from here. ESPHome has no hook concept.
+        firmware_entries = [
+            (name, True) for name in (project_intelligence.get("firmware_indicators", []) or [])
+        ]
+        return _area_groups_from_pairs([
+            (PROJECT_GLOBAL_SCOPE, list(test_names), list(build_names), firmware_entries),
+        ])
+
+    areas = getattr(project_intelligence, "areas", ()) or ()
+    if areas:
+        return _area_groups_from_pairs([
+            (
+                area.path,
+                [ts.name for ts in area.test_systems],
+                [bs.name for bs in area.build_systems],
+                [
+                    (fw.name, getattr(fw, "has_untrusted_hooks", True))
+                    for fw in area.firmware_indicators
+                ],
+            )
+            for area in areas
+        ])
+
+    # No per-area breakdown available at all (a hand-built
+    # ProjectIntelligence with areas=(), as pre-014D tests/callers use) --
+    # same pre-014D project-wide fallback as the dict shape above.
+    test_names = getattr(project_intelligence, "test_system_names", ()) or ()
+    build_names = getattr(project_intelligence, "build_system_names", ()) or ()
+    firmware_indicators = getattr(project_intelligence, "firmware_indicators", ()) or ()
+    firmware_entries = [
+        (fw.name, getattr(fw, "has_untrusted_hooks", True)) for fw in firmware_indicators
+    ]
+    return _area_groups_from_pairs([
+        (PROJECT_GLOBAL_SCOPE, list(test_names), list(build_names), firmware_entries),
+    ])
+
+
+def all_trusted_verification_groups(
+    project_intelligence,
+) -> tuple[TrustedVerificationGroup, ...]:
+    """CLAUDE-ADC-S23-VERIFICATION-EVIDENCE-ARCHITECTURE-FIX-002:
+    productive S2.3 callers (app.dev_workflow, app.engineering_council,
+    app.toolchain_materializer) call this instead of
+    trusted_verification_identity_groups() directly, so a single call
+    site can absorb future evidence-composition changes without every
+    caller needing to know about them.
+
+    A prior revision of this function additionally composed in
+    installed_python_package_identity_groups() -- Python distributions
+    present in ADC's OWN CONTROLLER PROCESS environment, treated as
+    PROJECT_GLOBAL_SCOPE trust for a candidate's "pip_show" verification
+    claim. Independent review (CDX-ADC-S23-VERIFICATION-EVIDENCE-
+    ARCHITECTURE-REVIEW-001) correctly rejected that: the controller
+    process's own environment is not provably the same
+    environment/interpreter a candidate's install would actually target,
+    so a package being importable by ADC itself never honestly
+    corroborates presence in the real install target. That producer has
+    been removed entirely (never repaired, never replaced by a
+    differently-scoped equivalent) -- this function is now a plain,
+    unmodified passthrough to trusted_verification_identity_groups()
+    (Project-Intelligence-derived, file-based evidence only:
+    pytest/unittest/cmake/esphome/platformio). Python-package
+    ("pip_show") verification coverage is corroborated entirely inside
+    S2.3 itself now, from an item-scoped pre-install CAPABILITY check
+    (app.engineering_decision._python_package_verification_capability())
+    that never consults this function's output at all -- see that
+    function's own docstring for the corrected architecture."""
+    return trusted_verification_identity_groups(project_intelligence)
 
 
 def build_default_registry() -> ControlledRunnerRegistry:
@@ -890,6 +1240,29 @@ class CMakeRunner(VerificationRunner):
         return _build_step_result(step, result, args)
 
 
+def _combined_stream_diagnostics(*, prefix: str, stdout: str, stderr: str) -> str:
+    """Bounded, generic diagnostic text that never silently drops a stream.
+
+    When both stdout and stderr contain data, a controlled process may
+    put purely informational lines on one stream and its actual error
+    detail on the other (order depends on the tool, not on ADC), so
+    both are preserved here, clearly labeled, rather than picking one
+    stream and discarding the other. When only one stream has data,
+    that stream alone is labeled and returned. The result is truncated
+    to the same _MAX_OUTPUT bound already applied to each individual
+    stream, so combining both streams never doubles the intended
+    bounded diagnostic size.
+    """
+    sections = []
+    if stdout:
+        sections.append(f"STDOUT:\n{stdout}")
+    if stderr:
+        sections.append(f"STDERR:\n{stderr}")
+    body = "\n\n".join(sections)
+    text = f"{prefix}\n{body}" if prefix and body else (prefix or body)
+    return text[:_MAX_OUTPUT]
+
+
 def _build_step_result(step, result, args):
     timed_out = getattr(result, "timed_out", False)
     stdout = (result.stdout or "")[:_MAX_OUTPUT]
@@ -907,17 +1280,14 @@ def _build_step_result(step, result, args):
 
     diagnostics = ""
     if timed_out:
-        if stderr:
-            diagnostics = f"Execution timed out.\n{stderr}"[:_MAX_OUTPUT]
-        elif stdout:
-            diagnostics = f"Execution timed out.\n{stdout}"[:_MAX_OUTPUT]
-        else:
-            diagnostics = "Execution timed out."
+        diagnostics = _combined_stream_diagnostics(
+            prefix="Execution timed out.", stdout=stdout, stderr=stderr,
+        )
     elif status == FAIL.value:
-        if stderr:
-            diagnostics = stderr
-        elif stdout:
-            diagnostics = stdout
+        if stdout or stderr:
+            diagnostics = _combined_stream_diagnostics(
+                prefix="", stdout=stdout, stderr=stderr,
+            )
         else:
             diagnostics = f"Process exited with return code {result.returncode}"
 

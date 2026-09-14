@@ -223,6 +223,30 @@ class WorkflowManager:
             entry["events"].append(event)
             self.save(state)
 
+    def capture_working_tree_baseline(self, run_id, state_by_path):
+        """CLAUDE-E2E-NIO-006B/006C: persist, once per run, the full
+        STATE (not merely path membership) of every untracked/modified
+        working-tree path already present BEFORE this run's own
+        mutating actions began -- the artifact that lets a later
+        Controlled Git delivery distinguish pre-existing foreign content
+        genuinely unchanged throughout the run (safe to leave untouched)
+        from EITHER a genuinely new, run-introduced unapproved side
+        effect, OR an additional unauthorized mutation applied to a path
+        that was already dirty at run start (must block delivery
+        either way). state_by_path is {path: {"status": str,
+        "content_hash": str | None}}. Idempotent: a second capture for
+        the same run_id never overwrites the first (matching
+        capture_provenance_baseline's own once-per-run convention)."""
+        with self._lock:
+            state = self.load()
+            baselines = state.setdefault("working_tree_baselines", {})
+            baselines.setdefault(run_id, dict(state_by_path))
+            self.save(state)
+
+    def get_working_tree_baseline(self, run_id):
+        state = self.load()
+        return state.get("working_tree_baselines", {}).get(run_id)
+
     def git_stage_transaction(self):
         """Expose the canonical state lock for one application-level Git transaction."""
         return self._lock

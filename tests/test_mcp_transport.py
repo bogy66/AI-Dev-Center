@@ -27,7 +27,13 @@ def _make_request(method: str, id_: int = 1, params: dict | None = None) -> dict
 
 
 def _make_server(**overrides):
-    """Create an :class:`MCPServer` whose collaborators are all mocks."""
+    """Create an :class:`MCPServer` whose collaborators are all mocks.
+
+    A central service Mock is injected by default (CLAUDE-E2E-003G
+    removed MCPServer's old untraced/unauthorized fallback path for
+    plan/approve/execute); pass service=None explicitly to exercise the
+    fail-closed behavior instead.
+    """
     project_scanner = overrides.get("project_scanner", Mock())
     discovery = overrides.get("discovery", Mock())
     preflight = overrides.get("preflight", Mock())
@@ -35,6 +41,10 @@ def _make_server(**overrides):
     plan_store = overrides.get("plan_store", Mock())
     approval = overrides.get("approval", Mock())
     development_workflow = overrides.get("development_workflow", Mock())
+    service = overrides.get("service", "default")
+    if service == "default":
+        service = Mock()
+        service._development_workflow = development_workflow
 
     return MCPServer(
         project_scanner=project_scanner,
@@ -44,6 +54,7 @@ def _make_server(**overrides):
         plan_store=plan_store,
         approval=approval,
         development_workflow=development_workflow,
+        service=service,
     )
 
 
@@ -166,6 +177,7 @@ class TestRequestHandler:
         plan = Mock(status="approved")
         plan_store.load.return_value = plan
         plan_store.load_project_root.return_value = "/tmp/p1-root"
+        plan_store.load_council_reference.return_value = None
         dev = Mock()
         dev.execute_approved.return_value = {"stage": "executed", "ok": True}
         handler = self._handler(plan_store=plan_store, development_workflow=dev)
@@ -180,7 +192,7 @@ class TestRequestHandler:
                 },
             )
         )
-        plan_store.load.assert_called_once_with("p1", "plan-x")
+        plan_store.load.assert_called_with("p1", "plan-x")
         plan_store.load_project_root.assert_called_once_with("p1")
         dev.execute_approved.assert_called_once_with(plan, "/tmp/p1-root")
         content = resp["result"]["content"][0]

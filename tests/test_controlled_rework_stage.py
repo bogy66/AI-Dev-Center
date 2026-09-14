@@ -101,6 +101,29 @@ def test_rework_technical_errors_propagate_without_a_third_cycle(tmp_path, error
     assert stage.run.call_count == 2
 
 
+def test_rework_exception_preserves_initial_result_and_rework_request_for_the_caller(tmp_path):
+    """CLAUDE-E2E-NIO-007A: a real Real-System-E2E lost all access to
+    the initial ESPHome verification failure/diagnostics the moment the
+    rework attempt's own provider call raised a terminal exception
+    (OpenRouterError("Connection error")) -- initial_result and
+    rework_request were plain local variables inside run(), never
+    returned, never traceable by any caller once the exception
+    propagated. A later infrastructure/provider exception must not
+    erase the last meaningful engineering failure (e.g. a real ESPHome
+    validate/compile failure) that caused the current rework attempt."""
+    initial = _result("rework_required", "initial")
+    stage = Mock()
+    provider_error = RuntimeError("Connection error")
+    stage.run.side_effect = [initial, provider_error]
+
+    with pytest.raises(RuntimeError) as excinfo:
+        ControlledReworkStage(stage).run(_request(tmp_path))
+
+    assert excinfo.value is provider_error
+    assert excinfo.value.controlled_rework_initial_result is initial
+    assert excinfo.value.controlled_rework_request is initial.testing_stage_result.rework_request
+
+
 def test_rework_requires_the_actual_structured_rework_request(tmp_path):
     initial = _result("rework_required", "initial")
     initial.testing_stage_result.rework_request = None

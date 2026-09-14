@@ -1,7 +1,8 @@
 from unittest.mock import MagicMock
 
 from app.ai_requirement_discovery import AIRequirementDiscovery
-from app.council_models import CouncilResult
+from app.council_models import CouncilResult, CouncilVariant
+from app.engineering_decision import select_engineering_variant
 from app.dev_workflow import DevelopmentWorkflow
 from app.engineering_council import EngineeringCouncil
 from app.python_package_executor import PythonPackageExecutor
@@ -110,6 +111,9 @@ def _make_workflow(executor):
     council_result = CouncilResult(
         id="council-1",
         project_id="workflow-integration",
+        variants=(CouncilVariant(id="v1", name="v1"),),
+        recommendation="v1",
+        council_complete=True,
     )
 
     discovery.discover.return_value = discovery_result
@@ -117,6 +121,7 @@ def _make_workflow(executor):
     preflight.check.return_value = preflight_result
     council.evaluate.return_value = council_result
     materializer.materialize.return_value = setup_plan
+    materializer.materialize_decision.return_value = setup_plan
 
     workflow = DevelopmentWorkflow(
         discovery=discovery,
@@ -155,19 +160,31 @@ def test_run_to_approval_to_execution():
         preflight_result,
     ) = _make_workflow(executor)
 
-    workflow_result = workflow.run(
+    pending_result = workflow.run(
         {"name": "workflow-integration"},
         "workflow-integration",
+    )
+    # CLAUDE-ARCH-S2-013C: run() stops at the productive S2.4 boundary;
+    # an explicit human selection is required to reach the SetupPlan.
+    workflow_result = workflow.resolve_engineering_selection(
+        pending_result.council_result, preflight_result, "linux",
+        "workflow-integration", human_selected_variant_id="v1",
     )
 
     assert workflow_result.setup_plan is original_plan
     assert original_plan.status == "pending_approval"
     assert original_plan.steps[0].is_approved is False
     council.evaluate.assert_called_once()
-    materializer.materialize.assert_called_once_with(
-        council_result,
+    expected_decision = select_engineering_variant(
+        council_result, preflight_result, "linux", chairman_recommendation="v1",
+        human_selected_variant_id="v1",
+    )
+    materializer.materialize.assert_not_called()
+    materializer.materialize_decision.assert_called_once_with(
+        expected_decision,
         "workflow-integration",
         preflight=preflight_result,
+        project_root=None,
     )
     planner.plan.assert_not_called()
     executor.execute.assert_not_called()

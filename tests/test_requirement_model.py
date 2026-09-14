@@ -70,6 +70,86 @@ def test_activation_normalization_rejects_duplicate_requirement_ids():
         normalize_requirement_activations((req, req))
 
 
+def test_required_config_file_requirement_defaults_to_active_nonblocking():
+    """CLAUDE-E2E-001: a required config_file requirement -- a
+    development-created artifact, not a pre-development prerequisite --
+    must default to active-but-non-blocking so a missing instance of it
+    does not stop Development before Development has had the chance to
+    create it."""
+    req = Requirement(
+        id="req-config", name="project configuration file",
+        type=RequirementType.CONFIG_FILE, purpose="project configuration",
+        required=True, confidence=0.9,
+    )
+
+    (activation,) = normalize_requirement_activations((req,))
+
+    assert activation.requirement_id == "req-config"
+    assert activation.active is True
+    assert activation.blocks_current_operation is False
+    assert activation.state == "active_non_blocking"
+
+
+def test_optional_config_file_requirement_uses_plain_compatibility_default():
+    """An optional (not required) config_file requirement keeps the plain
+    required->active/blocking compatibility default, since it was never
+    going to be active regardless of the development-artifact rule."""
+    req = Requirement(
+        id="req-config-optional", name="optional configuration file",
+        type=RequirementType.CONFIG_FILE, purpose="optional configuration",
+        required=False, confidence=0.5,
+    )
+
+    (activation,) = normalize_requirement_activations((req,))
+
+    assert activation.active is False
+    assert activation.blocks_current_operation is False
+
+
+@pytest.mark.parametrize("req_type", [
+    RequirementType.EXECUTABLE,
+    RequirementType.PYTHON_PACKAGE,
+    RequirementType.SYSTEM_PACKAGE,
+    RequirementType.SDK,
+    RequirementType.TOOLCHAIN,
+    RequirementType.FLASHER,
+    RequirementType.HARDWARE_COMPONENT,
+    RequirementType.CONNECTION,
+])
+def test_required_prerequisite_types_retain_blocking_default(req_type):
+    """The development-artifact exception is narrowly scoped to
+    config_file; every genuine prerequisite type (executables, packages,
+    toolchains, hardware, connections) must keep the original
+    required-implies-blocking default."""
+    req = Requirement(
+        id=f"req-{req_type}", name=f"{req_type}-thing", type=req_type,
+        purpose="prerequisite", required=True, confidence=0.9,
+    )
+
+    (activation,) = normalize_requirement_activations((req,))
+
+    assert activation.active is True
+    assert activation.blocks_current_operation is True
+
+
+def test_explicit_activation_overrides_config_file_default():
+    """An explicitly supplied activation always takes precedence over the
+    type-based default -- the default is not a second, parallel source of
+    truth that could override an explicit per-workflow decision."""
+    req = Requirement(
+        id="req-config", name="project configuration file",
+        type=RequirementType.CONFIG_FILE, purpose="project configuration",
+        required=True, confidence=0.9,
+    )
+    explicit = RequirementActivation(
+        "req-config", True, True, "explicitly required for this workflow",
+    )
+
+    result = normalize_requirement_activations((req,), (explicit,))
+
+    assert result == (explicit,)
+
+
 def test_requirement_creation_and_evidence_to_tuple():
     ev1 = RequirementEvidence(id="ev-1", source_type="file", description="evidence")
     ev2 = RequirementEvidence(id="ev-2", source_type="config", description="other")

@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pytest
+
 from app.execution import CapabilityRegistry
 from app.missing_toolchain_setup import (
     MissingToolchainSetupRequest,
@@ -78,9 +80,63 @@ def test_setup_plan_is_obtained_from_workflow_boundary(tmp_path):
     service, _, _, _, _ = _service(tmp_path)
     request = _request(tmp_path)
     service.prepare_missing_toolchain_setup(request)
+    # CLAUDE-ADC-S23-STRICT-IDENTITY-ENVIRONMENT-BINDING-FIX-004 (#5):
+    # the already-validated project_root must be forwarded so a "venv"
+    # candidate's own environment can actually bind to a real target
+    # instead of silently inheriting Preflight's generic, pre-candidate
+    # target.
     service._development_workflow.materialize_setup_plan.assert_called_once_with(
-        request.council_result, request.project_id,
+        request.council_result, request.project_id, platform=request.platform,
+        project_root=str(tmp_path.resolve()),
     )
+
+
+def test_materialize_setup_plan_threads_platform_into_real_constraint_enforcement():
+    """CLAUDE-PRE-E2E-009C, Part 10: the narrower Missing-Toolchain retry
+    boundary (DevelopmentWorkflow.materialize_setup_plan(), used by
+    prepare_missing_toolchain_setup() above) previously had no platform
+    parameter at all, so a variant's environment_constraint could never
+    be enforced on this path even though it already was on the
+    productive dev_workflow.py::run() call site. This is the smallest
+    additive plumbing fix (an optional, default-None platform parameter
+    threaded straight through to the same real ToolchainMaterializer
+    every other path already uses) -- proven here with the REAL
+    materializer, not a mock, so it is genuine end-to-end Constraint
+    enforcement, not merely an argument being forwarded."""
+    from app.council_models import CouncilResult, CouncilVariant, ToolchainItem
+    from app.dev_workflow import DevelopmentWorkflow
+    from app.engineering_decision import NoEligibleEngineeringCandidateError
+    from app.requirement_model import RequirementType
+    from app.toolchain_materializer import ToolchainMaterializer
+
+    windows_only = CouncilVariant(
+        id="v1", name="v1",
+        toolchain=(ToolchainItem(
+            requirement_ref="req-1", name="future-tool",
+            type=RequirementType.PYTHON_PACKAGE, technical_identity="future-tool",
+            install_method="pip", environment_constraint="windows",
+        ),),
+    )
+    council_result = CouncilResult(
+        id="council-1", project_id="proj", variants=(windows_only,),
+        recommendation="v1", council_complete=True,
+    )
+    workflow = DevelopmentWorkflow(
+        discovery=None, validator=None, preflight=None,
+        materializer=ToolchainMaterializer(),
+    )
+
+    # Without a platform (the historical default), the constraint is not
+    # enforced -- unchanged prior behaviour, still a valid manual_review
+    # candidate since nothing contradicts it.
+    unconstrained_plan = workflow.materialize_setup_plan(council_result, "proj")
+    assert unconstrained_plan.steps
+
+    # With platform now threaded through, the same variant becomes
+    # inadmissible on this retry path too, exactly as it already was on
+    # the productive dev_workflow.py::run() call site.
+    with pytest.raises(NoEligibleEngineeringCandidateError):
+        workflow.materialize_setup_plan(council_result, "proj", platform="linux")
 
 
 def test_setup_cannot_execute_before_approval(tmp_path):

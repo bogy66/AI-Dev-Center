@@ -489,6 +489,20 @@ body {
     cursor: pointer;
 }
 
+.primary-button:disabled,
+.secondary-button:disabled,
+.danger-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.import-repo-error {
+    color: #c53030;
+    font-size: 0.85rem;
+    margin-top: 0.25rem;
+    margin-bottom: 0;
+}
+
 /* Trace drag handle */
 #trace-drag-handle {
     height: 6px;

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
+from app.requirement_model import SetupPlan
 from app.web_api import app, get_web_setup_components, sessions
 import app.web_api as web_api
 
@@ -20,9 +21,11 @@ def clean_web_state():
 
 
 def _components():
-    plan = SimpleNamespace(id="plan-1", status="pending_approval")
+    plan = SetupPlan(id="plan-1", project_id="test-proj", status="pending_approval")
     service = MagicMock()
-    service.plan_project_setup.return_value = SimpleNamespace(setup_plan=plan)
+    service.plan_project_setup.return_value = SimpleNamespace(
+        setup_plan=plan, council_result=SimpleNamespace(id="council-1", recommendation="variant-1"),
+    )
     service.execute_approved_setup_and_development.return_value = SimpleNamespace(
         status="accepted",
         setup_execution_results=("done",),
@@ -30,6 +33,7 @@ def _components():
     )
     service.decide_final_approval.return_value = SimpleNamespace(status="approved", ready_for_git=True)
     store = MagicMock()
+    store.load_council_reference.return_value = None
     approval = MagicMock()
     approval.approve.return_value = SimpleNamespace(id="plan-1", status="approved")
     workflow = MagicMock()
@@ -81,8 +85,8 @@ def test_canonical_approval_and_execution_are_separate_http_steps(tmp_path):
     project.mkdir()
     session_id = _start(client, project).json()["session_id"]
     _wait_for_plan(client, session_id)
-    pending_plan = SimpleNamespace(id="plan-1", status="pending_approval")
-    approved_plan = SimpleNamespace(id="plan-1", status="approved")
+    pending_plan = SetupPlan(id="plan-1", project_id="test-proj", status="pending_approval")
+    approved_plan = SetupPlan(id="plan-1", project_id="test-proj", status="approved")
     components.plan_store.load.side_effect = [pending_plan, approved_plan]
 
     approval = client.post(f"/api/workflow/{session_id}/approval")
@@ -101,6 +105,8 @@ def test_canonical_approval_and_execution_are_separate_http_steps(tmp_path):
         str(project.resolve()),
         "Testing",
         session_id,
+        engineering_council_ref=None,
+        chairman_approval_ref=None,
     )
     final_approval = client.post(
         f"/api/workflow/{session_id}/final-approval",

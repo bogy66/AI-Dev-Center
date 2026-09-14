@@ -271,24 +271,79 @@ Rules:
             reason=str(reason) if reason is not None else "",
         )
 
+    # CLAUDE-E2E-NIO-005A: matches a fenced code block ANYWHERE in the
+    # response (not just a whole-response fullmatch), with an optional
+    # "json" language tag -- both real, mechanically reproduced provider
+    # formatting variations (a fence without the "json" tag; a fence
+    # with leading/trailing prose around it) that a strict fullmatch
+    # wrongly rejected as unparseable even though the JSON payload
+    # itself was perfectly valid and fully extractable.
+    _FENCE_PATTERN = re.compile(
+        r"```(?:json)?\s*\n?(.*?)\n?```", flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    @staticmethod
+    def _classify_unparseable_response(
+        response_text: str, fence_present: bool, attempted_content: str | None,
+    ) -> str:
+        """CLAUDE-E2E-NIO-005B: safe, content-free diagnostic metadata for
+        a response that could not be parsed as JSON even after the
+        CLAUDE-E2E-005A fence-search extraction. Never includes any
+        provider response content itself -- only shape/category facts
+        that are safe to persist in warnings/DiagnosticTrace, so that a
+        FUTURE InvalidDiscoveryJSONError can be classified without
+        retaining raw provider output (unlike the historical failure
+        this task investigated, for which no such classification existed
+        and the original response was never persisted anywhere).
+
+        This does not attempt to identify every category listed by
+        CLAUDE-E2E-NIO-005B's evidence standard (e.g. it cannot
+        distinguish "fenced with json tag" from "fenced without json
+        tag" here, since CLAUDE-E2E-005A's fix already successfully
+        parses both of those) -- it classifies only the narrower
+        remaining failure space that can still reach this point.
+        """
+        stripped = response_text.strip()
+        if not stripped:
+            category = "empty_response"
+        elif fence_present:
+            category = "fenced_content_invalid"
+        else:
+            category = "unfenced_unparseable"
+        checked = (attempted_content or stripped).rstrip()
+        likely_truncated = bool(checked) and checked[-1] not in "}]"
+        return (
+            f"category={category}; length={len(response_text)}; "
+            f"fence_present={fence_present}; likely_truncated={likely_truncated}"
+        )
+
     def _parse_response(self, response_text: str) -> list[dict[str, Any]]:
         """Extract requirements JSON list from provider response."""
         if not isinstance(response_text, str):
             raise InvalidDiscoveryResponseStructureError(
                 "LLM response content must be text."
             )
-        fenced = re.fullmatch(
-            r"\s*```json\s*\n?(.*?)\n?```\s*",
-            response_text,
-            flags=re.IGNORECASE | re.DOTALL,
-        )
-        normalized = fenced.group(1).strip() if fenced else response_text
         try:
-            parsed = json.loads(normalized)
+            parsed = json.loads(response_text.strip())
         except json.JSONDecodeError:
-            raise InvalidDiscoveryJSONError(
-                "LLM response is not valid JSON."
-            ) from None
+            fenced = self._FENCE_PATTERN.search(response_text)
+            if fenced is None:
+                diagnostic = self._classify_unparseable_response(
+                    response_text, fence_present=False, attempted_content=None,
+                )
+                raise InvalidDiscoveryJSONError(
+                    f"LLM response is not valid JSON. ({diagnostic})"
+                ) from None
+            try:
+                parsed = json.loads(fenced.group(1).strip())
+            except json.JSONDecodeError:
+                diagnostic = self._classify_unparseable_response(
+                    response_text, fence_present=True,
+                    attempted_content=fenced.group(1),
+                )
+                raise InvalidDiscoveryJSONError(
+                    f"LLM response is not valid JSON. ({diagnostic})"
+                ) from None
 
         if isinstance(parsed, dict):
             list_candidates = parsed.get("requirements")
@@ -355,7 +410,7 @@ Rules:
                 self._activity("failed", "provider_failure")
                 fallback_used = True
                 warnings.append(
-                    f"LLM provider raised an exception: {type(exc).__name__}"
+                    f"LLM provider raised an exception: {type(exc).__name__}: {exc}"
                 )
                 raw_response = None
 

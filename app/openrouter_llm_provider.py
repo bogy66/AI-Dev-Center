@@ -1,6 +1,7 @@
 import os
 import json
 import requests
+import urllib3.exceptions
 from dataclasses import dataclass
 from typing import Any, List, Optional
 
@@ -85,6 +86,19 @@ class OpenRouterLLMProvider:
         except requests.exceptions.Timeout as exc:
             raise OpenRouterError("Request timed out") from exc
         except requests.exceptions.ConnectionError as exc:
+            # CLAUDE-E2E-NIO-007A: requests.models.Response.iter_content()
+            # itself re-wraps a genuine urllib3 read timeout that occurs
+            # while consuming the response BODY as a bare
+            # requests.exceptions.ConnectionError(original_read_timeout)
+            # -- not as requests.exceptions.ReadTimeout, which only the
+            # earlier connect/header phase in HTTPAdapter.send() produces.
+            # A real Real-System-E2E hit exactly this shape and ADC
+            # misreported a genuine timeout as a plain connection error.
+            # Unwrap one level to check for this specific, mechanically
+            # confirmed library quirk before falling back to the correct,
+            # unrelated "Connection error" classification.
+            if self._is_wrapped_read_timeout(exc):
+                raise OpenRouterError("Request timed out") from exc
             raise OpenRouterError("Connection error") from exc
         except requests.exceptions.RequestException as exc:
             raise OpenRouterError(f"Request failed: {exc}") from exc
@@ -106,6 +120,18 @@ class OpenRouterLLMProvider:
             raise OpenRouterError("Unexpected response structure") from exc
 
         return content
+
+    @staticmethod
+    def _is_wrapped_read_timeout(exc: requests.exceptions.ConnectionError) -> bool:
+        """True only when this ConnectionError's own wrapped cause is a
+        real urllib3 timeout (e.g. ReadTimeoutError) -- never inferred
+        from the exception message text, never true for a genuine
+        connection failure with no such wrapped cause (e.g. DNS
+        failure, connection refused)."""
+        return any(
+            isinstance(arg, urllib3.exceptions.TimeoutError)
+            for arg in exc.args
+        )
 
     def complete_with_tools(
         self,

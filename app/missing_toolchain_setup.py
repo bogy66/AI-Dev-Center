@@ -23,6 +23,7 @@ class MissingToolchainSetupRequest:
     council_result: CouncilResult
     verification_plan: VerificationPlan
     verification_result: VerificationResult
+    platform: str | None = None
 
 
 @dataclass(frozen=True)

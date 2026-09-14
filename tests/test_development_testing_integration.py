@@ -7,6 +7,7 @@ import pytest
 from app.dev_workflow import DevelopmentWorkflow, SetupDevelopmentTestingResult, WorkflowExecutionError
 from app.project_setup_application import ProjectSetupApplicationService
 from app.requirement_model import SetupEffect, SetupPlan, SetupStep
+from app.setup_execution_state import SetupExecutionStateStore
 from app.setup_executor import ExecutionResult
 from app.workflow_manager import WorkflowManager
 
@@ -31,6 +32,8 @@ def _plan(status="approved"):
 
 
 def _workflow(stage, success=True):
+    import tempfile
+
     executor = Mock()
     executor.execute.return_value = ExecutionResult(
         step_id="step-1",
@@ -43,6 +46,9 @@ def _workflow(stage, success=True):
         preflight=Mock(),
         executor=executor,
         controlled_rework_stage=stage,
+        execution_state_store=SetupExecutionStateStore(
+            Path(tempfile.mkdtemp()) / "exec-state.json"
+        ),
     ), executor
 
 
@@ -74,11 +80,68 @@ def test_canonical_testing_status_is_returned_without_retry(status):
     )
     workflow, executor = _workflow(stage)
 
-    result = workflow.execute_approved_and_run_development(_plan(), Mock())
+    result = workflow.execute_approved_and_run_development(_plan(), SimpleNamespace(project_path=None))
 
     assert result.status == status
     executor.execute.assert_called_once()
     stage.run.assert_called_once()
+
+
+def test_terminal_rework_exception_traces_preserved_initial_result_before_reraising(tmp_path):
+    """CLAUDE-E2E-NIO-007A: a real Real-System-E2E lost the last
+    meaningful engineering failure (a real ESPHome validate/compile
+    failure) that caused rework to be attempted, the moment the rework
+    attempt's own provider call raised a terminal exception. The
+    preserved initial_result/rework_request ControlledReworkStage.run()
+    attaches to such an exception must still be traced here, into the
+    real DiagnosticTrace, before the original exception is re-raised
+    completely unchanged."""
+    from app.diagnostic_trace import DiagnosticTrace, DiagnosticTraceStore
+    from app.testing_stage import ReworkRequest
+
+    initial_development = SimpleNamespace(status="success", applied_changes=None)
+    initial_test = SimpleNamespace(timed_out=False, passed=False, return_code=1)
+    rework_request = ReworkRequest(
+        reason="esphome-validate failed and esphome-compile was blocked",
+        diagnostics="esphome-validate failed and esphome-compile was blocked",
+        development_result=initial_development, test_result=initial_test,
+    )
+    initial_result = SimpleNamespace(
+        status="rework_required",
+        development_result=initial_development,
+        test_changes={"changes": []},
+        apply_result={"applied": [], "skipped": []},
+        test_result=initial_test,
+        testing_stage_result=SimpleNamespace(status="rework_required", rework_request=rework_request),
+    )
+    provider_error = RuntimeError("Connection error")
+    provider_error.controlled_rework_initial_result = initial_result
+    provider_error.controlled_rework_request = rework_request
+
+    stage = Mock()
+    stage.run.side_effect = provider_error
+    workflow, executor = _workflow(stage)
+    trace = DiagnosticTrace(DiagnosticTraceStore(tmp_path / "trace.jsonl"))
+    workflow.set_diagnostic_trace(trace)
+
+    with pytest.raises(RuntimeError, match="Connection error"):
+        workflow.execute_approved_and_run_development(
+            _plan(), SimpleNamespace(project_path=None, run_id="run-1"),
+        )
+
+    events = trace.get_trace("run-1")
+    assert any(
+        event.phase == "controlled_rework" and event.status == "failed"
+        and "esphome-validate failed and esphome-compile was blocked" in event.summary
+        for event in events
+    )
+    assert any(
+        event.phase == "controlled_rework"
+        and event.details.get("diagnostics") == "esphome-validate failed and esphome-compile was blocked"
+        for event in events
+    )
+    # The precursor testing/diagnosis_review cycle itself is also traced.
+    assert any(event.phase == "diagnosis_review" and event.status == "rework_required" for event in events)
 
 
 def test_unapproved_setup_never_starts_development_testing():
@@ -86,7 +149,7 @@ def test_unapproved_setup_never_starts_development_testing():
     workflow, executor = _workflow(stage)
 
     with pytest.raises(WorkflowExecutionError, match="not approved"):
-        workflow.execute_approved_and_run_development(_plan("pending_approval"), Mock())
+        workflow.execute_approved_and_run_development(_plan("pending_approval"), SimpleNamespace(project_path=None))
 
     executor.execute.assert_not_called()
     stage.run.assert_not_called()
@@ -97,7 +160,7 @@ def test_failed_setup_never_starts_development_testing():
     workflow, executor = _workflow(stage, success=False)
 
     with pytest.raises(WorkflowExecutionError, match="did not complete successfully"):
-        workflow.execute_approved_and_run_development(_plan(), Mock())
+        workflow.execute_approved_and_run_development(_plan(), SimpleNamespace(project_path=None))
 
     executor.execute.assert_called_once()
     stage.run.assert_not_called()
@@ -109,7 +172,7 @@ def test_development_testing_error_fails_fast_without_synthetic_result():
     workflow, executor = _workflow(stage)
 
     with pytest.raises(RuntimeError, match="runner unavailable"):
-        workflow.execute_approved_and_run_development(_plan(), Mock())
+        workflow.execute_approved_and_run_development(_plan(), SimpleNamespace(project_path=None))
 
     executor.execute.assert_called_once()
     stage.run.assert_called_once()
@@ -140,7 +203,7 @@ def test_workflow_uses_one_controlled_rework_cycle_when_the_initial_stage_requir
         development_testing_stage=stage,
     )
 
-    result = workflow.execute_approved_and_run_development(_plan(), Mock())
+    result = workflow.execute_approved_and_run_development(_plan(), SimpleNamespace(project_path=None))
 
     assert result.status == "accepted"
     executor.execute.assert_called_once()

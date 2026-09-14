@@ -486,6 +486,74 @@ class TestAIRequirementDiscoveryLLMJson:
         assert any("parse" in w.lower() for w in result.warnings)
         assert len(result.requirements) == 0
 
+    def test_unparseable_response_warning_carries_safe_category_not_raw_content(self):
+        """CLAUDE-E2E-NIO-005B: a genuinely unparseable response must
+        produce a safe, content-free diagnostic classification in the
+        warning text -- never the actual response content itself --
+        so a FUTURE such failure can be classified without retaining
+        raw provider output."""
+        secret_marker = "super-secret-provider-payload-xyz"
+        provider = self._make_llm(f"{secret_marker} not json at all")
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        result = discovery.discover({"project_id": "p"})
+        assert result.fallback_used is True
+        warning = next(w for w in result.warnings if "not valid json" in w.lower())
+        assert secret_marker not in warning
+        assert "category=unfenced_unparseable" in warning
+        assert "length=" in warning
+        assert "fence_present=False" in warning
+
+    def test_empty_response_is_classified_as_empty_response(self):
+        provider = self._make_llm("")
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        result = discovery.discover({"project_id": "p"})
+        warning = next(w for w in result.warnings if "not valid json" in w.lower())
+        assert "category=empty_response" in warning
+
+    def test_fenced_but_still_invalid_content_is_classified_as_fenced_content_invalid(self):
+        secret_marker = "super-secret-fenced-payload-xyz"
+        provider = self._make_llm(f'```json\n{{{secret_marker}: []}}\n```')
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        result = discovery.discover({"project_id": "p"})
+        warning = next(w for w in result.warnings if "not valid json" in w.lower())
+        assert secret_marker not in warning
+        assert "category=fenced_content_invalid" in warning
+        assert "fence_present=True" in warning
+
+    def test_fenced_json_without_language_tag_is_not_treated_as_invalid(self):
+        """CLAUDE-E2E-NIO-005A: a real-system Requirement Discovery
+        failure ("Failed to parse LLM response: LLM response is not
+        valid JSON.") was root-caused to _parse_response()'s fenced-
+        JSON extraction requiring a strict, whole-response fullmatch of
+        a ```json-tagged fence -- any fence without the "json" language
+        tag (a real, evidenced provider-formatting variation, not an
+        actually-malformed payload) fails that fullmatch, falls through
+        to json.loads() on the raw fenced text itself, and is wrongly
+        classified as InvalidDiscoveryJSONError -- the one malformed-
+        response category discover() never attempts repair for."""
+        provider = self._make_llm('```\n{"requirements": []}\n```')
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        result = discovery.discover({"project_id": "p"})
+        assert result.fallback_used is False
+        assert not any("not valid json" in w.lower() for w in result.warnings)
+
+    def test_fenced_json_with_surrounding_prose_is_not_treated_as_invalid(self):
+        """CLAUDE-E2E-NIO-005A: the same strict fullmatch also rejects a
+        well-formed ```json fence that has any leading or trailing
+        prose around it -- a real, evidenced provider behavior (e.g.
+        "Here is the result:\n```json\n...\n```\nLet me know if you
+        need anything else."), even though the JSON payload itself is
+        perfectly valid and fully extractable."""
+        provider = self._make_llm(
+            'Here is the requested discovery result:\n'
+            '```json\n{"requirements": []}\n```\n'
+            'Let me know if you need anything else.'
+        )
+        discovery = AIRequirementDiscovery(llm_provider=provider)
+        result = discovery.discover({"project_id": "p"})
+        assert result.fallback_used is False
+        assert not any("not valid json" in w.lower() for w in result.warnings)
+
     def test_missing_json_fields_do_not_crash(self):
         json_obj = json.dumps(
             {

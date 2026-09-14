@@ -11,6 +11,41 @@ class RunChangeProvenance:
         self._run_id = run_id
         self._root = Path(project_root).resolve()
 
+    def capture_working_tree_baseline(self) -> None:
+        """CLAUDE-E2E-NIO-006B/006C: capture, once, the full STATE (not
+        merely the path membership) of every path already untracked/
+        modified in the project's working tree BEFORE this run's own
+        mutating actions begin. This is what lets a later Controlled Git
+        delivery distinguish pre-existing foreign content a real user
+        independently owns -- unchanged throughout the run, safe to
+        leave untouched, must never block delivery -- from EITHER a
+        genuinely new, run-introduced unapproved side effect, OR an
+        additional unauthorized mutation applied to a path that was
+        already dirty at run start (CLAUDE-E2E-NIO-006C: a path-only
+        baseline cannot tell these apart, since the path itself never
+        changes). Per path, records the real `git status` class (e.g.
+        "??", " M") and a real content hash (or None for a path that
+        does not currently exist as a file, e.g. a pending deletion) --
+        never a timestamp, never anything inferred from a filename or
+        extension. Artifact/tool neutral throughout. Explicit, not
+        implicit in __init__, so constructing a RunChangeProvenance
+        never has an unexpected subprocess side effect for callers
+        (including the many existing unit tests) that never intend to
+        use this specific capability."""
+        result = subprocess.run(
+            ["git", "-C", str(self._root), "status", "--porcelain", "-z"],
+            capture_output=True, text=True, check=False,
+        )
+        entries = [entry for entry in result.stdout.split("\0") if entry] if not result.returncode else []
+        state = {
+            entry[3:]: {
+                "status": entry[:2],
+                "content_hash": self._hash(self._root / entry[3:]),
+            }
+            for entry in entries
+        }
+        self._manager.capture_working_tree_baseline(self._run_id, state)
+
     def apply(self, applier, changes, phase):
         paths = [change.get("file") for change in changes.get("changes", [])]
         for path in paths:

@@ -182,6 +182,48 @@ class RequirementActivation:
         return "active_blocker" if self.blocks_current_operation else "active_non_blocking"
 
 
+# Requirement types that describe a project-internal artifact the
+# Developer is expected to create or edit as part of the requested
+# development work (e.g. a missing project configuration file), as
+# opposed to an external prerequisite (a tool, package, toolchain,
+# piece of hardware, or connection) that must already exist before
+# Development can meaningfully begin. Missing an artifact of one of
+# these types is not, by itself, a reason to block the current
+# operation - Development has not yet had the chance to produce it.
+DEVELOPMENT_ARTIFACT_REQUIREMENT_TYPES = frozenset({
+    RequirementType.CONFIG_FILE,
+})
+
+
+def _default_activation_for(requirement) -> "RequirementActivation":
+    """Compute the default activation when none was explicitly supplied.
+
+    This is the single, central place default activations are derived
+    from requirement semantics; an explicitly supplied activation (see
+    normalize_requirement_activations) always takes precedence over
+    this default and remains the correct mechanism for overriding it
+    on a per-requirement basis - this function does not invent a
+    second, parallel way to express activation.
+    """
+    if requirement.required and requirement.type in DEVELOPMENT_ARTIFACT_REQUIREMENT_TYPES:
+        return RequirementActivation(
+            requirement_id=requirement.id,
+            active=True,
+            blocks_current_operation=False,
+            reason=(
+                "development-created artifact; expected to be produced by "
+                "the requested development operation, not a "
+                "pre-development prerequisite"
+            ),
+        )
+    return RequirementActivation(
+        requirement_id=requirement.id,
+        active=requirement.required,
+        blocks_current_operation=requirement.required,
+        reason="compatibility default from project requirement",
+    )
+
+
 def normalize_requirement_activations(requirements, activations=None):
     """Return one exact, immutable activation per supplied requirement."""
     requirements_tuple = tuple(requirements)
@@ -200,12 +242,7 @@ def normalize_requirement_activations(requirements, activations=None):
             )
         supplied[activation.requirement_id] = activation
     return tuple(
-        supplied.get(requirement.id) or RequirementActivation(
-            requirement_id=requirement.id,
-            active=requirement.required,
-            blocks_current_operation=requirement.required,
-            reason="compatibility default from project requirement",
-        )
+        supplied.get(requirement.id) or _default_activation_for(requirement)
         for requirement in requirements_tuple
     )
 
@@ -279,7 +316,18 @@ class ValidationResult:
 
 @dataclass(frozen=True)
 class PreflightRequirementResult:
-    """Per‑requirement result of the environment preflight stage."""
+    """Per‑requirement result of the environment preflight stage.
+
+    target_executable is the immutable execution-target identity (an
+    already-resolved executable path) this specific requirement's
+    check used, when that requirement's type has an execution-target
+    concept at all — e.g. for a python_package requirement it is the
+    Python interpreter checked. It is intentionally per-requirement
+    rather than per-preflight-run: a single project can contain
+    multiple ecosystems, and each requirement's adapter resolves and
+    owns its own target independently. Requirement types with no such
+    concept (e.g. a plain EXECUTABLE lookup via PATH) leave this None.
+    """
     requirement_id: str
     present: bool
     detected_version: Optional[str] = None
@@ -287,6 +335,7 @@ class PreflightRequirementResult:
     warning: Optional[str] = None
     active: bool = True
     blocks_current_operation: bool = True
+    target_executable: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -326,7 +375,15 @@ class PreflightResult:
 
 @dataclass(frozen=True)
 class SetupStep:
-    """A single step in a setup/installation plan."""
+    """A single step in a setup/installation plan.
+
+    target_executable carries the exact, immutable execution-target
+    identity (an already-resolved executable path) this step's own
+    requirement was checked against during Preflight — e.g. for a
+    python_package step, the Python interpreter to install into. It is
+    ecosystem-neutral central vocabulary: whatever adapter executes
+    this step interprets it according to its own semantics.
+    """
     id: str
     requirement_id: str
     action: str
@@ -337,6 +394,12 @@ class SetupStep:
     verification_after: Optional[str] = None
     is_approved: bool = False
     setup_effect: Optional[str] = None
+    target_executable: Optional[str] = None
+
+
+def _new_generation_id() -> str:
+    import uuid
+    return uuid.uuid4().hex
 
 
 @dataclass(frozen=True)
@@ -355,6 +418,18 @@ class SetupPlan:
     deferred_requirements: tuple[Requirement, ...] = field(default_factory=tuple)
     provided_requirement_ids: tuple[str, ...] = field(default_factory=tuple)
     unsupported_backend_effects: tuple[str, ...] = field(default_factory=tuple)
+    # CLAUDE-E2E-003I: identifies exactly ONE materialized setup decision
+    # ("generation"), independent of the stable, per-project plan.id.
+    # Generated centrally (default_factory), never client-suppliable --
+    # every fresh SetupPlan() construction that does not explicitly pass
+    # generation_id gets a new, random one, so a genuinely new
+    # materialization (a new ToolchainMaterializer.materialize() call)
+    # always produces a new generation_id, while dataclasses.replace()
+    # (used by SetupApproval.approve()/reject() and by save/load round
+    # trips) preserves the exact same one -- retry, restart and approval
+    # of the SAME materialized decision never change it. Ecosystem-neutral:
+    # a plain identifier, no toolchain-specific meaning.
+    generation_id: str = field(default_factory=_new_generation_id)
 
     def __post_init__(self):
         object.__setattr__(self, "steps", _as_tuple(self.steps))

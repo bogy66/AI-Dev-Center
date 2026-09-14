@@ -121,6 +121,45 @@ class TestOpenRouterLLMProvider:
         with pytest.raises(OpenRouterError, match="Connection error"):
             provider.complete("prompt")
 
+    def test_read_timeout_wrapped_as_connection_error_is_still_classified_as_timeout(self):
+        """CLAUDE-E2E-NIO-007A: a real Real-System-E2E observed
+        "TimeoutError: The read operation timed out" surfacing as
+        requests.exceptions.ConnectionError, misreported by ADC as a
+        bare "Connection error". Mechanically confirmed root cause:
+        requests.models.Response.iter_content() itself contains
+        `except ReadTimeoutError as e: raise ConnectionError(e)` --
+        a genuine urllib3 read timeout that occurs while consuming the
+        response BODY (as opposed to during the initial connect/header
+        phase, which requests' own HTTPAdapter.send() correctly maps to
+        ReadTimeout) is deliberately re-wrapped by requests itself as a
+        bare ConnectionError, with the original ReadTimeoutError as its
+        sole constructor argument. A real timeout must still be
+        classifiable as a timeout despite this wrapping."""
+        import urllib3.exceptions
+
+        mock_session = MagicMock()
+        read_timeout = urllib3.exceptions.ReadTimeoutError(
+            None, "/api/v1/chat/completions", "Read timed out.",
+        )
+        mock_session.post.side_effect = requests.exceptions.ConnectionError(read_timeout)
+        provider = OpenRouterLLMProvider(api_key="key", session=mock_session)
+        with pytest.raises(OpenRouterError, match="timed out"):
+            provider.complete("prompt")
+
+    def test_genuine_connection_error_without_a_wrapped_timeout_is_unaffected(self):
+        """The fix for the case above must not reclassify a real,
+        non-timeout connection failure (e.g. DNS failure, connection
+        refused) -- covered already by test_connection_error, this adds
+        an explicit check that a ConnectionError wrapping a NON-timeout
+        cause (e.g. a plain OSError) still reports "Connection error"."""
+        mock_session = MagicMock()
+        mock_session.post.side_effect = requests.exceptions.ConnectionError(
+            OSError("Name or service not known"),
+        )
+        provider = OpenRouterLLMProvider(api_key="key", session=mock_session)
+        with pytest.raises(OpenRouterError, match="Connection error"):
+            provider.complete("prompt")
+
     def test_provider_implements_llm_provider(self):
         provider = OpenRouterLLMProvider(api_key="key")
         # structural check: has complete method

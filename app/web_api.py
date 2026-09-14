@@ -15,8 +15,20 @@ from pydantic import BaseModel
 from app.dev_workflow import (
     DevelopmentWorkflow, WorkflowBlockedError, WorkflowExecutionError,
 )
+from app.engineering_decision import (
+    ChairmanRecommendationInadmissibleError,
+    EngineeringSelectionRequiredError,
+    EngineeringVariantNotFoundError,
+    EngineeringVariantSelection,
+    NoEligibleEngineeringCandidateError,
+)
 from app.diagnostic_trace import DiagnosticTraceRecorder, TraceEvent, TraceLevel
-from app.project_setup_application import ProjectSetupApplicationService
+from app.project_setup_application import (
+    ProjectSetupApplicationService,
+    approve_setup_plan,
+    execute_approved_plan_from_store,
+    persist_setup_plan,
+)
 from app.canonical_execution import (
     ConcurrentExecutionError, ExecutionReentryError, RecoveryRequiredError,
 )
@@ -27,6 +39,7 @@ from app.project_context import (
     ProjectDefinitionStore, ProjectRegistry, ProjectRegistryError,
     ARCHIVED_STATUS,
 )
+from app.repository_import import RepositoryImportError, import_repository
 
 app = FastAPI(title="AI Dev Center Web GUI")
 app.mount("/static", StaticFiles(directory="web"), name="static")
@@ -101,6 +114,33 @@ class TracingMCPServerWrapper:
 # ---------------------------------------------------------------------------
 #  Session management
 # ---------------------------------------------------------------------------
+class PendingEngineeringSelection:
+    """CLAUDE-ARCH-S2-013C: the minimum state that must survive the
+    productive S2.4 pause -- the display-only EngineeringVariantSelection
+    (S2.4's own artifact, never a second notion of admissibility/
+    authority) plus the preflight/platform evidence resolve_engineering_
+    selection() needs to resume. council_result/validations/chairman_
+    recommendation are already carried inside `selection` -- nothing is
+    duplicated here.
+
+    `project_intelligence` (CLAUDE-ARCH-S2-013G): also carried across the
+    pause -- resolve_engineering_selection() re-runs S2.3 admissibility
+    from scratch, and its Verification Feasibility mechanism-compatibility
+    check needs the SAME independent, ADC-owned evidence the initial
+    run() call already had, never a re-derivation the Council could
+    influence."""
+
+    def __init__(
+        self, selection: EngineeringVariantSelection,
+        preflight_result: object, platform: str | None,
+        project_intelligence: object | None = None,
+    ):
+        self.selection = selection
+        self.preflight_result = preflight_result
+        self.platform = platform
+        self.project_intelligence = project_intelligence
+
+
 class Session:
     def __init__(
         self,
@@ -130,6 +170,9 @@ class Session:
         self.error_message: Optional[str] = None
         self.blocked: bool = False
         self.final_approval_result = None
+        # CLAUDE-ARCH-S2-013C
+        self.pending_engineering_selection: Optional[PendingEngineeringSelection] = None
+        self.engineering_decision_status: Optional[str] = None
 
     @property
     def trace_events(self) -> List[TraceEvent]:
@@ -349,6 +392,24 @@ class RegisterProjectRequest(BaseModel):
 
 class RenameProjectRequest(BaseModel):
     new_name: str
+
+
+class ImportRepositoryRequest(BaseModel):
+    source: str
+    destination_parent: str
+    target_name: str | None = None
+
+
+class EngineeringSelectionRequest(BaseModel):
+    """CLAUDE-ARCH-S2-013C: the productive S2.4 Human Engineering
+    Authority decision. `action` is one of the target actions
+    (ADC_Zielbild Abschnitt 3): accept, select, reject, defer, rework.
+    `variant_id` is required only for `action == "select"` (choosing a
+    non-recommended admissible alternative); it is otherwise ignored."""
+
+    action: str
+    variant_id: str | None = None
+    comment: str | None = None
 
 
 class WebConfigUpdate(BaseModel):
@@ -586,8 +647,26 @@ def _run_initial_planning(session: Session, components: WebSetupComponents):
                 "project_id": session.project_id,
             },
         )
-        plan = result.setup_plan
-        components.plan_store.save(plan)
+        # CLAUDE-ARCH-S2-013C: the productive workflow now stops at the
+        # S2.4 Human Engineering Authority boundary whenever S2.3 found at
+        # least one admissible candidate -- result.setup_plan is None and
+        # result.engineering_selection carries the display-only decision
+        # evidence instead. Only an explicit call to
+        # /api/workflow/{session_id}/engineering-decision may resume
+        # planning towards a SetupPlan; this initial run never persists
+        # one on its own.
+        pending_selection = getattr(result, "engineering_selection", None)
+        if pending_selection is not None:
+            session.pending_engineering_selection = PendingEngineeringSelection(
+                pending_selection, result.preflight_result, result.platform,
+                getattr(result, "project_intelligence", None),
+            )
+            plan = None
+        else:
+            plan = result.setup_plan
+            persist_setup_plan(
+                components.plan_store, plan, getattr(result, "council_result", None),
+            )
     except WorkflowBlockedError as error:
         safe_error = error.safe_reason
         terminal_kind = "blocked"
@@ -598,6 +677,18 @@ def _run_initial_planning(session: Session, components: WebSetupComponents):
     except Exception:
         safe_error = "The central workflow could not start."
     else:
+        if pending_selection is not None:
+            session.workflow_status = "pending_engineering_selection"
+            session.recorder.record(
+                level=TraceLevel.INFO, component="Workflow",
+                event="engineering_selection_required",
+                action="request_engineering_selection", status="pending",
+                result_summary=(
+                    f"Project {session.project_id}: Chairman recommends "
+                    f"{pending_selection.chairman_recommendation!r}"
+                ),
+            )
+            return
         session.plan_id = plan.id
         session.approval_required = True
         session.approval_status = plan.status
@@ -692,6 +783,239 @@ async def get_state(session_id: str):
         "current_activity": current_activity,
         "timeline": timeline,
         "transparency": info,
+        # CLAUDE-ARCH-S2-013C: whether the productive S2.4 Human
+        # Engineering Authority boundary is currently waiting for an
+        # explicit human decision (see /engineering-decision below).
+        "engineering_selection_required": session.pending_engineering_selection is not None,
+    }
+
+
+def _engineering_decision_payload(pending: PendingEngineeringSelection) -> Dict[str, Any]:
+    """CLAUDE-ARCH-S2-013C: the productive Web/API presentation of the
+    Chairman recommendation and admissible alternatives (ADC_Zielbild
+    Abschnitt 25) -- built directly from S2.3/S2.4's own already-computed
+    CandidateValidation set, never a duplicated notion of admissibility.
+
+    CLAUDE-ARCH-S2-014C (F3), defense-in-depth: duplicate variant ids are
+    now rejected at the Chairman-synthesis structural boundary
+    (app.engineering_council._parse_chairman_result) and, independently,
+    by S2.3 itself (app.engineering_decision.validate_variants()), so
+    `validations` here should never actually contain two entries sharing
+    an id -- but the lookup below still resolves by first match (`next`,
+    the SAME resolution order resolve_human_engineering_selection() and
+    validations_by_id() use), never a `{id: v}` dict, which would
+    silently keep the LAST duplicate and let the displayed candidate
+    disagree with whichever one a human's later POST actually resolves."""
+    selection = pending.selection
+    validations = selection.validations
+    recommendation_id = selection.chairman_recommendation
+
+    def _by_id(variant_id):
+        return next((v for v in validations if v.variant.id == variant_id), None)
+
+    def present(validation) -> Dict[str, Any]:
+        variant = validation.variant
+        return {
+            "id": variant.id,
+            "name": variant.name,
+            "environment": variant.environment,
+            "admissible": validation.admissible,
+            "reasons": list(validation.reasons),
+            "advantages": list(variant.advantages),
+            "disadvantages": list(variant.disadvantages),
+            "risks": list(variant.risks),
+            "verification": variant.verification,
+            "rank": variant.rank,
+            "total_score": variant.total_score,
+            "consensus_level": variant.consensus_level,
+            "requirement_coverage": sorted({
+                item.requirement_ref for item in variant.toolchain
+            }),
+            "toolchain": [
+                {
+                    "requirement_ref": item.requirement_ref, "name": item.name,
+                    "type": item.type, "state": item.state,
+                }
+                for item in variant.toolchain
+            ],
+        }
+
+    recommended_validation = _by_id(recommendation_id) if recommendation_id else None
+    recommendation = present(recommended_validation) if recommended_validation is not None else None
+    if recommendation is not None:
+        recommendation["is_recommendation"] = True
+    alternatives = [
+        present(v) for v in validations
+        if v.admissible and v.variant.id != recommendation_id
+    ]
+    # Rejected/inadmissible candidates are exposed only as diagnostic
+    # information -- never as selectable alternatives (they carry their
+    # own `admissible: false` + `reasons`, matching the existing
+    # Diagnostic Trace convention rather than a second admissibility UI).
+    rejected = [present(v) for v in validations if not v.admissible]
+    return {
+        "chairman_recommendation": recommendation,
+        "admissible_alternatives": alternatives,
+        "rejected_candidates": rejected,
+        "actions": ["accept", "select", "reject", "defer", "rework"],
+    }
+
+
+@app.get("/api/workflow/{session_id}/engineering-decision")
+async def get_engineering_decision(session_id: str):
+    """CLAUDE-ARCH-S2-013C: retrieve the pending S2.4 engineering decision
+    -- Chairman recommendation, admissible alternatives and their
+    comparison evidence (Pro/Contra, risks, verification, rank/score)."""
+    session = sessions.get(session_id)
+    if not session:
+        return JSONResponse(content={"error": "unknown session"}, status_code=404)
+    pending = session.pending_engineering_selection
+    if pending is None:
+        return JSONResponse(
+            content={"error": "no engineering decision is pending"}, status_code=400,
+        )
+    return _engineering_decision_payload(pending)
+
+
+@app.post("/api/workflow/{session_id}/engineering-decision")
+async def decide_engineering_selection(session_id: str, request: EngineeringSelectionRequest):
+    """CLAUDE-ARCH-S2-013C: the productive S2.4 Human Engineering
+    Authority decision point -- accept the Chairman recommendation,
+    choose another admissible alternative, reject, defer, or request
+    rework. Reuses S2.4's own resolve_human_engineering_selection()
+    (via DevelopmentWorkflow.resolve_engineering_selection()) -- this
+    endpoint never re-implements admissibility or authority resolution
+    itself. `human_selected_variant_id` is ALWAYS supplied explicitly
+    (even for `accept`, using the Chairman's own recommended id) so
+    EngineeringDecision.selection_authority is always "human"."""
+    session = sessions.get(session_id)
+    if not session:
+        return JSONResponse(content={"error": "unknown session"}, status_code=404)
+    pending = session.pending_engineering_selection
+    if pending is None:
+        return JSONResponse(
+            content={"error": "no engineering decision is pending"}, status_code=400,
+        )
+
+    action = request.action
+    selection = pending.selection
+    council_result = selection.council_result
+
+    if action == "reject":
+        session.workflow_status = "rejected"
+        session.blocked = True
+        session.recorder.record(
+            level=TraceLevel.INFO, component="Agent", event="engineering_selection_rejected",
+            action="reject_engineering_selection", status="rejected",
+            result_summary=request.comment or "",
+        )
+        return {"status": "rejected"}
+
+    if action == "defer":
+        session.workflow_status = "deferred"
+        session.recorder.record(
+            level=TraceLevel.INFO, component="Agent", event="engineering_selection_deferred",
+            action="defer_engineering_selection", status="deferred",
+            result_summary=request.comment or "",
+        )
+        return {"status": "deferred"}
+
+    if action == "rework":
+        # CLAUDE-ARCH-S2-013C: a human-requested rework of the ENTIRE
+        # Council/Chairman synthesis (as opposed to S2.3's own existing,
+        # bounded, automatic S2.3->S2.2 admissibility repair -- see
+        # app.engineering_council._admissibility_rework_evidence(), which
+        # this endpoint never touches) is NOT defined precisely enough by
+        # the current target architecture to implement safely here (which
+        # evidence would a new Chairman prompt use? would it re-run
+        # Council Phase 1/2? how many attempts are allowed?). Per this
+        # task's own instruction ("stop and report the exact ambiguity
+        # rather than inventing a major new workflow"), this action is
+        # recorded and safely leaves the pending selection untouched
+        # (reversible: the user may still accept/select/reject/defer
+        # afterwards) rather than inventing new Council-rerun semantics.
+        session.workflow_status = "rework_requested"
+        session.recorder.record(
+            level=TraceLevel.INFO, component="Agent", event="engineering_rework_requested",
+            action="request_engineering_rework", status="rework_required",
+            result_summary=request.comment or "",
+        )
+        return {
+            "status": "rework_requested",
+            "note": (
+                "Rework of the full Council/Chairman synthesis is not yet "
+                "defined by the target architecture; no automatic action "
+                "was taken. The pending engineering decision remains "
+                "available for accept/select/reject/defer."
+            ),
+        }
+
+    if action == "accept":
+        human_selected_variant_id = selection.chairman_recommendation
+        if not human_selected_variant_id:
+            return JSONResponse(
+                content={"error": "no Chairman recommendation exists to accept"},
+                status_code=400,
+            )
+    elif action == "select":
+        human_selected_variant_id = request.variant_id
+        if not human_selected_variant_id:
+            return JSONResponse(
+                content={"error": "variant_id is required for action=select"},
+                status_code=400,
+            )
+    else:
+        return JSONResponse(
+            content={"error": f"unsupported action: {action!r}"}, status_code=400,
+        )
+
+    if session.development_workflow is None:
+        return JSONResponse(content={"error": "no workflow available to resume"}, status_code=400)
+
+    try:
+        result = session.development_workflow.resolve_engineering_selection(
+            council_result, pending.preflight_result, pending.platform,
+            session.project_id, human_selected_variant_id=human_selected_variant_id,
+            run_id=session.run_id,
+            project_intelligence=pending.project_intelligence,
+            project_root=session.project_path,
+        )
+    except EngineeringVariantNotFoundError as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=400)
+    except ChairmanRecommendationInadmissibleError as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=409)
+    except (NoEligibleEngineeringCandidateError, EngineeringSelectionRequiredError) as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=409)
+    except Exception as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=409)
+
+    plan = result.setup_plan
+    if session.plan_store is not None:
+        persist_setup_plan(session.plan_store, plan, result.council_result)
+    session.pending_engineering_selection = None
+    session.plan_id = plan.id
+    session.approval_required = True
+    session.approval_status = plan.status
+    session.workflow_status = plan.status
+    session.recorder.record(
+        level=TraceLevel.INFO, component="Workflow", event="engineering_selection_resolved",
+        action=f"{action}_engineering_selection", status="success",
+        result_summary=f"Selected {human_selected_variant_id!r} (authority=human)",
+    )
+    session.recorder.record(
+        level=TraceLevel.INFO, component="Workflow", event="plan_created",
+        action="create_plan", status="success",
+        result_summary=f"Plan {plan.id}",
+    )
+    session.recorder.record(
+        level=TraceLevel.INFO, component="Workflow", event="approval_required",
+        action="request_approval", status="pending",
+        result_summary=f"Project {session.project_id}, Plan {plan.id}",
+    )
+    return {
+        "status": plan.status, "plan_id": plan.id,
+        "selected_variant_id": human_selected_variant_id,
+        "selection_authority": "human",
     }
 
 
@@ -767,12 +1091,13 @@ async def approve_canonical_workflow(session_id: str):
     session = sessions.get(session_id)
     if not session:
         return JSONResponse(content={"error": "unknown session"}, status_code=404)
-    if not session.plan_store or not session.approval or not session.plan_id:
+    if not session.plan_store or not session.project_setup_service or not session.plan_id:
         return JSONResponse(content={"error": "no canonical plan to approve"}, status_code=400)
     try:
-        plan = session.plan_store.load(session.project_id, session.plan_id)
-        approved_plan = session.approval.approve(plan)
-        session.plan_store.save(approved_plan)
+        approved_plan = approve_setup_plan(
+            session.project_setup_service, session.plan_store,
+            session.project_id, session.plan_id, session.run_id,
+        )
     except Exception as exc:
         return JSONResponse(content={"error": str(exc)}, status_code=409)
 
@@ -791,10 +1116,11 @@ async def execute_canonical_workflow(session_id: str):
     if not session.plan_store or not session.project_setup_service or not session.plan_id:
         return JSONResponse(content={"error": "no canonical plan to execute"}, status_code=400)
     try:
-        plan = session.plan_store.load(session.project_id, session.plan_id)
-        result = session.project_setup_service.execute_approved_setup_and_development(
-            plan,
+        result = execute_approved_plan_from_store(
+            session.project_setup_service,
+            session.plan_store,
             session.project_id,
+            session.plan_id,
             session.project_path,
             session.task_description,
             session.run_id,
@@ -811,7 +1137,7 @@ async def execute_canonical_workflow(session_id: str):
     session.final_approval_result = result.final_approval_result
     session.workflow_status = result.final_approval_result.status
     return {
-        "plan_id": plan.id,
+        "plan_id": session.plan_id,
         "status": result.final_approval_result.status,
         "development_status": result.status,
         "results": result.setup_execution_results,
@@ -991,6 +1317,27 @@ async def register_project(
     except (ValueError, FileNotFoundError, NotADirectoryError) as error:
         return JSONResponse(content={"error": str(error)}, status_code=400)
     record = registry.register(str(path), display_name=req.display_name)
+    return _project_record_response(record)
+
+
+@app.post("/api/projects/import")
+async def import_repository_endpoint(
+    req: ImportRepositoryRequest,
+    registry: ProjectRegistry = Depends(get_project_registry),
+):
+    """Clone an existing remote Git repository and register it as active.
+
+    CLONE -> VERIFY -> REGISTER only: this never installs dependencies,
+    runs repository code, or starts the development workflow. Errors are
+    returned as structured messages that never include raw credentials.
+    """
+    try:
+        record = import_repository(
+            req.source, req.destination_parent, req.target_name,
+            registry=registry,
+        )
+    except RepositoryImportError as error:
+        return JSONResponse(content={"error": str(error)}, status_code=400)
     return _project_record_response(record)
 
 

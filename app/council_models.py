@@ -73,11 +73,40 @@ class ToolchainItem:
 
     This is NOT a SetupStep.  SetupSteps are derived later by the
     ToolchainMaterializer from ToolchainItems.
+
+    name is a human/display label (e.g. "ESPHome CLI") and is not
+    guaranteed to be a valid technical identifier for any package
+    manager or tool system. technical_identity is the explicit,
+    structured, ecosystem-neutral technical identity Council supplies
+    when it differs from the display name — for a python_package item
+    this means the exact PyPI distribution name (e.g. "esphome"); for
+    an executable/tool item it would mean the resolved binary/tool
+    identifier (e.g. "cmake"). A future ecosystem adapter (npm, cargo,
+    etc.) would interpret the same field as its own package identity —
+    this is intentionally one generic field, not one per ecosystem.
+
+    provides_verification (CLAUDE-ARCH-S2-013F): the verification
+    mechanism identities (e.g. "pytest", "npm_test", "esphome_validate",
+    "pip_show" — ADC's own controlled Python distribution
+    package-presence check, CLAUDE-ADC-S23-VERIFICATION-EVIDENCE-
+    ARCHITECTURE-001) this SAME item can actually run — a structured, producer-declared
+    capability relation, exactly mirroring how `provided_by` already
+    declares an install-dependency relation between two ToolchainItems in
+    this same variant. S2.3's Verification Feasibility check
+    (app.engineering_decision) uses this to mechanically prove that a
+    VerificationCoverage.mechanism is compatible with the toolchain
+    identity its evidence names — never via a hard-coded mechanism/
+    ecosystem lookup table and never via fuzzy string matching (e.g.
+    "pytest contains py"). This item's own `state` ("unavailable"
+    specifically) is reused, unchanged, as the controllability/
+    observability signal: a mechanism whose backing tool ADC cannot even
+    obtain is not one it can control or observe.
     """
 
     requirement_ref: str
     name: str
     type: str
+    technical_identity: str | None = None
     install_method: str | None = None
     version: str | None = None
     purpose: str = ""
@@ -85,9 +114,96 @@ class ToolchainItem:
     state: str = "needs_install"
     environment_constraint: str | None = None
     provided_by: str | None = None
+    provides_verification: tuple[str, ...] = ()
 
     def __post_init__(self):
         object.__setattr__(self, "depends_on", _as_tuple(self.depends_on))
+        object.__setattr__(self, "provides_verification", _as_tuple(self.provides_verification))
+
+
+# ---------------------------------------------------------------------------
+# Verification Coverage (CLAUDE-ARCH-S2-013E)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class VerificationCoverage:
+    """Structured, technology-neutral evidence that a candidate's
+    verification approach actually covers specific binding Requirement(s)
+    with a mechanism ADC can recognize and later observe/control.
+
+    This is a PRE-EXECUTION feasibility artifact only (S2.3 Engineering
+    Admissibility, "Verification Feasibility"): it never runs anything and
+    never proves a test will pass — S5 Quality & Verification remains
+    solely responsible for actually executing and assessing verification.
+    A free-text justification alone (e.g. "run tests") is deliberately
+    NOT sufficient; `kind` and `mechanism` must be structured tokens, and
+    `evidence` must name a concrete, already-structured identity already
+    present on the same candidate (a ToolchainItem's requirement_ref,
+    name or technical_identity), never inferred from prose.
+
+    requirement_refs: which binding Requirement id(s) this one mechanism
+        covers — a single mechanism may cover several (Requirement E),
+        and a candidate may declare several mechanisms that jointly
+        cover it (Requirement F).
+    kind: a small, closed, ecosystem-neutral semantic category describing
+        WHAT KIND of check this is (never a specific tool) — one of
+        "test_command", "build_command", "static_analysis", "probe",
+        "smoke_test", "config_validation", "manual_review". Mirrors
+        app.verification.VerificationStep.verification_kind's own
+        technology-neutral categorisation (test/build/validate/...)
+        without creating a second source of truth: this module never
+        imports app.verification, and app.verification never needs to
+        import this — they describe the same kind of thing at two
+        different pipeline stages (S2 feasibility vs. S5 execution) and
+        are intentionally allowed to evolve independently.
+    mechanism: a single structured technology identity (e.g. "pytest",
+        "npm_test", "cargo_test", "go_test", "ctest", "platformio_test",
+        "esphome_validate", "http_probe") — never a shell command, never
+        free prose, never a closed Python-only allowlist; any concrete,
+        single-token identity naming a real verification technology is
+        acceptable, regardless of ecosystem.
+    evidence: the structured identity (ToolchainItem.requirement_ref,
+        .name or .technical_identity already present on this SAME
+        candidate) that grounds why this mechanism is actually available/
+        applicable here. For "manual_review", "probe" and
+        "config_validation" — kinds with nothing to install — evidence
+        may instead name one of `requirement_refs` itself.
+    human_governed (CLAUDE-ARCH-S2-013F): for kind="manual_review" only —
+        must be explicitly True to represent that this manual step is a
+        deliberately governed human verification path (compatible with
+        ADC's existing Human Approval governance), never an
+        unacknowledged, silently-assumed manual step. A manual_review
+        entry with human_governed=False (the default) never counts as
+        feasible coverage — mechanism compatibility for the other kinds
+        instead comes from a matching ToolchainItem.provides_verification
+        (see there); manual_review has nothing to install, so it is
+        proven governed rather than tool-compatible.
+    area (CLAUDE-ARCH-S2-014D): the `ProjectArea.path` this coverage
+        entry's verification actually runs in — optional, default None.
+        Closes the trusted-verification scope leak the Generalized
+        Verification module's own trusted_verification_identity_groups()
+        used to have (project-wide aggregation letting capability
+        detected in one area corroborate an unrelated area's
+        requirement): S2.3's compatibility check now only accepts
+        independent Project Intelligence evidence whose OWN scope
+        matches (or, for evidence mechanically detected at the project
+        root, covers) this field — never evidence bound to a different,
+        unrelated area. Leaving it unset is only ever compatible with
+        evidence Project Intelligence itself detected at the project
+        root (the one case that is honestly project-wide by filesystem
+        containment, never a default applied on its behalf).
+    """
+
+    requirement_refs: tuple[str, ...]
+    kind: str
+    mechanism: str
+    evidence: str = ""
+    human_governed: bool = False
+    area: str | None = None
+
+    def __post_init__(self):
+        object.__setattr__(self, "requirement_refs", _as_tuple(self.requirement_refs))
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +231,7 @@ class AgentProposal:
     confidence: float = 0.5
     feasibility: str = "medium"
     verification: str = ""
+    verification_coverage: tuple[VerificationCoverage, ...] = ()
     test_strategy: dict[str, Any] | None = None
     agent_reasoning: str = ""
     raw_llm_response: str = ""
@@ -126,6 +243,7 @@ class AgentProposal:
         object.__setattr__(self, "advantages", _as_tuple(self.advantages))
         object.__setattr__(self, "disadvantages", _as_tuple(self.disadvantages))
         object.__setattr__(self, "risks", _as_tuple(self.risks))
+        object.__setattr__(self, "verification_coverage", _as_tuple(self.verification_coverage))
 
 
 @dataclass(frozen=True)
@@ -212,6 +330,7 @@ class CouncilVariant:
     confidence: float = 0.5
     feasibility: str = "medium"
     verification: str = ""
+    verification_coverage: tuple[VerificationCoverage, ...] = ()
     test_strategy: dict[str, Any] | None = None
 
     votes: tuple[AgentVote, ...] = ()
@@ -232,6 +351,7 @@ class CouncilVariant:
         object.__setattr__(self, "risks", _as_tuple(self.risks))
         object.__setattr__(self, "votes", _as_tuple(self.votes))
         object.__setattr__(self, "minority_opinions", _as_tuple(self.minority_opinions))
+        object.__setattr__(self, "verification_coverage", _as_tuple(self.verification_coverage))
 
 
 @dataclass(frozen=True)

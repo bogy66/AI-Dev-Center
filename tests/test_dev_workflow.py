@@ -1,11 +1,14 @@
 """Tests for the deterministic development workflow."""
 
+from dataclasses import replace
+import shutil
+import sys
 from unittest.mock import MagicMock
 
 import pytest
 
 from app.ai_requirement_discovery import AIRequirementDiscovery
-from app.council_models import CouncilInput, CouncilResult
+from app.council_models import CouncilInput, CouncilResult, CouncilVariant, ToolchainItem
 from app.dev_workflow import (
     DevelopmentWorkflow,
     WorkflowBlockedError,
@@ -13,8 +16,9 @@ from app.dev_workflow import (
     WorkflowResult,
 )
 from app.engineering_council import EngineeringCouncil
+from app.engineering_decision import select_engineering_variant
 from app.diagnostic_trace import DiagnosticTrace, DiagnosticTraceStore
-from app.python_package_executor import PythonPackageExecutor
+from app.python_package_executor import CommandResult, PythonPackageExecutor
 from app.requirement_model import (
     DiscoveryResult,
     PreflightResult,
@@ -28,6 +32,7 @@ from app.requirement_model import (
     SetupStep,
     Status,
     ValidationResult,
+    normalize_requirement_activations,
 )
 from app.requirement_preflight import RequirementPreflight
 from app.requirement_validator import RequirementValidator
@@ -150,9 +155,20 @@ def _make_components(project_id: str = "proj-1"):
         discovery_result.requirements,
     )
     preflight_result = _make_preflight_result(project_id)
+    # CLAUDE-ARCH-S2-012A: dev_workflow.py's real production path now
+    # calls select_engineering_variant() (S2) directly rather than only
+    # through the (here fully mocked) materializer, so this fixture's
+    # council_result must be a genuinely admissible CouncilResult -- a
+    # real variant with a recommendation pointing to it -- for that real,
+    # unmocked S2 call to succeed. preflight_result above has no missing
+    # requirements, so there is no binding Requirement/Constraint for
+    # this single, empty-toolchain variant to violate.
     council_result = CouncilResult(
         id="council-1",
         project_id=project_id,
+        variants=(CouncilVariant(id="v1", name="v1"),),
+        recommendation="v1",
+        council_complete=True,
     )
     plan_result = _make_setup_plan(project_id)
 
@@ -162,6 +178,7 @@ def _make_components(project_id: str = "proj-1"):
     planner.plan.return_value = plan_result
     council.evaluate.return_value = council_result
     materializer.materialize.return_value = plan_result
+    materializer.materialize_decision.return_value = plan_result
 
     return (
         discovery,
@@ -210,7 +227,15 @@ class TestDevelopmentWorkflow:
         assert result.validation_result is validation_result
         assert result.preflight_result is preflight_result
         assert result.council_result is council_result
-        assert result.setup_plan is plan_result
+        # CLAUDE-ARCH-S2-013C: run() now stops at the productive S2.4
+        # Human Engineering Authority boundary -- no SetupPlan exists yet.
+        assert result.setup_plan is None
+        assert result.engineering_selection is not None
+        resumed = workflow.resolve_engineering_selection(
+            result.council_result, result.preflight_result, "linux", "proj-1",
+            human_selected_variant_id=result.engineering_selection.chairman_recommendation,
+        )
+        assert resumed.setup_plan is plan_result
 
     def test_discovery_called_with_correct_args(self):
         discovery, validator, preflight, planner, council, materializer, *_ = _make_components()
@@ -308,7 +333,31 @@ class TestDevelopmentWorkflow:
             validation_result.normalized_requirements,
             "proj-1",
             validation_result.activations,
+            project_root=None,
         )
+
+    def test_preflight_receives_project_root_from_project_context(self):
+        """CLAUDE-E2E-003B Gap B: the productive project_root (carried by
+        ProjectContext, already built by ProjectSetupApplicationService's
+        plan_project_setup before DevelopmentWorkflow.run() is called) is
+        threaded into RequirementPreflight.check() so PYTHON_PACKAGE
+        checks can route through the central controlled execution
+        boundary instead of falling back to an unconfined subprocess."""
+        (
+            discovery, validator, preflight, planner, council, materializer,
+            *_,
+        ) = _make_components()
+
+        workflow = DevelopmentWorkflow(
+            discovery, validator, preflight, planner,
+            council=council, materializer=materializer,
+        )
+        fake_project_context = MagicMock(project_root="/tmp/adc-project-root")
+
+        workflow.run({"name": "test"}, "proj-1", project_context=fake_project_context)
+
+        _, kwargs = preflight.check.call_args
+        assert kwargs["project_root"] == "/tmp/adc-project-root"
 
     def test_council_receives_canonical_input(self):
         (
@@ -370,7 +419,14 @@ class TestDevelopmentWorkflow:
 
         assert council.evaluate.call_args.args[0].project_files == ()
 
-    def test_materializer_receives_exact_council_result_and_project_id(self):
+    def test_materializer_receives_exact_engineering_decision_and_project_id(self):
+        """CLAUDE-ARCH-S2-012A: the real production path now resolves the
+        S2 EngineeringDecision (select_engineering_variant()) BEFORE
+        calling the S3-facing materializer, and calls
+        materialize_decision() -- not materialize() -- with exactly that
+        decision. This is the TC-B-S2.5-S3 proof that S3 receives the
+        already-published S2.5 artifact rather than a raw CouncilResult
+        it would have to resolve itself."""
         (
             discovery,
             validator,
@@ -395,10 +451,249 @@ class TestDevelopmentWorkflow:
         )
 
         result = workflow.run({"name": "test"}, "proj-1")
+        resumed = workflow.resolve_engineering_selection(
+            result.council_result, preflight_result, "linux", "proj-1",
+            human_selected_variant_id=council_result.recommendation,
+        )
 
-        materializer.materialize.assert_called_once_with(council_result, "proj-1", preflight=preflight_result)
+        expected_decision = select_engineering_variant(
+            council_result, preflight_result, "linux",
+            chairman_recommendation=council_result.recommendation,
+            human_selected_variant_id=council_result.recommendation,
+        )
+        materializer.materialize.assert_not_called()
+        materializer.materialize_decision.assert_called_once_with(
+            expected_decision, "proj-1", preflight=preflight_result, project_root=None,
+        )
         assert result.council_result is council_result
-        assert result.setup_plan is plan_result
+        assert resumed.setup_plan is plan_result
+
+    def test_zero_admissible_candidates_failure_exposes_per_candidate_evidence_in_trace(self, tmp_path):
+        """CLAUDE-E2E-NIO-010A, Part 7: Real-System-E2E #5 exposed that a
+        NoEligibleEngineeringCandidateError reached the diagnostic trace
+        only as a generic "Toolchain materialization failed:
+        NoEligibleEngineeringCandidateError" summary -- no way to
+        mechanically see WHY. The trace must now carry the same rich,
+        safe, per-candidate evidence the exception itself exposes.
+
+        CLAUDE-ARCH-S2-012A: the real production path now resolves
+        select_engineering_variant() (S2) for real before ever reaching
+        the (mocked) materializer, so this exercises the genuine S2.3
+        rejection rather than injecting the exception via a mock."""
+        from app.council_models import CouncilVariant, ToolchainItem
+        from app.engineering_decision import NoEligibleEngineeringCandidateError
+        from app.requirement_model import (
+            PreflightRequirementResult, PreflightResult, Requirement, RequirementActivation,
+        )
+
+        (
+            discovery, validator, preflight, planner, council, materializer,
+            _, _, _, _, _,
+        ) = _make_components()
+        req_platformio = Requirement(
+            id="req-platformio", name="platformio", type="executable",
+            purpose="build backend", required=True, confidence=0.9,
+        )
+        preflight_result = PreflightResult(
+            id="pre-1", project_id="proj-1", overall_ready=False,
+            results=(PreflightRequirementResult(
+                requirement_id="req-platformio", present=False, satisfied=False,
+            ),),
+            missing_requirements=(req_platformio,),
+            activations=(RequirementActivation("req-platformio", True, True),),
+        )
+        rejected_variant = CouncilVariant(id="merged-venv", name="ESPHome mit Python Virtual Environment")
+        council_result = CouncilResult(
+            id="council-1", project_id="proj-1",
+            variants=(rejected_variant,), recommendation="merged-venv",
+            council_complete=True,
+        )
+        preflight.check.return_value = preflight_result
+        council.evaluate.return_value = council_result
+        trace = DiagnosticTrace(DiagnosticTraceStore(tmp_path / "trace.jsonl"))
+        workflow = DevelopmentWorkflow(
+            discovery, validator, preflight, planner,
+            council=council, materializer=materializer,
+            diagnostic_trace=trace,
+        )
+
+        with pytest.raises(NoEligibleEngineeringCandidateError):
+            workflow.run({"name": "test"}, "proj-1")
+
+        events = trace.get_trace("proj-1")
+        failure_events = [
+            event for event in events
+            if event.phase == "toolchain_materialization" and event.status == "failed"
+            and "failure_summary" in event.details
+        ]
+        assert len(failure_events) == 1
+        failure_summary = failure_events[0].details.get("failure_summary", "")
+        assert "merged-venv" in failure_summary
+        assert "req-platformio" in failure_summary
+        assert "inadmissible" in failure_summary
+
+    def test_materializer_binding_diagnostic_reaches_the_trace_for_a_rejected_candidate(self, tmp_path):
+        """CLAUDE-ADC-S23-MATERIALIZER-DIAGNOSTICS-001: run()'s real
+        validate_candidates() call for a python_package binding item whose
+        display name is not a valid distribution identifier and whose
+        technical_identity is missing (the exact CLAUDE-ARCH-S2-012D /
+        Real-System-E2E #8 shape) must reach the central diagnostic trace
+        with the new, structured per-item materializer diagnostic --
+        distinguishing identity_missing_or_invalid mechanically, without
+        needing to inspect any raw effective_prompt text."""
+        from app.engineering_decision import NoEligibleEngineeringCandidateError
+
+        (
+            discovery, validator, preflight, planner, council, materializer,
+            _, _, _, _, _,
+        ) = _make_components()
+        req_esphome = Requirement(
+            id="req-esphome", name="esphome", type=RequirementType.PYTHON_PACKAGE,
+            purpose="firmware build", required=True, confidence=0.9,
+        )
+        preflight_result = PreflightResult(
+            id="pre-1", project_id="proj-1", overall_ready=False,
+            results=(PreflightRequirementResult(
+                requirement_id="req-esphome", present=False, satisfied=False,
+            ),),
+            missing_requirements=(req_esphome,),
+            activations=(RequirementActivation("req-esphome", True, True),),
+        )
+        rejected_variant = CouncilVariant(
+            id="merged-host-venv", name="ESPHome CLI mit Python Virtual Environment",
+            toolchain=(ToolchainItem(
+                requirement_ref="req-esphome", name="ESPHome CLI",
+                type=RequirementType.PYTHON_PACKAGE, technical_identity=None,
+                install_method="pip install esphome",
+            ),),
+        )
+        council_result = CouncilResult(
+            id="council-1", project_id="proj-1",
+            variants=(rejected_variant,), recommendation="merged-host-venv",
+            council_complete=True,
+        )
+        preflight.check.return_value = preflight_result
+        council.evaluate.return_value = council_result
+        trace = DiagnosticTrace(DiagnosticTraceStore(tmp_path / "trace.jsonl"))
+        workflow = DevelopmentWorkflow(
+            discovery, validator, preflight, planner,
+            council=council, materializer=materializer,
+            diagnostic_trace=trace,
+        )
+
+        with pytest.raises(NoEligibleEngineeringCandidateError):
+            workflow.run({"name": "test"}, "proj-1")
+
+        events = trace.get_trace("proj-1")
+        diagnostic_events = [
+            event for event in events
+            if event.phase == "toolchain_materialization"
+            and event.details.get("interface_data", {}).get("info", {}).get("y", {}).get("data", {})
+            .get("materializer_rejection_category") == "identity_missing_or_invalid"
+        ]
+        assert len(diagnostic_events) == 1
+        payload = diagnostic_events[0].details["interface_data"]["verbose"]
+        assert payload["x"]["data"]["variant_id"] == "merged-host-venv"
+        assert payload["x"]["data"]["requirement_ref"] == "req-esphome"
+        assert payload["x"]["data"]["technical_identity_present"] is False
+        assert payload["y"]["data"]["safe_identifier"] is None
+        assert payload["y"]["data"]["materializer_action"] == "manual_review"
+        assert payload["y"]["data"]["materializer_rejection_category"] == "identity_missing_or_invalid"
+        # This diagnostic is additive and observational only: the existing
+        # per-candidate failure evidence event from the prior test still
+        # reaches the trace unchanged, and run() still raises exactly the
+        # same exception it always did.
+        assert any(
+            event.phase == "toolchain_materialization" and event.status == "failed"
+            and "failure_summary" in event.details
+            for event in events
+        )
+
+    def test_bytes_install_method_diagnostic_never_replaces_the_real_failure_evidence(self, tmp_path):
+        """CLAUDE-ADC-S23-MATERIALIZER-DIAGNOSTICS-FIX-001 (CDX-ADC-S23-
+        MATERIALIZER-DIAGNOSTICS-REVIEW-001): before this fix, a binding
+        item with missing identity AND install_method=b"pip" made the new
+        diagnostic instrumentation itself raise TypeError from run()'s
+        try/except around validate_candidates()/resolve_human_engineering_
+        selection() -- replacing the real NoEligibleEngineeringCandidateError
+        and losing its failure_summary evidence entirely (the `except
+        Exception` handler's `getattr(error, "validations", None) or
+        getattr(error, "rejected", None)` finds nothing on a bare TypeError,
+        so `details` becomes {} instead of carrying failure_summary). This
+        proves the fix: the ORIGINAL exception type and its failure_summary
+        evidence still reach the trace exactly as in the string-install-
+        method test above, and the new diagnostic event itself is present
+        and did not crash, now correctly labeling install_method's shape as
+        "non_string_type"."""
+        from app.engineering_decision import NoEligibleEngineeringCandidateError
+
+        (
+            discovery, validator, preflight, planner, council, materializer,
+            _, _, _, _, _,
+        ) = _make_components()
+        req_esphome = Requirement(
+            id="req-esphome", name="esphome", type=RequirementType.PYTHON_PACKAGE,
+            purpose="firmware build", required=True, confidence=0.9,
+        )
+        preflight_result = PreflightResult(
+            id="pre-1", project_id="proj-1", overall_ready=False,
+            results=(PreflightRequirementResult(
+                requirement_id="req-esphome", present=False, satisfied=False,
+            ),),
+            missing_requirements=(req_esphome,),
+            activations=(RequirementActivation("req-esphome", True, True),),
+        )
+        rejected_variant = CouncilVariant(
+            id="merged-host-venv", name="ESPHome CLI mit Python Virtual Environment",
+            toolchain=(ToolchainItem(
+                requirement_ref="req-esphome", name="ESPHome CLI",
+                type=RequirementType.PYTHON_PACKAGE, technical_identity=None,
+                install_method=b"pip",
+            ),),
+        )
+        council_result = CouncilResult(
+            id="council-1", project_id="proj-1",
+            variants=(rejected_variant,), recommendation="merged-host-venv",
+            council_complete=True,
+        )
+        preflight.check.return_value = preflight_result
+        council.evaluate.return_value = council_result
+        trace = DiagnosticTrace(DiagnosticTraceStore(tmp_path / "trace.jsonl"))
+        workflow = DevelopmentWorkflow(
+            discovery, validator, preflight, planner,
+            council=council, materializer=materializer,
+            diagnostic_trace=trace,
+        )
+
+        # The ORIGINAL exception type, never a TypeError from the
+        # diagnostic instrumentation.
+        with pytest.raises(NoEligibleEngineeringCandidateError):
+            workflow.run({"name": "test"}, "proj-1")
+
+        events = trace.get_trace("proj-1")
+        failure_events = [
+            event for event in events
+            if event.phase == "toolchain_materialization" and event.status == "failed"
+            and "failure_summary" in event.details
+        ]
+        assert len(failure_events) == 1
+        failure_summary = failure_events[0].details.get("failure_summary", "")
+        assert "merged-host-venv" in failure_summary
+        assert "req-esphome" in failure_summary
+        assert "inadmissible" in failure_summary
+
+        diagnostic_events = [
+            event for event in events
+            if event.phase == "toolchain_materialization"
+            and event.details.get("interface_data", {}).get("info", {}).get("y", {}).get("data", {})
+            .get("materializer_rejection_category") == "identity_missing_or_invalid"
+        ]
+        assert len(diagnostic_events) == 1
+        payload = diagnostic_events[0].details["interface_data"]["verbose"]
+        assert payload["x"]["data"]["install_method_python_type"] == "bytes"
+        assert payload["y"]["data"]["install_method_classification"] == "non_string_type"
+        assert payload["y"]["data"]["materializer_action"] == "manual_review"
+        assert payload["y"]["data"]["materializer_rejection_category"] == "identity_missing_or_invalid"
 
     def test_planner_is_never_called(self):
         discovery, validator, preflight, planner, council, materializer, *_ = _make_components()
@@ -551,6 +846,8 @@ class TestDevelopmentWorkflow:
         degraded_result = CouncilResult(
             id="council-degraded",
             project_id="proj-1",
+            variants=(CouncilVariant(id="v1", name="v1"),),
+            recommendation="v1",
             council_complete=True,
             council_degraded=True,
             agent_errors=("A1 unavailable",),
@@ -564,12 +861,20 @@ class TestDevelopmentWorkflow:
         )
 
         result = workflow.run({"name": "test"}, "proj-1")
+        resumed = workflow.resolve_engineering_selection(
+            result.council_result, preflight_result, "linux", "proj-1",
+            human_selected_variant_id="v1",
+        )
 
-        materializer.materialize.assert_called_once_with(
-            degraded_result, "proj-1", preflight=preflight_result
+        expected_decision = select_engineering_variant(
+            degraded_result, preflight_result, "linux", chairman_recommendation="v1",
+            human_selected_variant_id="v1",
+        )
+        materializer.materialize_decision.assert_called_once_with(
+            expected_decision, "proj-1", preflight=preflight_result, project_root=None,
         )
         assert result.council_result is degraded_result
-        assert result.setup_plan is plan_result
+        assert resumed.setup_plan is plan_result
         council_events = [
             event for event in trace.get_trace("proj-1")
             if event.phase == "engineering_council"
@@ -671,7 +976,11 @@ class TestDevelopmentWorkflow:
         assert result.validation_result is validation_result
         assert result.preflight_result is preflight_result
         assert result.council_result is council_result
-        assert result.setup_plan is plan_result
+        resumed = workflow.resolve_engineering_selection(
+            result.council_result, result.preflight_result, "linux", "proj-1",
+            human_selected_variant_id=council_result.recommendation,
+        )
+        assert resumed.setup_plan is plan_result
 
 
 class TestApprovedExecution:
@@ -944,8 +1253,12 @@ class TestApprovedExecution:
         )
 
         result = workflow.run({"name": "test"}, "proj-1")
+        resumed = workflow.resolve_engineering_selection(
+            result.council_result, result.preflight_result, "linux", "proj-1",
+            human_selected_variant_id=result.engineering_selection.chairman_recommendation,
+        )
 
-        assert result.setup_plan is plan_result
+        assert resumed.setup_plan is plan_result
         executor.execute.assert_not_called()
 
 
@@ -1248,3 +1561,318 @@ class TestSetupExecutionActivation:
 
         results = workflow.execute_approved(plan)
         assert len(results) == 1
+
+
+class TestDevelopmentArtifactRequirementActivation:
+    """CLAUDE-E2E-001: a missing development-created artifact (e.g. a
+    project configuration file Development is expected to produce) must
+    not block execution of the rest of an approved plan, while a genuine
+    external prerequisite (executable/package/toolchain/hardware/
+    connection) must still block -- using the real, unmodified
+    normalize_requirement_activations default (no explicit activation
+    supplied by the caller), reproducing the full CLAUDE-E2E-001 chain
+    from Requirement through to DevelopmentWorkflow.execute_approved().
+    """
+
+    def test_missing_config_file_requirement_defaults_to_nonblocking_and_is_skipped(self):
+        executor = MagicMock(spec=PythonPackageExecutor)
+        executor.execute.return_value = ExecutionResult(
+            step_id="step-install", success=True, message="ok",
+            verification_passed=True,
+        )
+        workflow = DevelopmentWorkflow(
+            discovery=MagicMock(), validator=MagicMock(),
+            preflight=MagicMock(), planner=MagicMock(), executor=executor,
+        )
+        artifact_requirement = Requirement(
+            id="req-config", name="project configuration file",
+            type=RequirementType.CONFIG_FILE, purpose="project configuration",
+            required=True, confidence=0.9,
+        )
+        other_requirement = _make_requirement("req-install")
+        activations = normalize_requirement_activations(
+            (artifact_requirement, other_requirement),
+        )
+        plan = SetupPlan(
+            id="plan-artifact", project_id="proj-1",
+            steps=(
+                SetupStep(id="step-config", requirement_id="req-config",
+                          action="manual_review", is_approved=True),
+                SetupStep(id="step-install", requirement_id="req-install",
+                          action="install", install_method="pip",
+                          package="pkg", is_approved=True),
+            ),
+            status="approved",
+            requirement_activations=activations,
+        )
+
+        results = workflow.execute_approved(plan)
+
+        assert len(results) == 1
+        assert results[0].step_id == "step-install"
+
+    def test_missing_config_file_requirement_activation_is_still_represented(self):
+        """The requirement remains present in the plan's activations,
+        merely non-blocking -- proving the fix uses the central
+        RequirementActivation mechanism rather than dropping the
+        requirement or inventing a parallel exception path."""
+        artifact_requirement = Requirement(
+            id="req-config", name="project configuration file",
+            type=RequirementType.CONFIG_FILE, purpose="project configuration",
+            required=True, confidence=0.9,
+        )
+        activations = normalize_requirement_activations((artifact_requirement,))
+
+        assert len(activations) == 1
+        activation = activations[0]
+        assert activation.requirement_id == "req-config"
+        assert activation.active is True
+        assert activation.blocks_current_operation is False
+
+    def test_missing_hardware_prerequisite_still_blocks_by_default(self):
+        """A genuine external prerequisite (here: required hardware) must
+        retain the original required-implies-blocking default; the fix
+        must not blindly make all requirement types non-blocking."""
+        executor = MagicMock(spec=PythonPackageExecutor)
+        workflow = DevelopmentWorkflow(
+            discovery=MagicMock(), validator=MagicMock(),
+            preflight=MagicMock(), planner=MagicMock(), executor=executor,
+        )
+        hardware_requirement = Requirement(
+            id="req-device", name="ESP32 development board",
+            type=RequirementType.HARDWARE_COMPONENT, purpose="target hardware",
+            required=True, confidence=0.9,
+        )
+        activations = normalize_requirement_activations((hardware_requirement,))
+        plan = SetupPlan(
+            id="plan-hardware", project_id="proj-1",
+            steps=(SetupStep(
+                id="step-device", requirement_id="req-device",
+                action="manual_review", is_approved=True,
+            ),),
+            status="approved",
+            requirement_activations=activations,
+        )
+
+        with pytest.raises(WorkflowExecutionError, match="manual review"):
+            workflow.execute_approved(plan)
+
+    def test_explicit_activation_overrides_development_artifact_default(self):
+        """An explicitly supplied activation for a config_file requirement
+        (e.g. a future Council/discovery enhancement that determines it
+        genuinely must pre-exist) still takes precedence over the type-based
+        default -- the default never overrides an explicit decision."""
+        artifact_requirement = Requirement(
+            id="req-config", name="project configuration file",
+            type=RequirementType.CONFIG_FILE, purpose="project configuration",
+            required=True, confidence=0.9,
+        )
+        explicit = RequirementActivation(
+            "req-config", True, True, "explicitly required by this workflow",
+        )
+        activations = normalize_requirement_activations(
+            (artifact_requirement,), (explicit,),
+        )
+
+        assert activations == (explicit,)
+
+    def test_missing_python_package_prerequisite_retains_controlled_setup(self):
+        """Missing executable/package/toolchain prerequisites retain their
+        current controlled setup behavior (installable, blocking by
+        default) unaffected by the development-artifact classification."""
+        executor = MagicMock(spec=PythonPackageExecutor)
+        executor.execute.return_value = ExecutionResult(
+            step_id="step-install", success=True, message="ok",
+            verification_passed=True,
+        )
+        workflow = DevelopmentWorkflow(
+            discovery=MagicMock(), validator=MagicMock(),
+            preflight=MagicMock(), planner=MagicMock(), executor=executor,
+        )
+        package_requirement = _make_requirement("req-install")
+        activations = normalize_requirement_activations((package_requirement,))
+        assert activations[0].blocks_current_operation is True
+
+        plan = SetupPlan(
+            id="plan-package", project_id="proj-1",
+            steps=(SetupStep(
+                id="step-install", requirement_id="req-install",
+                action="install", install_method="pip", package="pkg",
+                setup_effect=SetupEffect.PYTHON_PACKAGE_INSTALL, is_approved=True,
+            ),),
+            status="approved",
+            requirement_activations=activations,
+        )
+
+        results = workflow.execute_approved(plan)
+        assert len(results) == 1
+        assert results[0].step_id == "step-install"
+
+
+class TestDeterministicMissingPythonPackageProductiveFlow:
+    """CLAUDE-E2E-003 PART 7 / PART 9-D: a deterministic, non-LLM-driven
+    reproduction of the missing-Python-package productive flow -- from
+    a genuinely missing distribution through Preflight, the Engineering
+    Council's ToolchainItem/SetupPlan materialization, and into
+    DevelopmentWorkflow.execute_approved() -- proving the real-E2E
+    shape (display-cased package name, differently-cased install_method)
+    now reaches the controlled execution boundary instead of raising
+    UnsupportedInstallMethodError, without depending on what the LLM
+    happens to choose in any given paid E2E run.
+    """
+
+    def test_missing_python_package_is_detected_then_reaches_execution(self, tmp_path):
+        # A deliberately fictional distribution name -- guaranteed absent
+        # from any real Python environment, so this test's "missing"
+        # premise is genuinely deterministic and never coupled to
+        # whatever happens to be installed in the venv running it.
+        package_name = "Some-Fictional-ADC-Test-Package"
+        requirement = Requirement(
+            id="req-fictional", name=package_name,
+            type=RequirementType.PYTHON_PACKAGE, purpose="firmware toolchain",
+            required=True, confidence=0.9,
+        )
+
+        preflight = RequirementPreflight.check(
+            (requirement,), "proj-fictional",
+            target_executable=sys.executable, project_root=str(tmp_path),
+        )
+        assert preflight.results[0].present is False
+        assert preflight.results[0].target_executable == sys.executable
+
+        item = ToolchainItem(
+            requirement_ref="req-fictional", name=package_name,
+            type=RequirementType.PYTHON_PACKAGE,
+            install_method="pip install some-fictional-adc-test-package",
+        )
+        variant = CouncilVariant(id="variant-1", name="variant-1", toolchain=(item,))
+        council_result = CouncilResult(
+            id="council-1", project_id="proj-fictional",
+            variants=(variant,), recommendation="variant-1",
+            council_complete=True,
+        )
+
+        plan = ToolchainMaterializer().materialize(
+            council_result, "proj-fictional", preflight=preflight,
+        )
+        assert len(plan.steps) == 1
+        step = plan.steps[0]
+        assert step.action == "install"
+        assert step.package == package_name
+        assert step.install_method == "pip install some-fictional-adc-test-package"
+        assert step.target_executable == sys.executable
+
+        approved_plan = replace(
+            plan,
+            status="approved",
+            steps=(replace(step, is_approved=True),),
+        )
+
+        runner = MagicMock()
+        runner.run.return_value = CommandResult(returncode=0, stdout="", stderr="")
+        executor = PythonPackageExecutor(runner=runner, verifier=lambda step: True)
+        workflow = DevelopmentWorkflow(
+            discovery=MagicMock(), validator=MagicMock(),
+            preflight=MagicMock(), planner=MagicMock(), executor=executor,
+        )
+
+        results = workflow.execute_approved(approved_plan)
+
+        assert len(results) == 1
+        assert results[0].success is True
+        assert runner.run.call_count == 1
+        assert runner.run.call_args[0][0] == [
+            sys.executable, "-m", "pip", "install", package_name,
+        ]
+
+
+class TestTargetPythonSurvivesPathMutation:
+    """CLAUDE-E2E-003B/003C Gap A: the target Python identity is
+    resolved exactly once, by RequirementPreflight, at the start of a
+    workflow/setup operation, and then carried as plain, immutable,
+    ecosystem-neutral data (through
+    PreflightRequirementResult.target_executable ->
+    SetupStep.target_executable) into materialization, installation,
+    and verification. Neither installation nor verification may
+    re-resolve it from PATH later.
+
+    Proven here by deliberately changing what "python" resolves to on
+    PATH AFTER the target was selected, and confirming the
+    already-resolved value from Preflight is still exactly what the
+    productive install call uses -- even though a fresh, default
+    PythonPackageExecutor built after the mutation would, on its own,
+    resolve the new (wrong) PATH-based target.
+    """
+
+    def test_path_mutation_after_target_selection_does_not_change_the_target(
+        self, monkeypatch, tmp_path,
+    ):
+        import subprocess
+        import app.execution as execution_module
+
+        monkeypatch.setattr(shutil, "which", lambda name: "/target/A/python")
+
+        requirement = Requirement(
+            id="req-fictional", name="Some-Fictional-ADC-Test-Package",
+            type=RequirementType.PYTHON_PACKAGE, purpose="firmware toolchain",
+            required=True, confidence=0.9,
+        )
+        preflight = RequirementPreflight.check(
+            (requirement,), "proj-fictional", project_root=str(tmp_path),
+        )
+        assert preflight.results[0].target_executable == "/target/A/python"
+
+        item = ToolchainItem(
+            requirement_ref="req-fictional", name="Some-Fictional-ADC-Test-Package",
+            type=RequirementType.PYTHON_PACKAGE,
+            install_method="pip install some-fictional-adc-test-package",
+        )
+        variant = CouncilVariant(id="variant-1", name="variant-1", toolchain=(item,))
+        council_result = CouncilResult(
+            id="council-1", project_id="proj-fictional",
+            variants=(variant,), recommendation="variant-1", council_complete=True,
+        )
+        plan = ToolchainMaterializer().materialize(
+            council_result, "proj-fictional", preflight=preflight,
+        )
+        step = plan.steps[0]
+        assert step.target_executable == "/target/A/python"
+
+        # Target selection is done. PATH now points somewhere else
+        # entirely -- this must never be revisited by install or verify.
+        monkeypatch.setattr(shutil, "which", lambda name: "/target/B/python")
+
+        approved_plan = replace(
+            plan, status="approved", steps=(replace(step, is_approved=True),),
+        )
+
+        calls = []
+
+        def fake_execute_controlled(request, project_root):
+            calls.append(tuple(request.args))
+            return subprocess.CompletedProcess(list(request.args), 0, "1.0\n", "")
+
+        monkeypatch.setattr(execution_module, "execute_controlled", fake_execute_controlled)
+
+        # Built AFTER the mutation, using the exact productive (default
+        # runner) composition -- proving its OWN instance-level default
+        # really did follow PATH to the new, wrong target.
+        executor = PythonPackageExecutor()
+        assert executor.python_executable == "/target/B/python"
+
+        from app.setup_execution_state import SetupExecutionStateStore
+
+        workflow = DevelopmentWorkflow(
+            discovery=MagicMock(), validator=MagicMock(), preflight=MagicMock(),
+            planner=MagicMock(), executor=executor,
+            execution_state_store=SetupExecutionStateStore(tmp_path / "exec-state.json"),
+        )
+
+        results = workflow.execute_approved(approved_plan, str(tmp_path))
+
+        assert len(results) == 1
+        assert results[0].success is True
+        install_calls = [c for c in calls if "install" in c]
+        assert len(install_calls) == 1
+        assert install_calls[0][0] == "/target/A/python"
+        assert all("/target/B/python" not in call for call in calls)

@@ -35,6 +35,8 @@ class DeterministicProvider:
                 "type": "executable", "purpose": "validate project configuration",
                 "required": True, "confidence": "high",
                 "evidence": ["esphome.yaml"],
+                "active_for_current_request": True,
+                "blocks_current_operation": False,
             }]})
         if "AUFGABE: Synthetisiere" in prompt:
             return json.dumps({
@@ -151,6 +153,25 @@ def test_productive_web_planning_reaches_real_approval_boundary(
         planning_task = planning_tasks.get(session_id)
         if planning_task is not None:
             planning_task.result(timeout=5)
+        pending_state = client.get(f"/api/state/{session_id}").json()
+
+        # CLAUDE-ARCH-S2-013C: the productive workflow now stops at the
+        # S2.4 Human Engineering Authority boundary -- this is the
+        # permanent regression test proving the Chairman recommendation
+        # is no longer silently auto-accepted into a SetupPlan.
+        assert pending_state["workflow_status"] == "pending_engineering_selection"
+        assert pending_state["engineering_selection_required"] is True
+        decision = client.get(f"/api/workflow/{session_id}/engineering-decision").json()
+        assert decision["chairman_recommendation"] is not None
+        assert decision["chairman_recommendation"]["is_recommendation"] is True
+
+        accept_response = client.post(
+            f"/api/workflow/{session_id}/engineering-decision",
+            json={"action": "accept"},
+        )
+        assert accept_response.status_code == 200
+        assert accept_response.json()["selection_authority"] == "human"
+
         state = client.get(f"/api/state/{session_id}").json()
 
     assert state["workflow_status"] == "pending_approval"
@@ -158,8 +179,8 @@ def test_productive_web_planning_reaches_real_approval_boundary(
     assert state["approval_status"] == "pending_approval"
     phases = {event["action"] for event in state["central_trace"]}
     assert {"project_inspection", "requirement_discovery", "preflight",
-            "engineering_council", "toolchain_materialization",
-            "setup_approval"} <= phases
+            "engineering_council", "human_engineering_authority",
+            "toolchain_materialization", "setup_approval"} <= phases
     assert any(
         event.get("metadata", {}).get("actor") == "Agent A2"
         and event.get("metadata", {}).get("runtime_state") == "thinking"
@@ -361,6 +382,18 @@ def test_productive_degraded_council_continues_to_approval(
         planning_task = planning_tasks.get(session_id)
         if planning_task is not None:
             planning_task.result(timeout=5)
+        pending_state = client.get(f"/api/state/{session_id}").json()
+
+        # CLAUDE-ARCH-S2-013C: permanent regression test -- a degraded
+        # but complete Council result still stops at the S2.4 boundary
+        # rather than silently proceeding to a SetupPlan.
+        assert pending_state["workflow_status"] == "pending_engineering_selection"
+        accept_response = client.post(
+            f"/api/workflow/{session_id}/engineering-decision",
+            json={"action": "accept"},
+        )
+        assert accept_response.status_code == 200
+
         state = client.get(f"/api/state/{session_id}").json()
 
     assert state["workflow_status"] == "pending_approval"
@@ -454,3 +487,109 @@ def test_productive_degraded_council_continues_to_approval(
     serialized = json.dumps(state)
     assert "deterministic provider failure" not in serialized
     assert not any(path for path in owned_root.parent.iterdir() if path != owned_root)
+
+
+# =========================================================================
+# CLAUDE-ARCH-S2-013C: the productive S2.4 Human Engineering Authority
+# Web/API boundary -- unknown/inadmissible selection, reject and defer,
+# exercised through the real productive route (not only dev_workflow
+# unit tests).
+# =========================================================================
+
+
+def test_engineering_decision_endpoints_reject_unknown_and_are_deferrable(
+    disposable_productive_web,
+):
+    owned_root, project, compose = disposable_productive_web
+    components = compose()
+    app.dependency_overrides[get_web_setup_components] = lambda: components
+
+    with TestClient(app) as client:
+        response = client.post("/api/workflow/start", json={
+            "project_name": "disposable-selection",
+            "project_directory": str(project),
+            "task_description": "Inspect and plan this existing project.",
+        })
+        assert response.status_code == 202
+        session_id = response.json()["session_id"]
+        planning_task = planning_tasks.get(session_id)
+        if planning_task is not None:
+            planning_task.result(timeout=5)
+        pending_state = client.get(f"/api/state/{session_id}").json()
+        assert pending_state["workflow_status"] == "pending_engineering_selection"
+
+        # F: an unknown candidate id is rejected safely, never crashes,
+        # never progresses to S3.
+        unknown_response = client.post(
+            f"/api/workflow/{session_id}/engineering-decision",
+            json={"action": "select", "variant_id": "does-not-exist"},
+        )
+        assert unknown_response.status_code == 400
+        still_pending = client.get(f"/api/state/{session_id}").json()
+        assert still_pending["workflow_status"] == "pending_engineering_selection"
+
+        # `select` without a variant_id is rejected safely too.
+        missing_variant_response = client.post(
+            f"/api/workflow/{session_id}/engineering-decision",
+            json={"action": "select"},
+        )
+        assert missing_variant_response.status_code == 400
+
+        # I: defer leaves the workflow pending -- no S3 execution, the
+        # pending decision remains available afterwards.
+        defer_response = client.post(
+            f"/api/workflow/{session_id}/engineering-decision",
+            json={"action": "defer"},
+        )
+        assert defer_response.status_code == 200
+        assert defer_response.json()["status"] == "deferred"
+        deferred_state = client.get(f"/api/state/{session_id}").json()
+        assert deferred_state["workflow_status"] == "deferred"
+        assert deferred_state["engineering_selection_required"] is True
+        assert not (owned_root / ".workflow-plans" / session_id).exists()
+
+        # The deferred decision can still be accepted afterwards.
+        accept_response = client.post(
+            f"/api/workflow/{session_id}/engineering-decision",
+            json={"action": "accept"},
+        )
+        assert accept_response.status_code == 200
+        final_state = client.get(f"/api/state/{session_id}").json()
+        assert final_state["workflow_status"] == "pending_approval"
+        assert final_state["engineering_selection_required"] is False
+
+
+def test_engineering_decision_reject_never_reaches_setup_approval(
+    disposable_productive_web,
+):
+    owned_root, project, compose = disposable_productive_web
+    components = compose()
+    app.dependency_overrides[get_web_setup_components] = lambda: components
+
+    with TestClient(app) as client:
+        response = client.post("/api/workflow/start", json={
+            "project_name": "disposable-reject",
+            "project_directory": str(project),
+            "task_description": "Inspect and plan this existing project.",
+        })
+        assert response.status_code == 202
+        session_id = response.json()["session_id"]
+        planning_task = planning_tasks.get(session_id)
+        if planning_task is not None:
+            planning_task.result(timeout=5)
+
+        # J: reject never executes S3 -- no SetupPlan/approval boundary
+        # is ever reached.
+        reject_response = client.post(
+            f"/api/workflow/{session_id}/engineering-decision",
+            json={"action": "reject"},
+        )
+        assert reject_response.status_code == 200
+        state = client.get(f"/api/state/{session_id}").json()
+
+    assert state["workflow_status"] == "rejected"
+    assert state["approval_required"] is False
+    assert state["plan_id"] is None
+    assert not any(
+        event["action"] == "setup_approval" for event in state["central_trace"]
+    )

@@ -13,6 +13,7 @@ CouncilInput provided by the caller.
 from __future__ import annotations
 
 import json
+import re
 import threading
 import uuid
 import time
@@ -41,6 +42,7 @@ from app.council_models import (
     MergeDecision,
     ProposalSet,
     ToolchainItem,
+    VerificationCoverage,
 )
 from app.council_prompts import (
     AGENT_ROLE_ENV_ARCHITECT,
@@ -57,7 +59,14 @@ from app.llm_provider_factory import create_council_provider
 from app.logger import get_logger
 from app.secret_resolver import SecretResolver
 from app.execution_identity import execution_identity
+from app.engineering_decision import (
+    EngineeringReworkRequest,
+    categorize_admissibility_reasons,
+    validate_variants,
+)
+from app.engineering_decision import _format_candidate_evidence
 from app.toolchain_materializer import ToolchainMaterializer
+from app.verification import all_trusted_verification_groups
 
 logger = get_logger("council")
 
@@ -86,6 +95,14 @@ _AGENT_ID_TO_CONFIG_KEY = {
 }
 
 _MAX_RETRIES = 1  # 1 initial try + 1 retry = 2 total
+
+# CLAUDE-ADC-E2E-VERIFICATION-EVIDENCE-FIX-001: sentinel distinguishing
+# "this candidate text failed to parse" from a genuinely parsed JSON
+# value of `None` (a bare `null` document) -- `is not _JSON_PARSE_FAILED`
+# must be used instead of `is not None` so a legitimately parsed null
+# is never mistaken for a parse failure and retried against the next
+# candidate/fallback.
+_JSON_PARSE_FAILED = object()
 _TOTAL_RETRY_MULTIPLIER = _MAX_RETRIES + 1
 _TIMEOUT_GRACE_SECONDS = 15
 
@@ -93,6 +110,453 @@ _TIMEOUT_GRACE_SECONDS = 15
 def _outer_deadline(config: CouncilAgentConfig) -> float:
     """Total bounded deadline covering all permitted same-phase provider calls."""
     return time.monotonic() + config.timeout_seconds * _TOTAL_RETRY_MULTIPLIER + _TIMEOUT_GRACE_SECONDS
+
+
+def _failure_category(error: Exception) -> str:
+    """CLAUDE-E2E-NIO-011A: the safe, deterministic category for a
+    Chairman-synthesis-validation failure. Prefers CouncilChairmanError's
+    own `.category`; falls back to the inline "[category=...]" tag used
+    by _validate_toolchain_requirement_refs()'s ValueError (which cannot
+    carry a real attribute, since it is a plain ValueError shared with
+    other, non-Chairman-specific callers); "unknown" only if neither is
+    present."""
+    category = getattr(error, "category", None)
+    if category:
+        return category
+    return _failure_category_from_text(str(error))
+
+
+def _failure_category_from_text(message: str) -> str:
+    """Extracts the LAST "[category=...]" tag in a message -- for a
+    combined bounded-repair-exhausted message that embeds both attempts'
+    tags, the last one is attempt 2's, the decisive/final outcome."""
+    marker = "[category="
+    start = message.rfind(marker)
+    if start != -1:
+        end = message.find("]", start)
+        if end != -1:
+            return message[start + len(marker):end]
+    return "unknown"
+
+
+# CLAUDE-ADC-COUNCIL-DIAGNOSTIC-CAPTURE-001 (corrected by CLAUDE-ADC-
+# COUNCIL-DIAGNOSTIC-TRACE-INTEGRATION-FIX-001): bounded, deterministic
+# reason vocabulary for a Phase-1 agent result that decoded successfully
+# (res.success and res.parsed truthy -- a genuine LLM/parse failure is
+# already covered by the existing agent_errors path and is NEVER
+# reclassified here) but retained ZERO usable proposals. Every branch
+# below is a read-only classification of data _phase1_independent_
+# proposals() already computed for its own unchanged control flow --
+# this diagnostic layer never feeds back into which proposals are kept,
+# how many, or whether the Council is complete/degraded.
+#
+# CLAUDE-ADC-COUNCIL-DIAGNOSTIC-TRACE-INTEGRATION-FIX-001: the original
+# CLAUDE-ADC-COUNCIL-DIAGNOSTIC-CAPTURE-001 task persisted this evidence
+# to a NEW, dedicated JSONL file it opened itself
+# (.diagnostic-traces/council_zero_proposal_events.jsonl) -- a parallel
+# diagnostic subsystem the current task corrects. This evidence is now
+# folded into the SAME central app.diagnostic_trace.DiagnosticTrace
+# pipeline every other DevelopmentWorkflow/EngineeringCouncil diagnostic
+# already uses, through the EXISTING set_result_callback()/self._result()
+# composition path (see _emit_structured_results()'s "no usable
+# structured proposal" branch) -- EngineeringCouncil never opens a file
+# for this itself.
+_REASON_EMPTY_OBJECT = "empty_object"
+_REASON_MISSING_VARIANTS = "missing_variants"
+_REASON_EMPTY_VARIANTS = "empty_variants"
+_REASON_ALL_CANDIDATES_REJECTED = "all_candidates_rejected"
+_REASON_OTHER_INTERNAL = "other_internal"
+
+
+def _safe_len(value: Any) -> int | None:
+    """len(value) for anything sized (list, dict, string, tuple, set,
+    ...), else None -- never raises. Shared by the "how many candidates
+    were even present" diagnostic field and by _is_empty_container()
+    below, so both agree on exactly what "sized" means."""
+    try:
+        return len(value)
+    except TypeError:
+        return None
+
+
+def _is_empty_container(value: Any) -> bool:
+    """True only for a genuinely empty, sized value (list, dict, string,
+    tuple, set, ...) -- len(value) == 0. False for anything with no
+    meaningful length (an int/float/bool) AND, just as importantly, for
+    ANY NONEMPTY value regardless of its type.
+
+    CLAUDE-ADC-COUNCIL-DIAGNOSTIC-HARDENING-FIX-001 (Codex review
+    CDX-ADC-COUNCIL-DIAGNOSTIC-TRACE-REVIEW-001, finding F2): a nonempty
+    malformed "variants" value (e.g. a dict or a string the LLM emitted
+    instead of a list) must never be silently coerced into looking
+    "empty" merely because it fails an `isinstance(..., list)` check --
+    it genuinely carries content, just not in the expected shape. An
+    EMPTY container of any of these types (e.g. "variants": {} or
+    "variants": "") carries exactly as little information as an empty
+    list and is honestly described the same way."""
+    return _safe_len(value) == 0
+
+
+def _classify_zero_proposal_reason(
+    parsed: Any, variants_field: Any, rejected_candidates: list[dict],
+) -> str:
+    """Pure, deterministic classification of WHY one Phase-1 agent
+    result -- already known to have decoded successfully and to have
+    retained zero proposals -- ended up empty. Reads only the already-
+    parsed structures the caller already has; never re-parses, never
+    inspects raw text.
+
+    A root that is not a mapping at all (e.g. the LLM's entire response
+    decoded to `null`, a bare number, or an empty list) is neither of
+    the two dict-shaped branches below and is never silently coerced
+    into "empty_variants" -- it is the one narrowly-scoped, deterministic
+    "other_internal" case.
+
+    A present "variants" value is classified by ACTUAL emptiness
+    (_is_empty_container()), never by type alone: a nonempty dict/string/
+    other malformed shape is never "empty_variants" (F2, above) -- it
+    either genuinely reflects rejected per-item processing
+    ("all_candidates_rejected", whenever the caller's own loop over it
+    -- unchanged -- produced at least one rejection) or falls back to
+    the same explicit, deterministic "other_internal" this function
+    already used for a non-mapping root."""
+    if not isinstance(parsed, dict):
+        return _REASON_OTHER_INTERNAL
+    if not parsed:
+        return _REASON_EMPTY_OBJECT
+    if "variants" not in parsed:
+        return _REASON_MISSING_VARIANTS
+    if _is_empty_container(variants_field):
+        return _REASON_EMPTY_VARIANTS
+    if rejected_candidates:
+        return _REASON_ALL_CANDIDATES_REJECTED
+    # Unreachable in practice: the caller only invokes this when zero
+    # proposals were retained from a non-empty `variants_field`, and its
+    # own loop (unchanged) appends every failed item to
+    # rejected_candidates -- a nonempty, iterable `variants_field` with
+    # no rejections would already have retained at least one proposal.
+    # Kept as an explicit, safe, deterministic fallback rather than a
+    # silently-assumed "cannot happen".
+    return _REASON_OTHER_INTERNAL
+
+
+_MAX_CANDIDATE_IDENTIFIER_LENGTH = 200
+# CLAUDE-ADC-COUNCIL-DIAGNOSTIC-PRIVACY-HARDENING-FIX-002 (Codex
+# rereview CDX-ADC-COUNCIL-DIAGNOSTIC-HARDENING-REREVIEW-002, finding H1
+# -- HIGH): a STRICT POSITIVE allowlist, not a "reject known-bad
+# characters" denylist. The prior policy only rejected whitespace/
+# control characters, which a compact (whitespace-free) JSON fragment
+# such as `{"agent_reasoning":"...","credentials":{"secret":"..."}}`
+# trivially satisfies while still being a fully structured, nested
+# payload. Every real requirement/toolchain identifier in this codebase
+# (see tests/*.py, app/*.py -- "req-1", "req-esphome-fw", ...) is a
+# short alphanumeric token optionally joined with "-"/"_"/"." ; nothing
+# else is ever a legitimate identifier, so nothing else is accepted --
+# JSON/structured punctuation (quotes, braces, brackets, colons, equals
+# signs, commas, slashes, backslashes) can never pass this regex
+# regardless of whitespace.
+_SAFE_CANDIDATE_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+
+def _sanitized_candidate_identifier(value: Any) -> str | None:
+    """CLAUDE-ADC-COUNCIL-DIAGNOSTIC-HARDENING-FIX-001/-PRIVACY-
+    HARDENING-FIX-002 (Codex review CDX-ADC-COUNCIL-DIAGNOSTIC-TRACE-
+    REVIEW-001 finding F1, hardened further by CDX-ADC-COUNCIL-
+    DIAGNOSTIC-HARDENING-REREVIEW-002 finding H1 -- both HIGH, privacy
+    bypass): a candidate's own requirement_ref/provided_by value is
+    untrusted LLM output, read from a variant_data entry that is ALREADY
+    being rejected here precisely because something about its shape is
+    invalid -- there is no guarantee it is even a string, still less
+    that it looks like a real identifier.
+    `_candidate_rejection_diagnostic()` used to do `str(value)`
+    unconditionally: for a nested object such as
+    `{"agent_reasoning": "...", "credentials": {"secret": "sk-..."}}`,
+    that flattens the ENTIRE nested structure -- including any forbidden
+    key/value it carries -- into what DiagnosticTrace's own recursive
+    allowlisting can only ever see as one ordinary, already-scalar
+    string value; `_redact()`'s regexes only match an actual
+    `key=value`/`key: value` shape in running text, not a Python dict
+    repr. An EARLIER fix rejected only whitespace/control characters,
+    which a COMPACT (no-whitespace) JSON string --
+    `{"agent_reasoning":"...","credentials":{"secret":"..."}}` -- still
+    satisfies while carrying exactly the same forbidden nested content.
+    Central-trace allowlisting alone cannot catch either shape (it never
+    re-parses a string value's own textual content); sanitization MUST
+    happen here, at the producer, with a POSITIVE policy for what an
+    identifier IS allowed to look like, never a denylist of what it must
+    not contain.
+
+    Returns the value UNCHANGED (stripped) only when it is already a
+    plain string that, after stripping, consists ENTIRELY of
+    `_SAFE_CANDIDATE_IDENTIFIER_RE` characters (letters, digits, `_`,
+    `-`, `.`) and is no longer than a real requirement/toolchain
+    identifier could reasonably be -- never re-stringified from any
+    other type, never accepted merely for lacking whitespace. Returns
+    None for anything else (wrong type, empty after stripping, too long,
+    or containing ANY character outside that positive set -- including
+    but not limited to quotes, braces, brackets, colons, equals signs,
+    commas, slashes, backslashes, and all whitespace/control characters)
+    so the caller drops it from the identifier list entirely rather than
+    ever falling back to `str(value)`. Presence/type information for a
+    rejected value is captured separately, by type name only (see
+    _candidate_rejection_diagnostic()'s own `*_invalid_types` fields) --
+    never by echoing the value or any part of it."""
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    if not stripped or len(stripped) > _MAX_CANDIDATE_IDENTIFIER_LENGTH:
+        return None
+    if not _SAFE_CANDIDATE_IDENTIFIER_RE.match(stripped):
+        return None
+    return stripped
+
+
+# CLAUDE-ADC-COUNCIL-DIAGNOSTIC-PRIVACY-HARDENING-FIX-002 (Codex
+# rereview CDX-ADC-COUNCIL-DIAGNOSTIC-HARDENING-REREVIEW-002, finding H2
+# -- HIGH): the ONLY categories app.engineering_council's own,
+# hand-written validation code can legitimately raise while building a
+# Phase-1 candidate (see _validate_toolchain_requirement_refs()'s own
+# tagged ValueError). Every other possible failure inside
+# _build_proposal_from_dict() -- a generic ValueError/TypeError from
+# `float(data.get("confidence", ...))`, a malformed toolchain entry
+# passed to ToolchainItem(...), etc. -- carries no trusted category tag
+# of its own, and its exception message may itself echo arbitrary
+# LLM-controlled input (e.g. confidence="[category=SOME_CANARY]" makes
+# `float()` raise a ValueError whose OWN text embeds exactly that
+# string). This CLOSED allowlist is the trust boundary: only a category
+# that is a member of this exact, hand-maintained set may ever reach the
+# persisted diagnostic; anything else -- however it was produced, and
+# regardless of whether it superficially LOOKS like a legitimate tag --
+# becomes "unknown", the same deterministic fallback
+# _failure_category_from_text() already uses when no tag is present at
+# all.
+_TRUSTED_CANDIDATE_REJECTION_CATEGORIES = frozenset({"invalid_requirement_ref"})
+
+
+def _trusted_candidate_rejection_category(exc: Exception) -> str:
+    """CLAUDE-ADC-COUNCIL-DIAGNOSTIC-PRIVACY-HARDENING-FIX-002 (H2):
+    `_failure_category()`/`_failure_category_from_text()` were designed
+    for Chairman-synthesis-validation failures, where the only code that
+    ever raises a "[category=...]"-tagged exception is this module's own
+    trusted synthesis-repair path -- reusing that same text-extraction
+    for a Phase-1 candidate-build failure is unsafe, because
+    `_build_proposal_from_dict()` can also raise a completely generic,
+    untagged exception whose message text is influenced by untrusted
+    LLM-controlled input. This wraps `_failure_category()`'s own
+    extraction (kept, unmodified, and still used unchanged for its
+    original Chairman-side callers) with one additional check: the
+    result must be a member of `_TRUSTED_CANDIDATE_REJECTION_CATEGORIES`
+    or it is replaced with "unknown" -- so an attacker-crafted value
+    that happens to produce a string matching the `[category=...]`
+    pattern can never smuggle arbitrary text into a persisted diagnostic
+    field merely by picking a tag this allowlist doesn't recognize."""
+    category = _failure_category(exc)
+    if category in _TRUSTED_CANDIDATE_REJECTION_CATEGORIES:
+        return category
+    return "unknown"
+
+
+def _candidate_rejection_diagnostic(variant_data: Any, exc: Exception) -> dict:
+    """Bounded, deterministic per-candidate rejection evidence for one
+    Phase-1 variant_data entry that failed to build into an
+    AgentProposal: a category drawn ONLY from
+    `_TRUSTED_CANDIDATE_REJECTION_CATEGORIES`
+    (_trusted_candidate_rejection_category(), CLAUDE-ADC-COUNCIL-
+    DIAGNOSTIC-PRIVACY-HARDENING-FIX-002 finding H2 -- never
+    `_failure_category()`'s raw, text-extracted result, which a
+    generic/untagged exception's own message could be made to echo
+    arbitrary LLM-controlled text through), plus -- only when present on
+    this exact candidate's own toolchain entries, never the full
+    candidate payload -- the offending requirement_ref/provided_by
+    values, SANITIZED by _sanitized_candidate_identifier() (finding F1/
+    H1): a value that is not already a safe, bounded, positively-
+    allowlisted identifier string is NEVER stringified into the
+    identifier lists -- only its Python type name is recorded, in a
+    separate, explicitly-named field, so "something invalid was here,
+    and what kind" remains visible without ever persisting its content.
+    Carries no free-text exception message, no prompt, no raw
+    response."""
+    toolchain = variant_data.get("toolchain") if isinstance(variant_data, dict) else None
+    if not isinstance(toolchain, list):
+        toolchain = []
+
+    requirement_refs: set[str] = set()
+    requirement_ref_invalid_types: set[str] = set()
+    provided_by: set[str] = set()
+    provided_by_invalid_types: set[str] = set()
+
+    for item in toolchain:
+        if not isinstance(item, dict):
+            continue
+        raw_ref = item.get("requirement_ref")
+        if raw_ref not in (None, ""):
+            sanitized = _sanitized_candidate_identifier(raw_ref)
+            if sanitized is not None:
+                requirement_refs.add(sanitized)
+            else:
+                requirement_ref_invalid_types.add(type(raw_ref).__name__)
+        raw_provided_by = item.get("provided_by")
+        if raw_provided_by not in (None, ""):
+            sanitized = _sanitized_candidate_identifier(raw_provided_by)
+            if sanitized is not None:
+                provided_by.add(sanitized)
+            else:
+                provided_by_invalid_types.add(type(raw_provided_by).__name__)
+
+    return {
+        "category": _trusted_candidate_rejection_category(exc),
+        "rejected_requirement_refs": sorted(requirement_refs),
+        "rejected_provided_by": sorted(provided_by),
+        "rejected_requirement_ref_invalid_types": sorted(requirement_ref_invalid_types),
+        "rejected_provided_by_invalid_types": sorted(provided_by_invalid_types),
+    }
+
+
+_FAILURE_SUBSYSTEM_BY_CATEGORY = {
+    "provider_transport": "S2.2",
+    "no_valid_variant": "S2.2",
+    "invalid_recommendation": "S2.2",
+    "invalid_requirement_ref": "S2.2",
+    "completeness_validation": "S2.3",
+    "platform_constraint": "S2.3",
+    "materializability_conflict": "S2.3",
+    "verification_coverage": "S2.3",
+    "admissibility_validation": "S2.3",
+}
+
+
+def _failure_subsystem(category: str) -> str:
+    """CLAUDE-ARCH-S2-012A, Part 28: maps a safe failure category to the
+    S2 Subsubsystem that actually OWNS the corresponding rule, for
+    Diagnostic Trace fault localization (e.g. a future failure
+    classifiable approximately as "S2.2 PASS / S2.3 NIO:
+    platform_constraint / S2.4 NOT REACHED / S2.5 NOT REACHED / S3 NOT
+    REACHED"). Protocol-only failures (malformed/missing/invalid
+    recommendation, transport) are S2.2's own; every engineering-
+    admissibility category is S2.3's, since S2.2's own early check only
+    ever calls INTO S2.3's validate_variants() rather than owning any
+    admissibility rule itself."""
+    return _FAILURE_SUBSYSTEM_BY_CATEGORY.get(category, "S2.2")
+
+
+def _build_chairman_repair_prompt(original_prompt: str, error: Exception) -> str:
+    """CLAUDE-E2E-NIO-011A, Part 5: the smallest targeted repair request
+    -- reuses the ORIGINAL Chairman prompt verbatim (which already
+    contains every proposal, cross-review, and binding-Requirement/
+    Constraint fact the Chairman needs) and appends only the exact,
+    already-safe, deterministic rejection reason (never raw prompts,
+    credentials, or Chain-of-Thought -- `error` is always one of this
+    module's own short, structured messages, the same ones already
+    proven safe for diagnostics in CLAUDE-PRE-E2E-009C/CLAUDE-E2E-
+    NIO-010A). Asks the Chairman to correct ONLY that deficiency rather
+    than re-deriving a solution from scratch, and never invents,
+    merges, or repairs a variant on ADC's own authority -- the Chairman
+    remains the sole synthesizer (Part 7/8).
+
+    CLAUDE-ARCH-S2-012D: when `error` is an EngineeringReworkRequest
+    carrying an identity conflict, one additional static, technology-
+    neutral hint sentence is appended, naming the exact offending item(s)
+    already computed by S2.3 (identity_conflict_detail) and pointing at
+    the ALREADY-DOCUMENTED technical_identity contract every synthesis
+    prompt already states (see app.council_prompts). Root cause of
+    Real-System-E2E #8: the prior repair prompt exposed only a bare
+    `materializability_conflict=True` boolean, giving the Chairman no way
+    to know WHICH toolchain item needed a technical_identity correction,
+    so its one bounded repair attempt could not target the actual defect.
+    This hint is itself deterministic, structured evidence -- it
+    identifies the offending item, it never invents a fix or a value on
+    ADC's own authority.
+
+    CLAUDE-ADC-S23-INSTALL-METHOD-PRODUCER-REPAIR-FIX-001: an
+    EngineeringReworkRequest carrying an install_method conflict
+    (identity already resolved, but install_method itself does not match
+    the controlled executor's fixed compatibility contract -- see
+    app.engineering_decision._binding_item_rejection_category()) instead
+    gets its OWN, distinct hint naming the exact offending item(s)
+    (install_method_conflict_detail) and restating the closed
+    install_method shape contract app.council_prompts already documents
+    for Phase-1/Chairman synthesis, never the technical_identity hint --
+    identity was never the problem for this category, so repeating that
+    hint would misdirect the Chairman's one bounded repair attempt at a
+    field that is already correct (root cause: a real Real-System-E2E run
+    reached this exact defect with a genuinely valid technical_identity
+    and a repair attempt that only ever knew how to suggest fixing
+    technical_identity). The two hints are independent and both may be
+    emitted when a variant genuinely carries both kinds of offending
+    items."""
+    hint = ""
+    if (
+        isinstance(error, EngineeringReworkRequest)
+        and error.identity_conflict
+        and error.identity_conflict_detail
+    ):
+        hint = (
+            "\nHinweis zum Materialisierbarkeits-Mangel (fehlende/ungueltige "
+            "technische Identitaet): die folgenden Toolchain-Items sind "
+            "betroffen: "
+            f"{', '.join(error.identity_conflict_detail)}. "
+            "Falls es sich um ein python_package-Item handelt, setze "
+            "technical_identity auf die exakte installierbare "
+            "Distributionskennung (z.B. \"esphome\"), wenn der "
+            "Anzeigename dafuer nicht bereits geeignet ist -- exakt wie "
+            "oben im Schema bereits gefordert."
+        )
+    if (
+        isinstance(error, EngineeringReworkRequest)
+        and error.install_method_conflict
+        and error.install_method_conflict_detail
+    ):
+        hint = hint + (
+            "\nHinweis zum Materialisierbarkeits-Mangel (install_method): "
+            "die folgenden Toolchain-Items sind betroffen: "
+            f"{', '.join(error.install_method_conflict_detail)}. Die "
+            "technische Identitaet dieser Items ist bereits gueltig -- "
+            "korrigiere AUSSCHLIESSLICH install_method, niemals "
+            "technical_identity oder name. install_method muss fuer ein "
+            "python_package-Item exakt eine der folgenden Formen haben: "
+            "\"pip\", \"python_package\", \"pip install <technical_identity>\" "
+            "oder \"python -m pip install <technical_identity>\" -- kein "
+            "zusammengesetzter Shell-Befehl, keine venv-Aktivierung, kein "
+            "Docker-Kommando. Eine venv-, Container- oder Host-Platzierung "
+            "gehoert ausschliesslich in \"environment\"/\"purpose\"/"
+            "\"description\", niemals in install_method oder name."
+        )
+    if (
+        isinstance(error, EngineeringReworkRequest)
+        and error.verification_feasibility_conflict
+        and error.verification_feasibility_conflict_detail
+    ):
+        # CLAUDE-ARCH-S2-013F: name the exact mechanism/evidence pair and
+        # the precise compatibility/control reason S2.3 computed (see
+        # app.engineering_decision._verification_feasibility_gap_diagnostics()),
+        # the same "name the exact field at fault" precedent 012D
+        # established for materializability, applied to verification
+        # feasibility so a bounded repair can target the real defect.
+        hint = hint + (
+            "\nHinweis zum Verifikations-Mangel (S2.3 Verification "
+            "Feasibility): "
+            f"{'; '.join(error.verification_feasibility_conflict_detail)}. "
+            "Korrigiere entweder den mechanism-Wert auf einen, den das "
+            "referenzierte ToolchainItem tatsaechlich in seinem eigenen "
+            "provides_verification deklariert, oder die evidence auf ein "
+            "ToolchainItem DERSELBEN Variante, das den bereits gewaehlten "
+            "mechanism deklariert -- exakt wie oben im Schema unter "
+            "VERIFICATION_COVERAGE gefordert. Bei kind=\"manual_review\" "
+            "setze zusaetzlich \"human_governed\": true."
+        )
+    return (
+        f"{original_prompt}\n\n"
+        "---\n"
+        "KORREKTUR ERFORDERLICH: Deine vorherige Antwort wurde von der "
+        "deterministischen Validierung abgelehnt:\n"
+        f"{error}\n"
+        f"{hint}\n\n"
+        "Behebe AUSSCHLIESSLICH diesen konkreten Mangel. Nutze weiterhin "
+        "ausschliesslich die oben aufgefuehrten Requirements, "
+        "Agenten-Vorschlaege und Bewertungen -- erfinde keine neuen "
+        "Requirements oder Vorschlaege. Gib erneut eine vollstaendige, "
+        "valide JSON-Antwort im exakt gleichen Schema zurueck."
+    )
 
 
 @dataclass
@@ -128,6 +592,24 @@ def _get_agent_config(council_config: CouncilConfig, agent_id: str) -> CouncilAg
     return getattr(council_config, role)
 
 
+def _parse_verification_coverage(data: list) -> tuple[VerificationCoverage, ...]:
+    """CLAUDE-ARCH-S2-013E: parses the (optional, additive) structured
+    verification_coverage array an agent/Chairman JSON response may
+    supply, exactly mirroring the toolchain-item parsing style already
+    established for technical_identity -- never invents a mechanism/kind/
+    evidence value the response itself did not provide."""
+    return tuple(
+        VerificationCoverage(
+            requirement_refs=tuple(vc.get("requirement_refs", []) or []),
+            kind=vc.get("kind", ""),
+            mechanism=vc.get("mechanism", ""),
+            evidence=vc.get("evidence", ""),
+            human_governed=bool(vc.get("human_governed", False)),
+        )
+        for vc in (data or [])
+    )
+
+
 class EngineeringCouncil:
     """Multi-Agent Engineering Council with 3 phases and 7 LLM calls.
 
@@ -155,6 +637,23 @@ class EngineeringCouncil:
         self._activity_callback: Callable[..., None] | None = None
         self._result_callback: Callable[..., None] | None = None
         self._effective_prompts: dict[str, str] = {}
+        # CLAUDE-E2E-NIO-011A: bounded Chairman-synthesis-repair
+        # bookkeeping for THIS evaluate() run only -- reset at the start
+        # of _phase3_chairman_synthesis(), read back by
+        # _emit_structured_results() to expose safe failure diagnostics
+        # (never a new CouncilResult field, to avoid an unrelated schema
+        # change for what is purely observability bookkeeping).
+        self._chairman_attempts: int = 0
+        self._chairman_repair_used: bool = False
+        # CLAUDE-ADC-COUNCIL-DIAGNOSTIC-TRACE-INTEGRATION-FIX-001: SAME
+        # kind of per-evaluate()-run-only bookkeeping as
+        # _chairman_attempts above -- reset at the start of
+        # _phase1_independent_proposals(), read back by
+        # _emit_structured_results() to fold bounded zero-retained-
+        # proposal branch evidence into the existing central
+        # DiagnosticTrace event for that agent. Never a new CouncilResult
+        # field, never persisted by this class itself.
+        self._zero_proposal_diagnostics: dict[str, dict] = {}
 
     def set_activity_callback(self, callback: Callable[..., None] | None) -> None:
         """Project safe Council runtime activity into the central trace."""
@@ -421,14 +920,28 @@ class EngineeringCouncil:
         for agent_id in sorted(set(AGENT_ROLES) - proposal_agents):
             config = _get_agent_config(self._config, agent_id)
             empty = {"summary": "No usable structured proposal produced."}
+            # CLAUDE-ADC-COUNCIL-DIAGNOSTIC-TRACE-INTEGRATION-FIX-001:
+            # fold the bounded zero-retained-proposal branch evidence
+            # (see _phase1_independent_proposals()/_build_zero_proposal_
+            # diagnostic()) into this SAME, already-existing central
+            # DiagnosticTrace event -- never a second, parallel
+            # diagnostic sink. Present ONLY in the "verbose"/
+            # "very_verbose" projections (DiagnosticDetailLevel.VERBOSE
+            # and above); "info" stays the existing minimal summary so
+            # NORMAL/INFO never expose it (render_diagnostic_trace_
+            # event()'s own level-gated _terminal_projection() picks
+            # "info" at INFO and "verbose" at VERBOSE+ -- see that
+            # function's own preference order).
+            diagnostic = self._zero_proposal_diagnostics.get(agent_id)
+            verbose_output = {**empty, **diagnostic} if diagnostic else dict(empty)
             self._result(
                 actor=f"Agent {agent_id}", actor_role=AGENT_ROLES[agent_id],
                 council_phase="phase1", result_kind="proposal",
                 provider=config.provider, model=config.model,
                 duration_ms=duration_for(agent_id, "phase1"),
                 summary=empty["summary"],
-                council_output={"info": empty, "verbose": empty,
-                                "very_verbose": empty},
+                council_output={"info": empty, "verbose": verbose_output,
+                                "very_verbose": verbose_output},
                 interface_data={
                     "normal": {"summary": "Proposal input produced no usable structured proposal."},
                     "info": {"x": typed(phase1_x_info, "council_input", "engineering_council", f"council_agent_{agent_id.lower()}_proposal"), "f": execution_identity(f"council_agent_{agent_id.lower()}_proposal", provider=config.provider, model=config.model, actor=agent_id, phase="phase1"), "y": typed({"available": False}, "proposal", f"council_agent_{agent_id.lower()}_proposal", "engineering_council")},
@@ -523,16 +1036,43 @@ class EngineeringCouncil:
             else "complete" if council_result.council_complete
             else "incomplete"
         )
+        # CLAUDE-E2E-NIO-011A, Part 3: Real-System-E2E #6 exposed that a
+        # concrete, already-computed council_result.chairman_error was
+        # silently never surfaced here -- the human only ever saw the
+        # generic "No final recommendation produced." fallback below,
+        # even though a rich, safe, per-variant rejection reason already
+        # existed internally (see the 010A completeness check and the
+        # other _parse_chairman_result()/_phase3_chairman_synthesis()
+        # CouncilChairmanError sites, all of which raise only our own
+        # short, structured, already-redaction-safe messages -- never
+        # raw prompts, Chain-of-Thought, or credentials).
         chairman_info = {
             "summary": (
                 f"Selected {selected_name or council_result.recommendation}"
-                if council_result.recommendation else "No final recommendation produced."
+                if council_result.recommendation
+                else (
+                    f"Chairman failed: {council_result.chairman_error[:500]}"
+                    if council_result.chairman_error
+                    else "No final recommendation produced."
+                )
             ),
             "recommendation": council_result.recommendation,
             "selected_approach": selected_name,
             "status": council_status,
             "council_complete": council_result.council_complete,
             "council_degraded": council_result.council_degraded,
+            "chairman_error": (
+                council_result.chairman_error[:1000] if council_result.chairman_error else None
+            ),
+            "chairman_failure_category": (
+                _failure_category_from_text(council_result.chairman_error)
+                if council_result.chairman_error else None
+            ),
+            "chairman_failure_subsystem": (
+                _failure_subsystem(_failure_category_from_text(council_result.chairman_error))
+                if council_result.chairman_error else None
+            ),
+            "chairman_attempts": self._chairman_attempts or None,
         }
         chairman_verbose = {**chairman_info,
             "preferred_variants": [variant.name for variant in council_result.variants],
@@ -605,6 +1145,11 @@ class EngineeringCouncil:
     # ------------------------------------------------------------------
 
     def _phase1_independent_proposals(self, council_input: CouncilInput) -> ProposalSet:
+        # CLAUDE-ADC-COUNCIL-DIAGNOSTIC-TRACE-INTEGRATION-FIX-001: reset
+        # for THIS evaluate() run only -- read back by
+        # _emit_structured_results() (same lifecycle as
+        # self._chairman_attempts/_chairman_repair_used above).
+        self._zero_proposal_diagnostics = {}
         tasks = [
             _AgentTask(
                 agent_id=aid,
@@ -628,7 +1173,17 @@ class EngineeringCouncil:
 
         for res in results:
             if res.success and res.parsed:
-                for variant_data in res.parsed.get("variants", []):
+                # CLAUDE-ADC-COUNCIL-DIAGNOSTIC-CAPTURE-001: `variants_field`
+                # is read via the SAME, unchanged `res.parsed.get("variants",
+                # [])` call the loop below already used -- diagnostics only
+                # ever observe data this method already computed, never a
+                # second parse/lookup, and the loop's own control flow
+                # (what gets appended to all_proposals/agent_errors) is
+                # byte-for-byte unchanged.
+                variants_field = res.parsed.get("variants", [])
+                retained_before = len(all_proposals)
+                rejected_candidates: list[dict] = []
+                for variant_data in variants_field:
                     try:
                         proposal = self._build_proposal_from_dict(
                             res.agent_id,
@@ -640,13 +1195,86 @@ class EngineeringCouncil:
                         all_proposals.append(proposal)
                     except Exception as exc:
                         agent_errors.append(f"{res.agent_id}: build proposal failed — {exc}")
+                        rejected_candidates.append(
+                            _candidate_rejection_diagnostic(variant_data, exc)
+                        )
+                if len(all_proposals) == retained_before:
+                    self._zero_proposal_diagnostics[res.agent_id] = (
+                        self._build_zero_proposal_diagnostic(
+                            council_input, res, variants_field, rejected_candidates,
+                        )
+                    )
             else:
                 agent_errors.append(f"{res.agent_id}: {res.error or 'unknown error'}")
+                if res.success:
+                    # CLAUDE-ADC-COUNCIL-DIAGNOSTIC-CAPTURE-001: reached
+                    # only when `res.success` is True but `res.parsed`
+                    # is itself falsy (e.g. the LLM's entire response
+                    # decoded to `{}` or `null`) -- decoded successfully,
+                    # zero usable proposals, exactly the same diagnostic
+                    # class as the branches above, just never reaching
+                    # the `.get("variants", ...)` lookup at all. The
+                    # `agent_errors` line above is completely unchanged
+                    # by this -- this only ADDS the bounded diagnostic
+                    # record alongside it.
+                    self._zero_proposal_diagnostics[res.agent_id] = (
+                        self._build_zero_proposal_diagnostic(
+                            council_input, res, None, [],
+                        )
+                    )
 
         return ProposalSet(
             proposals=tuple(all_proposals),
             agent_errors=tuple(agent_errors),
         )
+
+    def _phase1_attempt_count(self, agent_id: str) -> int:
+        """How many Phase-1 LLM call attempts self._call_records already
+        recorded for this agent -- read from the existing per-attempt
+        AgentCallRecord bookkeeping _run_single_agent() already appends
+        to; never a new capture surface. actor/phase/provider/model are
+        NOT re-derived here: _emit_structured_results()'s existing
+        self._result(actor=..., provider=..., model=..., council_phase=
+        "phase1", ...) call already carries them for this same event."""
+        return sum(
+            1 for record in self._call_records
+            if record.agent_id == agent_id and record.phase == "phase1"
+        )
+
+    def _build_zero_proposal_diagnostic(
+        self, council_input: CouncilInput, res: "_AgentResult",
+        variants_field: Any, rejected_candidates: list[dict],
+    ) -> dict:
+        """CLAUDE-ADC-COUNCIL-DIAGNOSTIC-TRACE-INTEGRATION-FIX-001: bounded,
+        allowlisted-fields-only branch-classification evidence for a
+        Phase-1 agent result that decoded successfully but retained zero
+        proposals -- never raw prompts/responses/reasoning, never
+        unbounded text. Pure data only: this method never persists
+        anything itself. The caller stores the result in
+        self._zero_proposal_diagnostics; _emit_structured_results() folds
+        it into the SAME central DiagnosticTrace event this agent's
+        "no usable structured proposal" outcome already produces via the
+        existing set_result_callback()/self._result() composition path
+        -- never a second, parallel diagnostic sink."""
+        parsed = res.parsed
+        return {
+            "reason": _classify_zero_proposal_reason(
+                parsed, variants_field, rejected_candidates,
+            ),
+            "root_parsed_type": type(parsed).__name__,
+            "variants_field_present": (
+                isinstance(parsed, dict) and "variants" in parsed
+            ),
+            "variants_field_type": (
+                type(variants_field).__name__ if variants_field is not None else None
+            ),
+            "variants_field_count": _safe_len(variants_field),
+            "requirement_ids": sorted(
+                requirement.id for requirement in council_input.requirements
+            ),
+            "rejected_candidates": rejected_candidates,
+            "attempt": self._phase1_attempt_count(res.agent_id),
+        }
 
     def _build_proposal_from_dict(
         self,
@@ -663,6 +1291,7 @@ class EngineeringCouncil:
             ToolchainItem(
                 requirement_ref=t.get("requirement_ref", ""),
                 name=t.get("name", ""),
+                technical_identity=t.get("technical_identity"),
                 type=t.get("type", ""),
                 install_method=t.get("install_method"),
                 version=t.get("version"),
@@ -671,6 +1300,7 @@ class EngineeringCouncil:
                 state=t.get("state", "needs_install"),
                 environment_constraint=t.get("environment_constraint"),
                 provided_by=t.get("provided_by"),
+                provides_verification=tuple(t.get("provides_verification", []) or []),
             )
             for t in data.get("toolchain", [])
         )
@@ -692,6 +1322,7 @@ class EngineeringCouncil:
             confidence=float(data.get("confidence", 0.5)),
             feasibility=data.get("feasibility", "medium"),
             verification=data.get("verification", ""),
+            verification_coverage=_parse_verification_coverage(data.get("verification_coverage", [])),
             test_strategy=data.get("test_strategy"),
             agent_reasoning=data.get("agent_reasoning", ""),
             raw_llm_response=raw_response,
@@ -712,7 +1343,7 @@ class EngineeringCouncil:
             ):
                 raise ValueError(
                     "toolchain requirement_ref must exactly reference a current "
-                    "CouncilInput requirement"
+                    "CouncilInput requirement [category=invalid_requirement_ref]"
                 )
             provided_by = item.get("provided_by")
             if provided_by is not None and (
@@ -745,6 +1376,7 @@ class EngineeringCouncil:
                         {
                             "requirement_ref": t.requirement_ref,
                             "name": t.name,
+                            "technical_identity": t.technical_identity,
                             "type": t.type,
                             "install_method": t.install_method,
                             "version": t.version,
@@ -753,6 +1385,7 @@ class EngineeringCouncil:
                             "state": t.state,
                             "environment_constraint": t.environment_constraint,
                             "provided_by": t.provided_by,
+                            "provides_verification": list(t.provides_verification),
                         }
                         for t in p.toolchain
                     ],
@@ -836,12 +1469,14 @@ class EngineeringCouncil:
                         {
                             "requirement_ref": t.requirement_ref,
                             "name": t.name,
+                            "technical_identity": t.technical_identity,
                             "type": t.type,
                             "install_method": t.install_method,
                             "version": t.version,
                             "state": t.state,
                             "environment_constraint": t.environment_constraint,
                             "provided_by": t.provided_by,
+                            "provides_verification": list(t.provides_verification),
                         }
                         for t in p.toolchain
                     ],
@@ -902,11 +1537,137 @@ class EngineeringCouncil:
         result = self._execute_parallel([task], "phase3")[0]
 
         if not result.success or not result.parsed:
+            # CLAUDE-E2E-NIO-011A, Part 9.G: the Chairman provider call
+            # already went through its OWN existing, separately-bounded
+            # transport-level retry (_run_single_agent: 1 initial + 1
+            # retry for both timeouts and malformed JSON, unchanged).
+            # Reaching here means THAT policy is exhausted -- this is a
+            # transport failure, never Engineering-synthesis-repairable,
+            # and must never be confused with the bounded repair below
+            # (which only ever runs once _parse_chairman_result() has
+            # received a genuinely parsed response and rejected its
+            # CONTENT, not its transport).
+            self._chairman_attempts = 1
             raise CouncilChairmanError(
-                f"Chairman failed: {result.error or 'no parsed output'}"
+                f"Chairman failed: {result.error or 'no parsed output'}",
+                category="provider_transport",
             )
 
-        return self._parse_chairman_result(result.parsed, council_input)
+        self._chairman_attempts = 1
+        try:
+            council_result = self._parse_chairman_result(result.parsed, council_input)
+        except (CouncilChairmanError, ValueError) as first_error:
+            # CLAUDE-E2E-NIO-011A, Part 5/6: the Chairman's own synthesis
+            # PROTOCOL output was structurally rejected (transport
+            # already succeeded -- this is categorically NOT a provider
+            # failure). Rather than terminating planning immediately
+            # (010A's own prior behaviour) or re-running the entire
+            # Council, give the Chairman exactly ONE targeted repair
+            # attempt armed with the exact deterministic rejection
+            # reason, reusing the SAME proposals/votes/binding-
+            # Requirement context already in `prompt` -- never a second,
+            # independent Engineering Council run, and never a Python-
+            # side merge of two Engineering solutions (Part 7/8: only
+            # the Chairman synthesizes; deterministic code only
+            # validates). This repair budget is shared with the
+            # admissibility-triggered repair below -- at most ONE repair
+            # attempt total, whichever fires first.
+            self._chairman_repair_used = True
+            repair_prompt = _build_chairman_repair_prompt(prompt, first_error)
+            repair_task = _AgentTask(
+                agent_id="C", role="chairman",
+                config=chairman_config, prompt=repair_prompt,
+                phase="phase3", started_at=datetime.now(),
+            )
+            repair_result = self._execute_parallel([repair_task], "phase3")[0]
+            self._chairman_attempts = 2
+
+            if not repair_result.success or not repair_result.parsed:
+                raise CouncilChairmanError(
+                    "Chairman synthesis failed after 2 attempt(s) (bounded "
+                    f"repair exhausted); attempt 1: {first_error}; "
+                    "attempt 2: Chairman failed: "
+                    f"{repair_result.error or 'no parsed output'}",
+                    category="provider_transport",
+                ) from first_error
+
+            try:
+                council_result = self._parse_chairman_result(repair_result.parsed, council_input)
+            except (CouncilChairmanError, ValueError) as second_error:
+                raise CouncilChairmanError(
+                    "Chairman synthesis failed after 2 attempt(s) (bounded "
+                    f"repair exhausted); attempt 1: {first_error}; "
+                    f"attempt 2: {second_error}",
+                    category=_failure_category(second_error),
+                ) from second_error
+            # A structural repair already used the whole repair budget --
+            # return the (now structurally valid) result as-is.
+            # CLAUDE-ARCH-S2-012B: council_complete=True here reports
+            # ONLY that the synthesis protocol is now structurally
+            # complete -- it says nothing about S2.3 admissibility,
+            # which is a separate, later concern (see class docstring).
+            return council_result
+
+        # CLAUDE-ARCH-S2-012B: the synthesis protocol succeeded on the
+        # FIRST attempt. S2.2 now consults S2.3 (the single admissibility
+        # authority, never re-implemented here) ONLY to decide whether a
+        # bonus, still-bounded repair attempt is worth trying -- this
+        # consultation NEVER changes whether this function returns
+        # normally, and council_result.council_complete is ALREADY True
+        # at this point regardless of the outcome below. If a repair is
+        # attempted and STILL does not satisfy S2.3, or the repair call
+        # itself fails, the ORIGINAL structurally-valid council_result is
+        # kept and returned -- council_complete=True can therefore
+        # coexist with an S2.3 rejection (including zero admissible
+        # candidates), exactly as the documented governance requires.
+        rework = self._admissibility_rework_evidence(council_result, council_input)
+        if rework is not None:
+            self._chairman_repair_used = True
+            repair_prompt = _build_chairman_repair_prompt(prompt, rework)
+            repair_task = _AgentTask(
+                agent_id="C", role="chairman",
+                config=chairman_config, prompt=repair_prompt,
+                phase="phase3", started_at=datetime.now(),
+            )
+            repair_result = self._execute_parallel([repair_task], "phase3")[0]
+            self._chairman_attempts = 2
+            if repair_result.success and repair_result.parsed:
+                try:
+                    council_result = self._parse_chairman_result(repair_result.parsed, council_input)
+                except (CouncilChairmanError, ValueError):
+                    # The repair attempt itself broke the protocol --
+                    # keep the ORIGINAL, structurally-valid result rather
+                    # than failing a synthesis that already succeeded.
+                    pass
+            # A repair_result transport failure is likewise not a reason
+            # to fail an already-structurally-complete synthesis -- keep
+            # the original council_result.
+        return council_result
+
+    def _admissibility_rework_evidence(
+        self, council_result: CouncilResult, council_input: CouncilInput,
+    ) -> "EngineeringReworkRequest | None":
+        """CLAUDE-ARCH-S2-012B: consults S2.3's own validate_variants()
+        (never a duplicated rule) to decide whether the Chairman's
+        recommendation is worth a bonus repair attempt. Returns None
+        when admissible (or when the recommendation cannot be resolved
+        to a real variant, which _parse_chairman_result() already
+        guarantees cannot happen for a structurally valid result) --
+        never raises, never affects council_complete."""
+        recommended_variant = next(
+            (v for v in council_result.variants if v.id == council_result.recommendation), None,
+        )
+        if recommended_variant is None:
+            return None
+        admissibility = validate_variants(
+            (recommended_variant,), council_input.preflight, council_input.platform,
+            all_trusted_verification_groups(council_input.project_intelligence),
+        )[0]
+        if admissibility.admissible:
+            return None
+        return EngineeringReworkRequest.from_validation(
+            admissibility, platform=council_input.platform,
+        )
 
     def _parse_chairman_result(self, parsed: dict, council_input: CouncilInput) -> CouncilResult:
         variants: list[CouncilVariant] = []
@@ -932,6 +1693,7 @@ class EngineeringCouncil:
                     ToolchainItem(
                         requirement_ref=t.get("requirement_ref", ""),
                         name=t.get("name", ""),
+                        technical_identity=t.get("technical_identity"),
                         type=t.get("type", ""),
                         install_method=t.get("install_method"),
                         version=t.get("version"),
@@ -940,6 +1702,7 @@ class EngineeringCouncil:
                         state=t.get("state", "needs_install"),
                         environment_constraint=t.get("environment_constraint"),
                         provided_by=t.get("provided_by"),
+                        provides_verification=tuple(t.get("provides_verification", []) or []),
                     )
                     for t in v.get("toolchain", [])
                 ),
@@ -949,6 +1712,7 @@ class EngineeringCouncil:
                 confidence=float(v.get("confidence", 0.5)),
                 feasibility=v.get("feasibility", "medium"),
                 verification=v.get("verification", ""),
+                verification_coverage=_parse_verification_coverage(v.get("verification_coverage", [])),
                 test_strategy=v.get("test_strategy"),
             ))
 
@@ -978,27 +1742,64 @@ class EngineeringCouncil:
         recommendation = parsed.get("recommendation")
         variant_ids = {variant.id for variant in variants}
         if not variants:
-            raise CouncilChairmanError("Chairman produced no valid final variant")
+            raise CouncilChairmanError(
+                "Chairman produced no valid final variant",
+                category="no_valid_variant",
+            )
+        # CLAUDE-ARCH-S2-014C (F3): a variant id must be unique and stable
+        # across Council output -> S2.3 -> displayed engineering selection
+        # -> human POST accept/select -> S2.5 EngineeringDecision -> S3
+        # handoff. `variant_ids` above is a SET -- it silently collapses
+        # duplicate ids, which let two DIFFERENT CouncilVariant objects
+        # (different toolchain/verification_coverage/name) share one id.
+        # Downstream code that resolves "the variant with id X" by
+        # `next(v for v in variants if v.id == X)` (first match) and code
+        # that instead builds a `{v.id: v for v in variants}` dict (last
+        # match wins) would then silently resolve to TWO DIFFERENT
+        # objects for the SAME id -- exactly the "human sees variant A,
+        # submits its id, selector resolves variant B" defect
+        # CDX-REVIEW-S2-014A reproduced. Structural protocol integrity
+        # (this function's own, unchanged scope) is exactly where this
+        # ambiguity must be rejected -- before S2.3, S2.4 or a human ever
+        # sees it. Never silently renamed, never resolved by picking
+        # first/last -- an ambiguous identity is a synthesis-protocol
+        # defect, reported the same way every other structural violation
+        # here is.
+        if len(variants) != len(variant_ids):
+            seen: set[str] = set()
+            duplicate_ids = sorted({
+                variant.id for variant in variants
+                if variant.id in seen or seen.add(variant.id)
+            })
+            raise CouncilChairmanError(
+                "Chairman produced two or more final variants sharing the "
+                f"same id -- variant identity must be unique: {duplicate_ids!r}",
+                category="duplicate_variant_id",
+            )
         if not recommendation or recommendation not in variant_ids:
             raise CouncilChairmanError(
-                "Chairman recommendation must identify a final Council variant"
+                "Chairman recommendation must identify a final Council "
+                f"variant; got {recommendation!r}, known final variant ids: "
+                f"{sorted(variant_ids)}",
+                category="invalid_recommendation",
             )
 
-        materializer = ToolchainMaterializer()
-        auto_materializable_ids: set[str] = set()
-        for variant in variants:
-            assessment = materializer.assess_variant(
-                variant, council_input.preflight,
-            )
-            if assessment.get("automatically_materializable"):
-                auto_materializable_ids.add(variant.id)
-
-        if auto_materializable_ids and recommendation not in auto_materializable_ids:
-            raise CouncilChairmanError(
-                "Chairman recommendation must identify an automatically "
-                "materializable final variant when at least one is available"
-            )
-
+        # CLAUDE-ARCH-S2-012B: _parse_chairman_result() is S2.2's own
+        # SYNTHESIS PROTOCOL parser -- it validates only structural/
+        # protocol integrity (valid requirement_ref references, at least
+        # one final variant, a recommendation that identifies one of
+        # them) and NEVER calls into S2.3's admissibility authority.
+        # CLAUDE-ARCH-S2-012A previously added an S2.3 admissibility
+        # check right here, which made `council_complete` conflate
+        # "synthesis protocol succeeded" with "S2.3 considers the
+        # recommendation admissible" -- an independent review correctly
+        # rejected that: council_complete=True must be able to coexist
+        # with an S2.3 rejection of the very same recommendation (see
+        # _phase3_chairman_synthesis()'s _admissibility_rework_evidence()
+        # for where that consultation now happens instead, WITHOUT
+        # gating this function's return value). See the module/class
+        # docstring update and the completion report for the full
+        # RED-before-fix evidence.
         return CouncilResult(
             id=self._run_id,
             project_id=council_input.project_id,
@@ -1195,31 +1996,55 @@ class EngineeringCouncil:
         )
 
     def _parse_json_response(self, raw: str, agent_id: str) -> dict[str, Any]:
+        """CLAUDE-ADC-E2E-VERIFICATION-EVIDENCE-FIX-001: each candidate
+        text below is now tried with strict JSON first and, only if that
+        fails, once more with `json.loads(..., strict=False)` before
+        being treated as unparseable. LLMs routinely emit a literal,
+        unescaped newline/tab inside a JSON string value (a multi-line
+        shell command, a diagnostic message) instead of the RFC 8259-
+        required \\n/\\t escape; Python's strict-mode parser rejects the
+        ENTIRE response for that alone ("Invalid control character..."),
+        forcing a wasted retry round-trip even though the JSON is
+        otherwise well-formed. `strict=False` relaxes only that one
+        literal-control-character-inside-a-string restriction -- it
+        still requires genuinely valid JSON syntax (matching braces,
+        quoted keys, valid escapes, no trailing commas, ...), so a
+        response that is actually malformed still fails both attempts
+        and still triggers the existing retry-then-fail path unchanged;
+        structured-output validation is not diluted."""
         text = raw.strip()
         exceptions = []
 
+        def _parse(candidate: str, label: str):
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError as e:
+                exceptions.append(f"{label}{e}")
+            try:
+                return json.loads(candidate, strict=False)
+            except json.JSONDecodeError as e:
+                exceptions.append(f"{label}non-strict: {e}")
+                return _JSON_PARSE_FAILED
+
         # Versuch 1: direktes JSON
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError as e:
-            exceptions.append(str(e))
+        result = _parse(text, "")
+        if result is not _JSON_PARSE_FAILED:
+            return result
 
         # Versuch 2: JSON in Markdown-Codeblock
         import re
         m = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
         if m:
-            try:
-                return json.loads(m.group(1).strip())
-            except json.JSONDecodeError as e:
-                exceptions.append(f"codeblock: {e}")
+            result = _parse(m.group(1).strip(), "codeblock: ")
+            if result is not _JSON_PARSE_FAILED:
+                return result
 
         # Versuch 3: erste { … } im Text
         m = re.search(r'\{.*\}', text, re.DOTALL)
         if m:
-            try:
-                return json.loads(m.group(0))
-            except json.JSONDecodeError as e:
-                exceptions.append(f"brace-extraction: {e}")
+            result = _parse(m.group(0), "brace-extraction: ")
+            if result is not _JSON_PARSE_FAILED:
+                return result
 
         raise AgentParseError(
             agent_id,

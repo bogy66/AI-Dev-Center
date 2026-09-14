@@ -89,8 +89,8 @@ class CapabilityRegistry:
         scope = None if project_scope is None else str(Path(project_scope).resolve())
         return capability, scope
 
-    def register_approved(self, registration: CapabilityRegistration) -> None:
-        """Consume a complete approval decision, without accepting command policy."""
+    @staticmethod
+    def _validate_registration(registration: CapabilityRegistration) -> None:
         if registration.status != ACTIVE:
             raise ValueError("Only active capability registrations may be registered")
         if registration.bootstrap_compatibility:
@@ -102,6 +102,10 @@ class CapabilityRegistry:
             raise ValueError("Complete approval provenance is required")
         if Path(provenance.project_intelligence_ref).resolve() != Path(registration.project_scope):
             raise ValueError("Project scope does not match Project Intelligence provenance")
+
+    def register_approved(self, registration: CapabilityRegistration) -> None:
+        """Consume a complete approval decision, without accepting command policy."""
+        self._validate_registration(registration)
         key = self._key(registration.capability, registration.project_scope)
         current = self._registrations.get(key)
         if current == registration:
@@ -110,6 +114,31 @@ class CapabilityRegistry:
             raise ValueError(
                 f"Capability already registered for project scope: {registration.capability}"
             )
+        self._registrations[key] = registration
+
+    def supersede_approved(self, registration: CapabilityRegistration) -> None:
+        """Replace an existing project-scoped registration for the same
+        (capability, project_scope) key with a new one carrying fresh,
+        complete approval provenance (CLAUDE-E2E-003I).
+
+        register_approved() deliberately refuses ANY conflicting entry
+        for the same key, by design -- but that design predates the
+        notion of a setup *generation*: an environment-repair scenario
+        (a tool successfully installed once, later removed externally,
+        needing a legitimate new setup generation to reinstall it at
+        the exact same target path) produces a new, genuinely valid
+        registration for a key an OLD generation's registration still
+        occupies. This method performs the exact same validation
+        register_approved() does -- it does not weaken any check -- the
+        only difference is that an existing entry for the same key is
+        replaced rather than rejected. Callers (register_setup_step_targets)
+        only ever reach this after register_approved() itself reports a
+        same-key conflict, and only ever with freshly-built, real
+        provenance sourced from the current plan/generation -- never
+        with anything client-suppliable.
+        """
+        self._validate_registration(registration)
+        key = self._key(registration.capability, registration.project_scope)
         self._registrations[key] = registration
 
     def _register_bootstrap(self, registration: CapabilityRegistration) -> None:
@@ -177,6 +206,185 @@ for _registration in (
 ):
     DEFAULT_CAPABILITY_REGISTRY._register_bootstrap(_registration)
 del _registration
+
+
+# The single, generic, ecosystem-neutral map from a controlled
+# SetupEffect to the capability/tool_name identity execute_controlled
+# already uses for it. This makes explicit and reusable a mapping that
+# was previously only implicit in how each adapter-specific executor
+# happens to construct its own ExecutionRequest (e.g.
+# PythonPackageExecutor always uses tool_name="python" for
+# PYTHON_PACKAGE_INSTALL), so capability authorization and actual
+# execution can never silently disagree about which capability a given
+# setup effect belongs to. Adding a future controlled effect (a
+# compiler, a build tool, an SDK) means adding one entry here — never a
+# new, ecosystem-specific authorization mechanism.
+_CAPABILITY_BY_SETUP_EFFECT: dict[str, str] = {
+    SetupEffect.PYTHON_PACKAGE_INSTALL: "python",
+}
+
+
+def capability_for_setup_effect(setup_effect: str | None) -> str | None:
+    """Return the capability/tool_name identity for a controlled SetupEffect,
+    or None when the effect has no execution-target/capability concept."""
+    if not setup_effect:
+        return None
+    return _CAPABILITY_BY_SETUP_EFFECT.get(setup_effect)
+
+
+# CLAUDE-E2E-NIO-008A: the single, generic, ecosystem-neutral map from a
+# controlled SetupEffect to the install_method compatibility contract its
+# own controlled executor enforces at execution time. A real
+# Real-System-E2E reached 50% and failed because ToolchainMaterializer
+# (the producer that decides whether a SetupStep may become an
+# approvable "install" action) never consulted this contract before
+# letting a free-form, compound shell install_method through -- only
+# PythonPackageExecutor (the consumer, at execution time) ever checked
+# it, too late to prevent an already-approved, already-unexecutable
+# step. Registering the SAME function each controlled executor already
+# uses (never a second, heuristic, or duplicated implementation) here
+# means the producer and the consumer can never silently disagree about
+# what "compatible" means for a given effect. Adding a future controlled
+# effect (a compiler, a build tool, an SDK) means adding one entry here
+# -- never a new, ecosystem-specific compatibility mechanism, and never
+# a requirement that the materializer parse or understand command syntax
+# itself.
+def _install_method_validators() -> dict:
+    from app.python_package_executor import is_supported_python_package_install_method
+    return {SetupEffect.PYTHON_PACKAGE_INSTALL: is_supported_python_package_install_method}
+
+
+def is_install_method_compatible_with_controlled_executor(
+    setup_effect: str | None, install_method: str | None, package: str,
+) -> bool:
+    """True when setup_effect is not currently controlled at all
+    (nothing further constrains an uncontrolled/manual-review effect
+    here -- it was never going to become an executable "install" action
+    regardless), or when the compatibility contract registered for a
+    controlled setup_effect accepts install_method for package.
+
+    CLAUDE-PRE-E2E-009A: a CONTROLLED setup_effect with no registered
+    validator fails closed (False), never silently True. Real-System-E2E
+    #4 exposed exactly this gap for python_package_install specifically;
+    generalizing "no validator" to "assume compatible" would let the
+    identical failure class recur, undetected, for the next controlled
+    effect anyone adds to CONTROLLED_SETUP_EFFECTS without also
+    registering its own compatibility contract here. Adding a new
+    controlled effect therefore REQUIRES registering its validator in
+    the same change -- there is no silent, permissive default.
+
+    Never inspects install_method's own text/syntax itself -- always
+    delegates to the exact same function the effect's own controlled
+    executor uses."""
+    if not is_controlled_setup_effect(setup_effect):
+        return True
+    validator = _install_method_validators().get(setup_effect)
+    if validator is None:
+        return False
+    return validator(install_method, package)
+
+
+def register_setup_step_targets(
+    plan,
+    project_root: str | Path,
+    *,
+    engineering_council_ref: str,
+    chairman_approval_ref: str,
+    human_approval_ref: str,
+    capability_registry: CapabilityRegistry = DEFAULT_CAPABILITY_REGISTRY,
+) -> tuple[CapabilityRegistration, ...]:
+    """Authorize each already-approved SetupStep's already-resolved
+    execution target for later execution, pinned to its exact resolved
+    path and scoped to this project — independent of any later PATH
+    lookup change.
+
+    This function does not itself decide or check plan-level approval:
+    it is the caller's responsibility to invoke it only for a plan whose
+    status is genuinely "approved" (mirroring CapabilityRegistration's
+    own design of consuming, never making, an approval decision). It
+    does, however, defensively re-check each individual step's own
+    is_approved flag before registering that step's target — today's
+    only production path to a plan.status == "approved" plan
+    (SetupApproval.approve()) always sets is_approved=True uniformly
+    across every step, so this can never diverge from plan-level
+    approval in practice, but it means a step that is not itself
+    approved is never authorized for execution even if a future
+    partial-approval model, or a hand-built/forged plan, ever produced
+    a mismatch between plan-level and step-level approval. It builds
+    one project-scoped CapabilityRegistration per distinct (capability,
+    target_executable) pair present in the plan's steps and registers
+    each through the existing, unmodified, approval-provenance-gated
+    CapabilityRegistry.register_approved() — there is no second,
+    competing authorization mechanism, and no new field is added to any
+    central model to support this.
+
+    Ecosystem-neutral by construction: capability_for_setup_effect() is
+    the only place a SetupEffect maps to a capability/tool_name
+    identity; a step whose type has no such mapping (today, anything
+    other than a controlled Python-package install) is silently
+    skipped — never guessed at.
+
+    Raises whatever CapabilityRegistry.register_approved() raises (a
+    ValueError) for an incomplete/mismatched provenance, an already-
+    registered conflicting capability for this project scope, or any
+    other violation of that existing, unmodified validation — this
+    function fails closed exactly the same way the underlying
+    mechanism already does, never with a softer or different failure
+    mode of its own.
+    """
+    resolved_root = str(Path(project_root).resolve())
+    registered: dict[tuple[str, str], CapabilityRegistration] = {}
+    for step in plan.steps:
+        if not step.is_approved:
+            continue
+        if not step.target_executable:
+            continue
+        capability = capability_for_setup_effect(step.setup_effect)
+        if capability is None:
+            continue
+        key = (capability, step.target_executable)
+        if key in registered:
+            continue
+        provenance = ApprovalProvenance(
+            project_intelligence_ref=resolved_root,
+            engineering_council_ref=engineering_council_ref,
+            chairman_approval_ref=chairman_approval_ref,
+            human_approval_ref=human_approval_ref,
+        )
+        registration = CapabilityRegistration(
+            capability=capability,
+            executable_names=(step.target_executable,),
+            allowed_operations=("install", "verification"),
+            approval_provenance=provenance,
+            project_scope=resolved_root,
+        )
+        try:
+            capability_registry.register_approved(registration)
+        except ValueError as error:
+            if "already registered" not in str(error):
+                raise
+            existing = capability_registry.get(capability, resolved_root)
+            if existing is None or existing.executable_names != registration.executable_names:
+                # A genuinely different executable identity for this
+                # capability/scope is a different, more dangerous kind
+                # of conflict (e.g. Target A vs Target B) -- never
+                # silently superseded, fails closed exactly as before
+                # CLAUDE-E2E-003I.
+                raise
+            # CLAUDE-E2E-003I: same capability, same scope, same exact
+            # target_executable, only the approval provenance differs --
+            # this is the environment-repair shape (an earlier setup
+            # generation's registration for this exact target is still
+            # on file; a new generation's real, freshly-built provenance
+            # now supersedes it). `registration` here is always built
+            # from the CURRENT plan's real generation/council/chairman/
+            # human-approval references, never client-suppliable, so
+            # replacing the stale entry is safe: the old generation's
+            # approval is never reused, a genuinely new one authorizes this.
+            capability_registry.supersede_approved(registration)
+        registered[key] = registration
+    return tuple(registered.values())
+
 
 _DENIED_ARGS = frozenset({
     "shell=True", "shell = True", "rm -rf", "shutdown", "reboot",

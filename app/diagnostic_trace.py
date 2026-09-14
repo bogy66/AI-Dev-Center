@@ -130,6 +130,7 @@ def new_run_id() -> str:
 PHASES = frozenset({
     "common_request", "project_inspection", "requirement_discovery",
     "requirement_validation", "preflight", "engineering_council",
+    "human_engineering_authority",
     "toolchain_materialization", "setup_plan", "setup_approval",
     "setup_execution", "development", "test_generation", "testing",
     "diagnosis_review", "controlled_rework", "final_approval",
@@ -166,6 +167,8 @@ DETAIL_KEYS = frozenset({
     "interface_data", "interface_stage", "upstream_stage", "downstream_stage",
     "execution_identity",
     "effective_prompt",
+    "admissible_variant_ids", "human_selected_variant_id",
+    "selected_variant_id", "selection_authority",
 })
 
 COUNCIL_OUTPUT_KEYS = frozenset({
@@ -180,8 +183,12 @@ COUNCIL_OUTPUT_KEYS = frozenset({
     "merge_decisions", "merged_variant_ids", "resulting_variant_id", "reason",
     "council_complete", "council_degraded", "error_count", "total_llm_calls",
     "result_id",
+    "chairman_error", "chairman_failure_category", "chairman_attempts",
+    "chairman_failure_subsystem",
     "plausibility", "completeness", "complexity", "risk", "ci_cd_fitness",
     "maintainability", "cost_efficiency",
+    "admissible", "reasons", "rank", "total_score", "consensus_level",
+    "requirement_coverage",
     "normal", "x", "y", "input", "output", "intent", "user_request",
     "user_request_present", "project", "project_id", "project_root", "project_kind",
     "file_count", "area_count", "languages", "frameworks", "package_systems",
@@ -199,6 +206,52 @@ COUNCIL_OUTPUT_KEYS = frozenset({
     "actor", "actor_role", "phase", "council_phase", "dependencies",
     "interface", "data", "task_description",
     "effective_prompt",
+    # CLAUDE-ARCH-S2-014D: ProjectIntelligence.to_summary()'s per-area
+    # scope breakdown (see there) -- "path" is the ProjectArea.path each
+    # nested area entry carries; the sibling "test_systems"/
+    # "build_systems"/"firmware_indicators"/"name" keys are already
+    # allowed above.
+    "areas", "path", "has_untrusted_hooks",
+    # CLAUDE-ADC-COUNCIL-DIAGNOSTIC-TRACE-INTEGRATION-FIX-001: the
+    # minimal, bounded, non-sensitive fields app.engineering_council's
+    # zero-retained-Phase-1-proposal branch classification needs --
+    # structural type/count/id metadata only, exactly like the existing
+    # "*_count"/"type"/"requirement_id" keys already above; "attempt" is
+    # a small integer (which retry attempt), "rejected_candidates" is a
+    # bounded list of {category, rejected_requirement_refs,
+    # rejected_provided_by} dicts (each of those three keys individually
+    # allowed here too) -- never free text, never a raw exception message.
+    "root_parsed_type", "variants_field_present", "variants_field_type",
+    "variants_field_count", "requirement_ids", "rejected_candidates",
+    "category", "rejected_requirement_refs", "rejected_provided_by",
+    "attempt",
+    # CLAUDE-ADC-COUNCIL-DIAGNOSTIC-HARDENING-FIX-001 (Codex review
+    # CDX-ADC-COUNCIL-DIAGNOSTIC-TRACE-REVIEW-001, F1): presence/type-only
+    # evidence for a rejected candidate's own requirement_ref/provided_by
+    # value when it was NOT a safe, bounded, single-token string (see
+    # app.engineering_council._sanitized_candidate_identifier()) -- a
+    # bounded list of Python type names only (e.g. "dict", "list"),
+    # never the value's content. Defense in depth: even if this key were
+    # ever misused to carry more than a type name, the recursive
+    # allowlisting above still applies to it exactly like any other
+    # council_output value.
+    "rejected_requirement_ref_invalid_types", "rejected_provided_by_invalid_types",
+    # CLAUDE-ADC-S23-MATERIALIZER-DIAGNOSTICS-001: the S2.3 binding-item/
+    # materializer boundary diagnostic (app.engineering_decision.
+    # binding_materializer_diagnostics()) -- bounded booleans, Python type
+    # names, and fixed classification labels only. "safe_identifier" is
+    # included ONLY when already policy-valid (never a raw, possibly-
+    # invalid identifier); "install_method_classification" is a closed set
+    # of shape labels, never install_method's own text. "variant_id",
+    # "requirement_ref", "type", and "name" reuse the same existing keys
+    # already allowed above for the identical concepts elsewhere in this
+    # allowlist.
+    "technical_identity_present", "technical_identity_python_type",
+    "technical_identity_check_applicable", "technical_identity_valid",
+    "name_valid_as_identifier", "safe_identifier",
+    "install_method_python_type", "install_method_classification",
+    "install_method_compatible", "materializer_action",
+    "materializer_rejection_category",
 })
 FORBIDDEN_COUNCIL_OUTPUT_KEYS = frozenset({
     "prompt", "system_prompt", "raw_response", "raw_llm_response",

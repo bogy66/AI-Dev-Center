@@ -49,11 +49,27 @@ from app.council_prompts import (
     build_phase1_prompt,
     build_chairman_prompt,
 )
-from app.engineering_council import EngineeringCouncil, _AgentTask
+from app.diagnostic_trace import (
+    DiagnosticDetailLevel,
+    DiagnosticTrace,
+    DiagnosticTraceStore,
+    render_diagnostic_trace_event,
+)
+from app.engineering_council import (
+    EngineeringCouncil,
+    _AgentTask,
+    _build_chairman_repair_prompt,
+    _candidate_rejection_diagnostic,
+    _classify_zero_proposal_reason,
+    _sanitized_candidate_identifier,
+    _trusted_candidate_rejection_category,
+    _TRUSTED_CANDIDATE_REJECTION_CATEGORIES,
+)
 from app.requirement_model import (
     PreflightRequirementResult,
     PreflightResult,
     Requirement,
+    RequirementActivation,
     RequirementEvidence,
     RequirementType,
     Status,
@@ -359,9 +375,26 @@ def _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp):
     }
 
 
+def _wire_diagnostic_trace(council, diagnostic_trace, run_id="test-run"):
+    """CLAUDE-ADC-COUNCIL-DIAGNOSTIC-TRACE-INTEGRATION-FIX-001: mirrors
+    app.dev_workflow.DevelopmentWorkflow.run()'s own record_council_
+    result() wiring exactly (same summary.pop(), same details shape),
+    so tests exercise the SAME composition path production code uses to
+    route EngineeringCouncil's structured results into the central
+    DiagnosticTrace -- never a council-owned file."""
+    def record_council_result(**result):
+        summary = result.pop("summary", "Council structured result")
+        diagnostic_trace.record(
+            run_id, "engineering_council", "completed", "completed",
+            summary, details={"diagnostic_level": "NORMAL", **result},
+        )
+    council.set_result_callback(record_council_result)
+
+
 def _run_council_with_fakes(council_config, fake_providers, tmp_path,
                              trace_dir=None, capture_configs=None,
-                             capture_results=None):
+                             capture_results=None, diagnostic_trace=None,
+                             diagnostic_trace_run_id="test-run"):
     """Run council with fake providers patched in. Returns result."""
     factory = None
     if capture_configs is not None:
@@ -390,6 +423,8 @@ def _run_council_with_fakes(council_config, fake_providers, tmp_path,
             council.set_result_callback(
                 lambda **result: capture_results.append(result)
             )
+        elif diagnostic_trace is not None:
+            _wire_diagnostic_trace(council, diagnostic_trace, diagnostic_trace_run_id)
         return council.evaluate(_make_council_input())
 
 
@@ -1212,6 +1247,56 @@ class TestErrorHandling:
         assert result.council_complete
         assert result.total_llm_calls == 8  # +1 for retry
 
+    def test_literal_control_character_in_json_string_parses_without_retry(self, tmp_path):
+        """CLAUDE-ADC-E2E-VERIFICATION-EVIDENCE-FIX-001: reproduces the
+        real E2E's secondary robustness signal -- Agent A1 failed JSON
+        parsing twice with 'Invalid control character' before succeeding
+        on a later council rerun. LLMs routinely emit a literal,
+        unescaped newline inside a JSON string value (e.g. a multi-line
+        agent_reasoning) instead of the RFC 8259-required '\\n' escape;
+        Python's strict json.loads rejects the ENTIRE otherwise
+        well-formed response for that alone, wasting a retry round-trip.
+        `_parse_json_response`'s `strict=False` fallback must accept this
+        on the FIRST attempt -- no retry, no extra LLM call."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, all_ids = _setup_standard_responses()
+        a1_resp_with_control_char = a1_resp.replace(
+            "Testvariant 1 von A1",
+            "Testvariant 1 von A1\nZeile 2 mit einem literalen Kontrollzeichen",
+        )
+        assert "\n" in a1_resp_with_control_char.split('"description"')[1][:100]
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(a1_resp_with_control_char)
+
+        fake_providers = _build_standard_providers(
+            a1_resp_with_control_char, a2_resp, a3_resp, ph2_resp, ch_resp,
+        )
+
+        result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
+
+        assert result.council_complete
+        assert result.total_llm_calls == 7  # no retry -- parsed on first attempt
+
+    def test_genuinely_malformed_json_still_fails_even_non_strict(self, tmp_path):
+        """The strict=False fallback only relaxes literal control
+        characters inside otherwise well-formed JSON -- it must never
+        accept genuinely malformed JSON structure (here: a truncated
+        document missing its closing braces). Proves the fix does not
+        dilute structured-output validation."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, all_ids = _setup_standard_responses()
+
+        fake_providers = {
+            "model-ea": FakeLLMProvider(["{\"variants\": [{\"truncated\": true"] * 2),
+            "model-ti": FakeLLMProvider([a2_resp, ph2_resp]),
+            "model-ra": FakeLLMProvider([a3_resp, ph2_resp]),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+
+        result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
+
+        assert result.council_complete
+        assert result.council_degraded
+        assert any("A1" in err for err in result.agent_errors)
+
     def test_a1_failure_uses_degraded_quorum(self, tmp_path):
         a2_resp = _make_phase1_response("A2", 1)
         a3_resp = _make_phase1_response("A3", 1)
@@ -1347,6 +1432,199 @@ class TestErrorHandling:
         assert result.rejected_variants == ()
         assert result.merge_decisions == ()
         assert result.reasoning == ""
+
+
+# =========================================================================
+# Test: binding Requirement coverage across ALL final Council variants
+# (CLAUDE-E2E-NIO-010A -- Real-System-E2E #5 root cause)
+# =========================================================================
+
+
+def _make_council_input_with_two_binding_requirements() -> CouncilInput:
+    """Models the reproduced Real-E2E #5 shape: two independently
+    required, missing, blocking Requirements (ESPHome, a PlatformIO-like
+    build backend) -- the exact shape under which six otherwise-plausible
+    Council proposals plus a completed Chairman recommendation produced
+    zero admissible S2 candidates."""
+    req_esphome = _make_requirement("req-1", "esphome", "python_package", True)
+    req_platformio = _make_requirement("req-2", "platformio", "executable", True)
+    return CouncilInput(
+        requirements=(req_esphome, req_platformio),
+        preflight=PreflightResult(
+            id="pre-1", project_id="test-project", overall_ready=False,
+            results=(
+                PreflightRequirementResult(requirement_id="req-1", present=False, satisfied=False),
+                PreflightRequirementResult(requirement_id="req-2", present=False, satisfied=False),
+            ),
+            missing_requirements=(req_esphome, req_platformio),
+            activations=(
+                RequirementActivation("req-1", True, True),
+                RequirementActivation("req-2", True, True),
+            ),
+            already_installed=(), warnings=(),
+        ),
+        detected_stack="esphome", project_id="esphome-p1",
+        project_files=("esphome-p1.yaml",), platform="linux",
+    )
+
+
+def _toolchain_item(requirement_ref: str) -> dict:
+    return {
+        "requirement_ref": requirement_ref, "name": requirement_ref,
+        "technical_identity": requirement_ref, "type": "python_package",
+        "install_method": "pip", "version": None, "purpose": "",
+        "depends_on": [], "state": "needs_install",
+        "environment_constraint": None, "provided_by": None,
+        "provides_verification": ["pytest"],
+    }
+
+
+def _variant(variant_id: str, name: str, *toolchain_refs: str, rank: int = 1) -> dict:
+    return {
+        "id": variant_id, "name": name, "description": name,
+        "origin_agents": ["A1"], "merged_from": [variant_id],
+        "rank": rank, "total_score": 5.0, "consensus_level": "strong_consensus",
+        "minority_opinions": [], "environment": "host",
+        "hardware_target": None, "connection": None,
+        "capabilities": [], "toolchain": [_toolchain_item(ref) for ref in toolchain_refs],
+        "advantages": [], "disadvantages": [], "risks": [],
+        "confidence": 0.9, "feasibility": "high", "verification": "test",
+    }
+
+
+class TestBindingRequirementCoverageAcrossVariants:
+    """Real-System-E2E #5 exposed that nothing previously required a
+    FINAL Council variant's toolchain to cover every binding Requirement
+    -- _validate_toolchain_requirement_refs() only rejects a requirement_ref
+    that points to nothing real, never one that leaves some OTHER binding
+    Requirement completely uncovered. When specialist agents (and even a
+    Chairman merge) propose complementary PARTIAL solutions -- exactly the
+    observed shape (agent A2's three variants addressed only ESPHome CLI
+    installation, agent A3's three addressed only a separate installation-
+    strategy Requirement, and the Chairman's own "merged-venv" combined
+    them by name/environment similarity without actually unioning their
+    toolchains) -- every resulting candidate individually satisfies its
+    own agent's narrow framing while collectively leaving S2's (correct,
+    unweakened) per-candidate coverage check with zero admissible
+    candidates. This is now caught here, at the true producer
+    (Council/Chairman synthesis), with the exact missing Requirement ids
+    per variant."""
+
+    def test_red_before_fix_zero_coverage_previously_passed_silently(self, tmp_path):
+        """Genuine RED: temporarily remove the new completeness check by
+        calling the parsing logic path that predates it -- reproduced via
+        a direct, standalone check against the underlying validation
+        primitives (the same ones _parse_chairman_result now calls),
+        proving that NEITHER of two complementary-but-incomplete variants
+        would have been rejected by anything that existed before this
+        task. This is the mechanical root-cause evidence for Real-E2E #5,
+        independent of any one Chairman JSON shape."""
+        from app.engineering_decision import _binding_requirement_ids, _covers_binding_requirements
+
+        council_input = _make_council_input_with_two_binding_requirements()
+        binding_ids = _binding_requirement_ids(council_input.preflight)
+        assert binding_ids == frozenset({"req-1", "req-2"})
+
+        esphome_only = CouncilVariant(
+            id="merged-venv", name="ESPHome mit Python Virtual Environment",
+            toolchain=(ToolchainItem(requirement_ref="req-1", name="esphome",
+                                      type="python_package", install_method="pip"),),
+        )
+        platformio_only = CouncilVariant(
+            id="A3-var-3", name="Virtuelle Umgebung",
+            toolchain=(ToolchainItem(requirement_ref="req-2", name="platformio",
+                                      type="executable", install_method="pip"),),
+        )
+        # RED: _validate_toolchain_requirement_refs (the ONLY pre-existing
+        # coverage-adjacent check) would have accepted BOTH of these --
+        # each ref is real, so nothing previously flagged that NEITHER
+        # variant covers the full binding set.
+        for variant in (esphome_only, platformio_only):
+            assert not _covers_binding_requirements(variant, binding_ids), (
+                "fixture sanity: each variant must genuinely be incomplete"
+            )
+
+    def test_chairman_producing_only_incomplete_variants_completes_structurally_but_stays_s2_3_inadmissible(
+        self, tmp_path,
+    ):
+        """CLAUDE-ARCH-S2-012B (Gate A/B): synthesis_complete/
+        council_complete reports ONLY structural protocol success --
+        the Chairman's synthesis output (three valid variants, a
+        recommendation identifying one of them) IS structurally
+        complete, even though that recommendation still fails S2.3's
+        binding-requirement-coverage rule. This is the corrected
+        replacement for CLAUDE-ARCH-S2-012A's own
+        test_chairman_producing_only_incomplete_variants_is_rejected_
+        with_evidence, which wrongly asserted council_complete=False
+        for a purely S2.3-level (not protocol-level) rejection -- an
+        independent review flagged exactly this as a governance
+        regression (S2.2 must never gate synthesis completeness on
+        S2.3's verdict)."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, _ = _setup_standard_responses()
+        chairman_data = json.loads(ch_resp)
+        chairman_data["variants"] = [
+            _variant("A2-var-2", "ESPHome mit Python Virtual Environment", "req-1", rank=1),
+            _variant("A3-var-3", "Virtuelle Umgebung", "req-2", rank=2),
+            _variant("merged-venv", "ESPHome mit Python Virtual Environment", "req-1", rank=1),
+        ]
+        chairman_data["recommendation"] = "merged-venv"
+        fake_providers = _build_standard_providers(
+            a1_resp, a2_resp, a3_resp, ph2_resp, json.dumps(chairman_data)
+        )
+
+        with patch("app.engineering_council.create_council_provider") as mf:
+            mf.side_effect = lambda config, resolver, ollama_url=None: fake_providers[config.model]
+            council = EngineeringCouncil(
+                council_config=_make_council_config(),
+                secret_resolver=SimpleSecretResolver({"openrouter-api": "test"}),
+            )
+            result = council.evaluate(_make_council_input_with_two_binding_requirements())
+
+        # Gate B: synthesis_complete=True coexists with an S2.3
+        # rejection of the very same recommendation.
+        assert result.council_complete
+        assert result.chairman_error is None
+        assert result.recommendation == "merged-venv"
+
+        # S2.3 remains the single authority that actually surfaces the
+        # inadmissibility -- discoverable by calling it, exactly as any
+        # other consumer downstream of a "complete" synthesis would.
+        from app.engineering_decision import validate_candidates
+        validations = validate_candidates(
+            result, preflight=_make_council_input_with_two_binding_requirements().preflight,
+        )
+        by_id = {v.variant.id: v for v in validations}
+        assert by_id["merged-venv"].admissible is False
+        assert "missing binding requirement coverage" in by_id["merged-venv"].reasons[0]
+
+    def test_chairman_producing_one_complete_variant_is_accepted(self, tmp_path):
+        """Regression safety: when at least one final variant DOES cover
+        every binding Requirement (here, by including both items in a
+        single variant's toolchain), the new check must not reject it --
+        it only fires when NOT A SINGLE variant achieves full coverage."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, _ = _setup_standard_responses()
+        chairman_data = json.loads(ch_resp)
+        chairman_data["variants"] = [
+            _variant("A2-var-2", "ESPHome mit Python Virtual Environment", "req-1", rank=1),
+            _variant("complete-venv", "ESPHome + PlatformIO Virtual Environment",
+                      "req-1", "req-2", rank=1),
+        ]
+        chairman_data["recommendation"] = "complete-venv"
+        fake_providers = _build_standard_providers(
+            a1_resp, a2_resp, a3_resp, ph2_resp, json.dumps(chairman_data)
+        )
+
+        with patch("app.engineering_council.create_council_provider") as mf:
+            mf.side_effect = lambda config, resolver, ollama_url=None: fake_providers[config.model]
+            council = EngineeringCouncil(
+                council_config=_make_council_config(),
+                secret_resolver=SimpleSecretResolver({"openrouter-api": "test"}),
+            )
+            result = council.evaluate(_make_council_input_with_two_binding_requirements())
+
+        assert result.council_complete
+        assert result.chairman_error is None
+        assert any(v.id == "complete-venv" for v in result.variants)
 
 
 # =========================================================================
@@ -2241,9 +2519,21 @@ class TestControlledSetupEligibility:
         assert result.recommendation == "final-var-1"
         assert not result.chairman_error
 
-    def test_manual_review_recommendation_rejected_when_auto_alternative_exists(
+    def test_manual_review_recommendation_accepted_even_when_auto_alternative_exists(
         self, tmp_path,
     ):
+        """CLAUDE-ARCH-S2-012A, RED-3: this test previously asserted the
+        OPPOSITE (rejection) as "correct" behavior -- a pre-existing,
+        completely untested-until-now S2.2 rule forced the Chairman's
+        recommendation to be automatically materializable whenever ANY
+        final variant was, even though a legitimately-manual candidate
+        is fully admissible per CLAUDE-PRE-E2E-009C/CLAUDE-E2E-NIO-010A.
+        That rule was a forced PREFERENCE among admissible candidates
+        (automatic over manual) -- exactly the class of governance
+        violation 009C itself removed for mutation-free preference.
+        Corrected expectation: the Chairman may legitimately recommend
+        the manual-review candidate; ADC does not force automatic over
+        manual."""
         a1_resp = _make_phase1_response("A1", 1)
         a2_resp = _make_phase1_response("A2", 1)
         a3_resp = _make_phase1_response("A3", 1)
@@ -2263,10 +2553,9 @@ class TestControlledSetupEligibility:
             _make_council_config(), fake_providers, tmp_path,
         )
 
-        assert not result.council_complete
-        assert result.chairman_error is not None
-        assert "automatically materializable" in result.chairman_error
-        assert result.recommendation is None
+        assert result.council_complete
+        assert result.chairman_error is None
+        assert result.recommendation == "final-var-2"
 
     def test_all_manual_review_recommendation_accepted(self, tmp_path):
         a1_resp = _make_phase1_response("A1", 1)
@@ -2406,4 +2695,2055 @@ class TestControlledSetupEligibility:
         assert "keine Präferenz" in prompt
         assert "Bestimme zuerst die Menge der zulässigen finalen Varianten" in CHAIRMAN_SYSTEM_PROMPT
         assert "Vote-Ranking gilt" in CHAIRMAN_SYSTEM_PROMPT
+
+
+# =========================================================================
+# Test: bounded Chairman synthesis repair (CLAUDE-E2E-NIO-011A --
+# Real-System-E2E #6: a completed provider call, a syntactically valid
+# response, but a structurally/semantically rejected Chairman decision,
+# previously terminated planning immediately and hid the real reason).
+# =========================================================================
+
+
+def _invalid_recommendation_chairman_response(variant_ids: list[str]) -> str:
+    """A syntactically valid, structurally invalid Chairman response:
+    recommendation does not identify any of the returned variants."""
+    return _make_chairman_response(variant_ids, recommendation="does-not-exist")
+
+
+class TestBoundedChairmanRepair:
+    """CLAUDE-E2E-NIO-011A, Part 9/10 test matrix."""
+
+    def test_complete_initial_result_never_triggers_a_repair_call(self, tmp_path):
+        """Part 10.A."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, _ = _setup_standard_responses()
+        chairman_provider = FakeLLMProvider([ch_resp])
+        fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp)
+        fake_providers["model-ch"] = chairman_provider
+
+        result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
+
+        assert result.council_complete
+        assert result.chairman_error is None
+        assert len(chairman_provider.calls) == 1
+
+    def test_incomplete_first_result_triggers_exactly_one_targeted_repair(self, tmp_path):
+        """Part 10.C: an invalid-recommendation first response leads to
+        exactly one repair call, whose prompt carries the exact
+        deterministic rejection reason."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, _, all_ids = _setup_standard_responses()
+        broken_ch_resp = _invalid_recommendation_chairman_response(all_ids)
+        fixed_ch_resp = _make_chairman_response(all_ids)
+        chairman_provider = FakeLLMProvider([broken_ch_resp, fixed_ch_resp])
+        fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, broken_ch_resp)
+        fake_providers["model-ch"] = chairman_provider
+
+        result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
+
+        assert len(chairman_provider.calls) == 2
+        repair_prompt = chairman_provider.calls[1]
+        assert "KORREKTUR ERFORDERLICH" in repair_prompt
+        assert "must identify a final Council variant" in repair_prompt
+        assert result.council_complete
+
+    def test_successful_repair_completes_the_council(self, tmp_path):
+        """Part 10.D."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, _, all_ids = _setup_standard_responses()
+        broken_ch_resp = _invalid_recommendation_chairman_response(all_ids)
+        fixed_ch_resp = _make_chairman_response(all_ids)
+        fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, broken_ch_resp)
+        fake_providers["model-ch"] = FakeLLMProvider([broken_ch_resp, fixed_ch_resp])
+
+        result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
+
+        assert result.council_complete
+        assert result.chairman_error is None
+        assert result.recommendation == all_ids[0]
+
+    def test_repair_still_incomplete_is_a_bounded_terminal_failure(self, tmp_path):
+        """Part 10.E: two rejected attempts, never a third."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, _, all_ids = _setup_standard_responses()
+        broken_ch_resp_1 = _invalid_recommendation_chairman_response(all_ids)
+        broken_ch_resp_2 = _invalid_recommendation_chairman_response(all_ids)
+        chairman_provider = FakeLLMProvider([broken_ch_resp_1, broken_ch_resp_2])
+        fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, broken_ch_resp_1)
+        fake_providers["model-ch"] = chairman_provider
+
+        result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
+
+        assert not result.council_complete
+        assert len(chairman_provider.calls) == 2, "must never attempt a third synthesis call"
+        assert "2 attempt(s)" in result.chairman_error
+        assert "bounded repair exhausted" in result.chairman_error
+        assert result.chairman_error.count("must identify a final Council variant") == 2
+
+    def test_malformed_first_response_follows_existing_transport_retry_not_synthesis_repair(self, tmp_path):
+        """Part 10.F: a syntactically invalid JSON response is handled by
+        _run_single_agent's OWN, separately-bounded, pre-existing retry
+        (a corrective "send valid JSON" re-prompt) -- never confused
+        with, or double-counted against, the NEW synthesis-repair
+        budget. Two provider calls happen, but both belong to the
+        existing transport-retry policy; the synthesis-repair path is
+        never engaged because the (transport-level-retried) result is
+        complete on its first successfully PARSED attempt."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, _, all_ids = _setup_standard_responses()
+        valid_ch_resp = _make_chairman_response(all_ids)
+        chairman_provider = FakeLLMProvider(["this is not json at all", valid_ch_resp])
+        fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, valid_ch_resp)
+        fake_providers["model-ch"] = chairman_provider
+
+        result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
+
+        assert result.council_complete
+        assert result.chairman_error is None
+        assert len(chairman_provider.calls) == 2
+        # The second (successful) call is the transport-level JSON-retry
+        # re-prompt, NOT a synthesis-repair prompt -- it must not contain
+        # the synthesis-repair correction block.
+        assert "KORREKTUR ERFORDERLICH" not in chairman_provider.calls[1]
+        assert "VALIDES JSON" in chairman_provider.calls[1]
+
+    def test_provider_timeout_follows_existing_provider_retry_not_synthesis_repair(self, tmp_path):
+        """Part 10.G: a persistently failing provider (simulating a
+        timeout) is retried exactly by _run_single_agent's own existing
+        policy (2 total attempts) and never reaches, or is confused
+        with, the synthesis-repair path -- there is no parsed response
+        to validate at all, so no repair prompt is ever built."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, _ = _setup_standard_responses()
+        chairman_provider = FailingLLMProvider("simulated timeout")
+        fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp)
+        fake_providers["model-ch"] = chairman_provider
+
+        result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
+
+        assert not result.council_complete
+        assert "category=provider_transport" in result.chairman_error
+        assert len(chairman_provider.calls) == 2, "existing transport retry: 1 initial + 1 retry"
+        assert "KORREKTUR ERFORDERLICH" not in chairman_provider.calls[-1]
+
+    def test_invalid_recommendation_never_silently_switches_to_another_candidate(self, tmp_path):
+        """Part 10.H: an invalid recommendation id, unresolved even
+        after the bounded repair, must never be silently coerced into a
+        real variant id."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, _, all_ids = _setup_standard_responses()
+        broken_ch_resp = _invalid_recommendation_chairman_response(all_ids)
+        fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, broken_ch_resp)
+        fake_providers["model-ch"] = FakeLLMProvider([broken_ch_resp, broken_ch_resp])
+
+        result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
+
+        assert not result.council_complete
+        assert result.recommendation is None
+        assert "does-not-exist" in result.chairman_error
+
+    def test_repair_never_constructs_a_python_side_merged_variant(self, tmp_path):
+        """Part 10.K: when the repair attempt's OWN response proposes a
+        completely different final variant set than attempt 1, the
+        resulting CouncilResult reflects EXACTLY the repair attempt's
+        variants -- proving no deterministic Python-side splicing/
+        merging of the two attempts' variants ever took place."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, _, all_ids = _setup_standard_responses()
+        broken_ch_resp = _invalid_recommendation_chairman_response(all_ids)
+        repaired_ch_resp = _make_chairman_response(["A2-var-1"])
+        fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, broken_ch_resp)
+        fake_providers["model-ch"] = FakeLLMProvider([broken_ch_resp, repaired_ch_resp])
+
+        result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
+
+        assert result.council_complete
+        assert [v.id for v in result.variants] == ["A2-var-1"]
+        assert result.recommendation == "A2-var-1"
+
+    def test_diagnostic_trace_exposes_safe_chairman_failure_reason(self, tmp_path):
+        """Part 10.L: the Chairman result-projection (what a Diagnostic
+        Trace / Web UI would render) must now surface the concrete
+        chairman_error, category and attempt count -- not only the
+        previous generic "No final recommendation produced."."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, _, all_ids = _setup_standard_responses()
+        broken_ch_resp = _invalid_recommendation_chairman_response(all_ids)
+        fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, broken_ch_resp)
+        fake_providers["model-ch"] = FakeLLMProvider([broken_ch_resp, broken_ch_resp])
+
+        structured_results = []
+        result = _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path,
+            capture_results=structured_results,
+        )
+
+        assert not result.council_complete
+        chairman_result = next(
+            item for item in structured_results
+            if item["result_kind"] == "chairman_decision"
+        )
+        info = chairman_result["council_output"]["info"]
+        assert info["chairman_error"] is not None
+        assert "does-not-exist" in info["chairman_error"]
+        assert info["chairman_failure_category"] == "invalid_recommendation"
+        assert info["chairman_attempts"] == 2
+        assert info["summary"] != "No final recommendation produced."
+        assert "Chairman failed:" in info["summary"]
+
+    def test_real_e2e_6_shaped_completeness_failure_is_repaired(self, tmp_path):
+        """Mechanical reproduction of the ACTUAL Real-System-E2E #6 root
+        cause (not merely a proxy category): the Chairman's first
+        synthesis attempt merges fragmented agent proposals (one group
+        addressing only the ESPHome requirement, another only a separate
+        PlatformIO-like requirement) into final variants that -- exactly
+        like Real-System-E2E #5's merged-venv -- each still cover only
+        ONE of the two binding Requirements. The bounded repair, armed
+        with the exact 010A completeness evidence, produces a genuinely
+        complete variant on its second attempt."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, _, _ = _setup_standard_responses()
+        incomplete_data = json.loads(_make_chairman_response(["x"]))
+        incomplete_data["variants"] = [
+            _variant("merged-host", "Direct Linux Setup", "req-1", rank=1),
+            _variant("merged-docker", "Docker-basierte Entwicklung", rank=2),
+        ]
+        incomplete_data["recommendation"] = "merged-host"
+        incomplete_ch_resp = json.dumps(incomplete_data)
+
+        complete_data = json.loads(_make_chairman_response(["x"]))
+        complete_data["variants"] = [
+            _variant("complete-host", "ESPHome mit PlatformIO auf Linux", "req-1", "req-2", rank=1),
+        ]
+        complete_data["recommendation"] = "complete-host"
+        complete_ch_resp = json.dumps(complete_data)
+
+        fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, incomplete_ch_resp)
+        fake_providers["model-ch"] = FakeLLMProvider([incomplete_ch_resp, complete_ch_resp])
+
+        with patch("app.engineering_council.create_council_provider") as mf:
+            mf.side_effect = lambda config, resolver, ollama_url=None: fake_providers[config.model]
+            council = EngineeringCouncil(
+                council_config=_make_council_config(),
+                secret_resolver=SimpleSecretResolver({"openrouter-api": "test"}),
+            )
+            result = council.evaluate(_make_council_input_with_two_binding_requirements())
+
+        assert result.council_complete
+        assert result.chairman_error is None
+        assert result.recommendation == "complete-host"
+        assert len(fake_providers["model-ch"].calls) == 2
+        assert "KORREKTUR ERFORDERLICH" in fake_providers["model-ch"].calls[1]
+        assert "req-1" in fake_providers["model-ch"].calls[1]
+        assert "req-2" in fake_providers["model-ch"].calls[1]
+
+    def test_no_secrets_or_chain_of_thought_in_new_chairman_diagnostics(self, tmp_path):
+        """Part 10.M."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, _, all_ids = _setup_standard_responses()
+        broken_ch_resp = _invalid_recommendation_chairman_response(all_ids)
+        fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, broken_ch_resp)
+        fake_providers["model-ch"] = FakeLLMProvider([broken_ch_resp, broken_ch_resp])
+
+        structured_results = []
+        result = _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path,
+            capture_results=structured_results,
+        )
+
+        chairman_result = next(
+            item for item in structured_results
+            if item["result_kind"] == "chairman_decision"
+        )
+        info = chairman_result["council_output"]["info"]
+        for forbidden in ("chain_of_thought", "api_key", "password", "begin private key",
+                          "system_prompt", "you are the chairman"):
+            assert forbidden not in (result.chairman_error or "").lower()
+            assert forbidden not in str(info).lower()
         assert "innerhalb der zulässigen Menge" in CHAIRMAN_SYSTEM_PROMPT
+
+
+# =========================================================================
+# Test: synthesis_complete/council_complete semantics are structural-only
+# (CLAUDE-ARCH-S2-012B, correcting an independent-review-flagged
+# regression introduced by CLAUDE-ARCH-S2-012A: S2.2 must not pre-
+# authorize or pre-reject a recommendation by calling S2.3 before
+# declaring synthesis structurally complete -- council_complete=True
+# must be able to coexist with an S2.3 rejection, including zero
+# admissible candidates).
+# =========================================================================
+
+
+class TestSynthesisCompleteSemantics:
+    """TC-S2.2-012B: Gates A, B, C, D of the CLAUDE-ARCH-S2-012B
+    acceptance review."""
+
+    def test_gate_a_structurally_complete_synthesis_reports_complete_regardless_of_admissibility(
+        self, tmp_path,
+    ):
+        """Gate A: synthesis_complete=True means ONLY that the protocol
+        is structurally complete. A structurally valid, single-candidate
+        recommendation that violates platform is still reported as
+        council_complete=True."""
+        a1_resp = _make_phase1_response("A1", 1)
+        a2_resp = _make_phase1_response("A2", 1)
+        a3_resp = _make_phase1_response("A3", 1)
+        all_ids = _all_variant_ids([a1_resp, a2_resp, a3_resp])
+        ph2_resp = _make_phase2_response("x", all_ids)
+        ch_data = json.loads(_make_chairman_response(all_ids))
+        ch_data["variants"][0]["toolchain"] = [{
+            "requirement_ref": "req-1", "name": "python", "type": "python_package",
+            "install_method": "pip", "version": None, "state": "needs_install",
+            "environment_constraint": "windows", "provided_by": None,
+        }]
+        ch_resp = json.dumps(ch_data)
+        fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp)
+        fake_providers["model-ch"] = FakeLLMProvider([ch_resp, ch_resp])
+
+        result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
+
+        assert result.council_complete
+        assert result.chairman_error is None
+        assert result.recommendation is not None
+
+    def test_gate_b_synthesis_complete_true_coexists_with_zero_admissible_candidates(self, tmp_path):
+        """Gate B: even when EVERY proposed final variant is inadmissible
+        (here: a binding platform Constraint every candidate violates),
+        council_complete=True still holds -- the ZERO-admissible outcome
+        is S2.3's own, separate, downstream finding, discoverable via
+        validate_candidates(), never something S2.2 itself reports as a
+        synthesis failure."""
+        a1_resp = _make_phase1_response("A1", 1)
+        a2_resp = _make_phase1_response("A2", 1)
+        a3_resp = _make_phase1_response("A3", 1)
+        all_ids = _all_variant_ids([a1_resp, a2_resp, a3_resp])
+        ph2_resp = _make_phase2_response("x", all_ids)
+        ch_data = json.loads(_make_chairman_response(all_ids))
+        for variant in ch_data["variants"]:
+            variant["toolchain"] = [{
+                "requirement_ref": "req-1", "name": "python", "type": "python_package",
+                "install_method": "pip", "version": None, "state": "needs_install",
+                "environment_constraint": "windows", "provided_by": None,
+            }]
+        ch_resp = json.dumps(ch_data)
+        fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp)
+        fake_providers["model-ch"] = FakeLLMProvider([ch_resp, ch_resp])
+
+        result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
+
+        assert result.council_complete
+        assert result.chairman_error is None
+
+        from app.engineering_decision import admissible_variants, validate_candidates
+        validations = validate_candidates(result, platform="linux")
+        assert admissible_variants(validations) == ()
+
+    def test_gate_c_s2_3_remains_the_single_admissibility_authority(self, tmp_path):
+        """Gate C: S2.2 never computes its own admissibility verdict --
+        it only ever calls S2.3's validate_variants(). Proven here by
+        confirming the SAME reason S2.3 would independently compute is
+        exactly what the repair prompt was built from (no separate,
+        S2.2-local admissibility heuristic exists)."""
+        a1_resp = _make_phase1_response("A1", 1)
+        a2_resp = _make_phase1_response("A2", 1)
+        a3_resp = _make_phase1_response("A3", 1)
+        all_ids = _all_variant_ids([a1_resp, a2_resp, a3_resp])
+        ph2_resp = _make_phase2_response("x", all_ids)
+        ch_data = json.loads(_make_chairman_response(all_ids))
+        ch_data["variants"][0]["toolchain"] = [{
+            "requirement_ref": "req-1", "name": "python", "type": "python_package",
+            "install_method": "pip", "version": None, "state": "needs_install",
+            "environment_constraint": "windows", "provided_by": None,
+        }]
+        ch_resp = json.dumps(ch_data)
+        fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp)
+        chairman_provider = FakeLLMProvider([ch_resp, ch_resp])
+        fake_providers["model-ch"] = chairman_provider
+
+        _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
+
+        assert len(chairman_provider.calls) == 2
+        repair_prompt = chairman_provider.calls[1]
+        assert "KORREKTUR ERFORDERLICH" in repair_prompt
+        assert "platform_constraint" in repair_prompt or "violates platform constraint" in repair_prompt
+
+    def test_gate_d_repair_remains_bounded_to_two_total_attempts(self, tmp_path):
+        """Gate D: even when the admissibility-triggered repair's OWN
+        response is STILL inadmissible, no third attempt is ever made --
+        the original bounded-repair architecture (011A) is preserved."""
+        a1_resp = _make_phase1_response("A1", 1)
+        a2_resp = _make_phase1_response("A2", 1)
+        a3_resp = _make_phase1_response("A3", 1)
+        all_ids = _all_variant_ids([a1_resp, a2_resp, a3_resp])
+        ph2_resp = _make_phase2_response("x", all_ids)
+        ch_data = json.loads(_make_chairman_response(all_ids))
+        ch_data["variants"][0]["toolchain"] = [{
+            "requirement_ref": "req-1", "name": "python", "type": "python_package",
+            "install_method": "pip", "version": None, "state": "needs_install",
+            "environment_constraint": "windows", "provided_by": None,
+        }]
+        ch_resp = json.dumps(ch_data)
+        fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp)
+        chairman_provider = FakeLLMProvider([ch_resp, ch_resp])
+        fake_providers["model-ch"] = chairman_provider
+
+        result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
+
+        assert len(chairman_provider.calls) == 2, "must never attempt a third synthesis call"
+        # Gate A/B: STILL council_complete=True -- repair exhaustion for
+        # an ADMISSIBILITY reason is not a protocol failure.
+        assert result.council_complete
+        assert result.chairman_error is None
+
+    def test_repair_never_reruns_phase1_or_phase2(self, tmp_path):
+        """Preserve the bounded repair architecture: the admissibility-
+        triggered repair reuses proposals/votes already gathered -- it
+        never re-invokes phase1/phase2 agents (only the chairman model
+        receives a second call)."""
+        a1_resp = _make_phase1_response("A1", 1)
+        a2_resp = _make_phase1_response("A2", 1)
+        a3_resp = _make_phase1_response("A3", 1)
+        all_ids = _all_variant_ids([a1_resp, a2_resp, a3_resp])
+        ph2_resp = _make_phase2_response("x", all_ids)
+        ch_data = json.loads(_make_chairman_response(all_ids))
+        ch_data["variants"][0]["toolchain"] = [{
+            "requirement_ref": "req-1", "name": "python", "type": "python_package",
+            "install_method": "pip", "version": None, "state": "needs_install",
+            "environment_constraint": "windows", "provided_by": None,
+        }]
+        ch_resp = json.dumps(ch_data)
+        fixed_ch_data = json.loads(_make_chairman_response(all_ids))
+        fixed_ch_resp = json.dumps(fixed_ch_data)
+        a1_provider = FakeLLMProvider([a1_resp, ph2_resp])
+        a2_provider = FakeLLMProvider([a2_resp, ph2_resp])
+        a3_provider = FakeLLMProvider([a3_resp, ph2_resp])
+        fake_providers = {
+            "model-ea": a1_provider, "model-ti": a2_provider, "model-ra": a3_provider,
+            "model-ch": FakeLLMProvider([ch_resp, fixed_ch_resp]),
+        }
+
+        result = _run_council_with_fakes(_make_council_config(), fake_providers, tmp_path)
+
+        assert result.council_complete
+        assert result.chairman_error is None
+        # Exactly the calls phase1 (1) + phase2 (1) require -- no extra
+        # phase1/phase2 call was made for the repair.
+        assert len(a1_provider.calls) == 2
+        assert len(a2_provider.calls) == 2
+        assert len(a3_provider.calls) == 2
+
+
+# =========================================================================
+# Real-System-E2E #8 (CLAUDE-ARCH-S2-012D): the bounded, admissibility-
+# triggered repair loop applied to the exact reproduced failure shape --
+# a python_package toolchain item whose display name ("ESPHome CLI") is
+# not a valid distribution identifier and whose technical_identity was
+# left unset by the Chairman's first synthesis.
+# =========================================================================
+
+
+def _esphome_cli_toolchain_item(technical_identity=None, install_method="pip install esphome"):
+    return {
+        "requirement_ref": "req-1", "name": "ESPHome CLI",
+        "technical_identity": technical_identity, "type": "python_package",
+        "install_method": install_method, "version": None, "purpose": "",
+        "depends_on": [], "state": "needs_install",
+        "environment_constraint": None, "provided_by": None,
+    }
+
+
+def _platformio_toolchain_item():
+    """Covers req-2 of _make_council_input_with_two_binding_requirements()
+    with a legitimately-manual (never controlled) EXECUTABLE item, so
+    these tests isolate the materializability dimension on req-1 without
+    also tripping the unrelated binding-requirement-coverage dimension."""
+    return {
+        "requirement_ref": "req-2", "name": "platformio",
+        "technical_identity": None, "type": "executable",
+        "install_method": "pip install platformio", "version": None, "purpose": "",
+        "depends_on": [], "state": "needs_install",
+        "environment_constraint": None, "provided_by": None,
+    }
+
+
+class TestRealE2E8MaterializabilityRepair:
+    """TC-B-S2.3-2.2-repair (materializability): the second half of the
+    Real-System-E2E #8 regression -- the S2.3-level half (S2.3 names the
+    exact offending item) is covered in
+    tests/test_engineering_decision.py::TestRealE2E8MaterializabilityDiagnostics."""
+
+    def test_case_e_targeted_repair_fixes_technical_identity_and_becomes_admissible(
+        self, tmp_path,
+    ):
+        """E: the first Chairman synthesis produces the exact Real-System-
+        E2E #8 defect (missing technical_identity); the bounded repair's
+        now-specific evidence lets the SECOND synthesis correct exactly
+        that field, so the second S2.3 validation succeeds."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, _ = _setup_standard_responses()
+        chairman_data = json.loads(ch_resp)
+        broken_variant = _variant("merged-host-venv", "ESPHome CLI mit Python Virtual Environment")
+        broken_variant["toolchain"] = [_esphome_cli_toolchain_item(technical_identity=None), _platformio_toolchain_item()]
+        chairman_data["variants"] = [broken_variant]
+        chairman_data["recommendation"] = "merged-host-venv"
+        broken_ch_resp = json.dumps(chairman_data)
+
+        fixed_data = json.loads(ch_resp)
+        fixed_variant = _variant("merged-host-venv", "ESPHome CLI mit Python Virtual Environment")
+        fixed_variant["toolchain"] = [_esphome_cli_toolchain_item(technical_identity="esphome"), _platformio_toolchain_item()]
+        fixed_data["variants"] = [fixed_variant]
+        fixed_data["recommendation"] = "merged-host-venv"
+        fixed_ch_resp = json.dumps(fixed_data)
+
+        fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, broken_ch_resp)
+        chairman_provider = FakeLLMProvider([broken_ch_resp, fixed_ch_resp])
+        fake_providers["model-ch"] = chairman_provider
+
+        with patch("app.engineering_council.create_council_provider") as mf:
+            mf.side_effect = lambda config, resolver, ollama_url=None: fake_providers[config.model]
+            council = EngineeringCouncil(
+                council_config=_make_council_config(),
+                secret_resolver=SimpleSecretResolver({"openrouter-api": "test"}),
+            )
+            result = council.evaluate(_make_council_input_with_two_binding_requirements())
+
+        assert len(chairman_provider.calls) == 2
+        assert result.council_complete
+        assert result.chairman_error is None
+        assert result.recommendation == "merged-host-venv"
+
+        from app.engineering_decision import validate_candidates
+        validations = validate_candidates(
+            result, preflight=_make_council_input_with_two_binding_requirements().preflight,
+            platform="linux",
+        )
+        assert validations[0].admissible is True
+        # The repair prompt sent for the second attempt must have named
+        # the exact offending item -- proving the fix (not luck) drove
+        # the successful correction.
+        repair_prompt = chairman_provider.calls[1]
+        assert "req-1" in repair_prompt
+        assert "ESPHome CLI" in repair_prompt
+
+    def test_case_f_repair_still_defective_stays_bounded_at_two_attempts(self, tmp_path):
+        """F: the repair response repeats the SAME materializability
+        defect. No third Chairman synthesis is ever attempted -- the
+        original, structurally-valid-but-inadmissible result is kept,
+        council_complete remains True (Gate D/B, CLAUDE-ARCH-S2-012B: an
+        admissibility-only repair exhaustion is never a protocol
+        failure)."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, _ = _setup_standard_responses()
+        chairman_data = json.loads(ch_resp)
+        broken_variant = _variant("merged-host-venv", "ESPHome CLI mit Python Virtual Environment")
+        broken_variant["toolchain"] = [_esphome_cli_toolchain_item(technical_identity=None), _platformio_toolchain_item()]
+        chairman_data["variants"] = [broken_variant]
+        chairman_data["recommendation"] = "merged-host-venv"
+        broken_ch_resp = json.dumps(chairman_data)
+
+        fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, broken_ch_resp)
+        chairman_provider = FakeLLMProvider([broken_ch_resp, broken_ch_resp])
+        fake_providers["model-ch"] = chairman_provider
+
+        with patch("app.engineering_council.create_council_provider") as mf:
+            mf.side_effect = lambda config, resolver, ollama_url=None: fake_providers[config.model]
+            council = EngineeringCouncil(
+                council_config=_make_council_config(),
+                secret_resolver=SimpleSecretResolver({"openrouter-api": "test"}),
+            )
+            result = council.evaluate(_make_council_input_with_two_binding_requirements())
+
+        assert len(chairman_provider.calls) == 2, "must never attempt a third synthesis call"
+        assert result.council_complete
+        assert result.chairman_error is None
+
+        from app.engineering_decision import validate_candidates
+        validations = validate_candidates(
+            result, preflight=_make_council_input_with_two_binding_requirements().preflight,
+            platform="linux",
+        )
+        assert validations[0].admissible is False
+        assert "cannot be materialized" in validations[0].reasons[0]
+
+
+class TestInstallMethodProducerRepairHint:
+    """CLAUDE-ADC-S23-INSTALL-METHOD-PRODUCER-REPAIR-FIX-001: focused,
+    direct unit coverage of _build_chairman_repair_prompt()'s hint
+    selection, isolated from the full FakeLLMProvider Council pipeline
+    (that end-to-end path is separately covered by
+    TestRealE2E8MaterializabilityRepair's case E, an identity-only
+    defect that must keep getting the technical_identity hint
+    unchanged). An install_method-only defect must get ONLY the new,
+    install_method-specific hint -- never the technical_identity hint,
+    which would misdirect the Chairman's one bounded repair attempt at
+    a field that is already correct."""
+
+    def test_install_method_only_defect_gets_install_method_hint_not_identity_hint(self):
+        from app.engineering_decision import EngineeringReworkRequest
+
+        rework = EngineeringReworkRequest(
+            rejected_candidate_id="merged-2",
+            reason_codes=("materializability_conflict",),
+            materializability_conflict=True,
+            materializability_conflict_detail=(
+                "req-bb77bad0 (item name='ESPHome Python Package (in container)')",
+            ),
+            identity_conflict=False,
+            identity_conflict_detail=(),
+            install_method_conflict=True,
+            install_method_conflict_detail=(
+                "req-bb77bad0 (item name='ESPHome Python Package (in container)')",
+            ),
+        )
+
+        prompt = _build_chairman_repair_prompt("ORIGINAL PROMPT", rework)
+
+        assert "req-bb77bad0" in prompt
+        assert "install_method" in prompt
+        assert "Hinweis zum Materialisierbarkeits-Mangel (install_method)" in prompt
+        assert "technical_identity auf die exakte installierbare" not in prompt
+        assert "Hinweis zum Materialisierbarkeits-Mangel (fehlende/ungueltige" not in prompt
+
+    def test_identity_only_defect_still_gets_technical_identity_hint_not_install_method_hint(self):
+        from app.engineering_decision import EngineeringReworkRequest
+
+        rework = EngineeringReworkRequest(
+            rejected_candidate_id="merged-host-venv",
+            reason_codes=("materializability_conflict",),
+            materializability_conflict=True,
+            materializability_conflict_detail=(
+                "req-esphome (item name='ESPHome CLI')",
+            ),
+            identity_conflict=True,
+            identity_conflict_detail=("req-esphome (item name='ESPHome CLI')",),
+            install_method_conflict=False,
+            install_method_conflict_detail=(),
+        )
+
+        prompt = _build_chairman_repair_prompt("ORIGINAL PROMPT", rework)
+
+        assert "req-esphome" in prompt
+        assert "technical_identity auf die exakte installierbare" in prompt
+        assert "Hinweis zum Materialisierbarkeits-Mangel (install_method)" not in prompt
+
+    def test_both_categories_present_emit_both_independent_hints(self):
+        from app.engineering_decision import EngineeringReworkRequest
+
+        rework = EngineeringReworkRequest(
+            rejected_candidate_id="merged-mixed",
+            reason_codes=("materializability_conflict",),
+            materializability_conflict=True,
+            materializability_conflict_detail=(
+                "req-a (item name='A')", "req-b (item name='B')",
+            ),
+            identity_conflict=True,
+            identity_conflict_detail=("req-a (item name='A')",),
+            install_method_conflict=True,
+            install_method_conflict_detail=("req-b (item name='B')",),
+        )
+
+        prompt = _build_chairman_repair_prompt("ORIGINAL PROMPT", rework)
+
+        assert "technical_identity auf die exakte installierbare" in prompt
+        assert "Hinweis zum Materialisierbarkeits-Mangel (install_method)" in prompt
+
+    def test_neither_category_present_emits_no_materializability_hint(self):
+        from app.engineering_decision import EngineeringReworkRequest
+
+        rework = EngineeringReworkRequest(
+            rejected_candidate_id="v1",
+            reason_codes=("verification_feasibility_conflict",),
+            verification_feasibility_conflict=True,
+            verification_feasibility_conflict_detail=(
+                "req-1: mechanism='pytest' evidence='pytest' -> not compatible",
+            ),
+        )
+
+        prompt = _build_chairman_repair_prompt("ORIGINAL PROMPT", rework)
+
+        assert "Hinweis zum Materialisierbarkeits-Mangel" not in prompt
+        assert "Hinweis zum Verifikations-Mangel" in prompt
+
+
+class TestInstallMethodPromptConsistency:
+    """CLAUDE-ADC-S23-INSTALL-METHOD-PROMPT-CONSISTENCY-FIX-002: focused,
+    deterministic proof that the Phase-1 (build_phase1_prompt) and
+    Chairman-merge (build_chairman_prompt) INSTALL_METHOD contracts are
+    mutually consistent and internally non-contradictory -- fixing the
+    two producer-prompt defects an independent Codex review of
+    CLAUDE-ADC-S23-INSTALL-METHOD-PRODUCER-REPAIR-FIX-001 found:
+    (1) the Phase-1 contract explicitly PERMITTED placement wording in
+    the package display name ("ESPHome Python Package (in container)"
+    "ist zulaessig") in the same paragraph that forbade it, and
+    (2) install_method=null was never given explicit, matching
+    fail-closed/non-inference semantics in either contract. These tests
+    read the ACTUAL rendered prompt text (never a hand-copied expectation
+    of it), so they fail if either prompt regresses back to permitting
+    the contradiction or drops the null semantics."""
+
+    CANONICAL_FORMS = (
+        '"pip"',
+        '"python_package"',
+        '"pip install <technical_identity>"',
+        '"python -m pip install <technical_identity>"',
+    )
+
+    @staticmethod
+    def _normalized(text: str) -> str:
+        """Collapses all whitespace runs (including line-wrap newlines
+        inside the multi-line prompt templates) to single spaces, so
+        these assertions check semantic phrase adjacency rather than
+        this-session's exact line-wrap column -- a future re-wrap of the
+        same wording must not spuriously break this regression."""
+        return " ".join(text.split())
+
+    @classmethod
+    def _phase1_prompt(cls) -> str:
+        ci = CouncilInput(project_id="p1", platform="linux")
+        return cls._normalized(build_phase1_prompt(ci, AGENT_ROLE_TOOLCHAIN, 3))
+
+    @classmethod
+    def _chairman_prompt(cls) -> str:
+        ci = CouncilInput(project_id="p1", platform="linux")
+        return cls._normalized(build_chairman_prompt("[]", "[]", council_input=ci))
+
+    def test_a_both_prompts_contain_the_same_four_canonical_forms(self):
+        phase1 = self._phase1_prompt()
+        chairman = self._chairman_prompt()
+        for form in self.CANONICAL_FORMS:
+            assert form in phase1, f"Phase-1 missing canonical form {form!r}"
+            assert form in chairman, f"Chairman missing canonical form {form!r}"
+
+    def test_b_both_prompts_state_matching_null_semantics(self):
+        for prompt in (self._phase1_prompt(), self._chairman_prompt()):
+            assert "KEINE fünfte install_method-Form" in prompt, (
+                "null must be stated as NOT a fifth install_method form"
+            )
+            assert "NICHT automatisch materialisierbar" in prompt
+            assert "manual_review (fail-closed)" in prompt
+            assert "abzuleiten oder zu erraten" in prompt
+            assert "aus dem Anzeigenamen" in prompt
+
+    def test_c_both_prompts_prohibit_placement_in_package_name(self):
+        for prompt in (self._phase1_prompt(), self._chairman_prompt()):
+            # The install_method rule text itself names "name" as a
+            # forbidden placement location.
+            assert 'niemals in "install_method" und niemals in "name"' in prompt or (
+                'in dieses Feld oder in "name"' in prompt
+            )
+
+    def test_d_neither_prompt_permits_the_in_container_name_contradiction(self):
+        """The exact defect the Codex review found: a sentence declaring
+        the "(in container)" display name "ist zulaessig als
+        menschenlesbares Label" directly contradicting the surrounding
+        "niemals in name" rule. Must be entirely gone from both prompts;
+        any remaining "(in container)" example must instead be marked
+        explicitly disallowed ("ist NICHT zulaessig")."""
+        for prompt in (self._phase1_prompt(), self._chairman_prompt()):
+            assert "ist zulässig als menschenlesbares Label" not in prompt
+            assert "(in container)" in prompt
+            assert "ist NICHT zulässig" in prompt
+
+    def test_e_install_method_shape_contract_is_reflected_identically_in_both(self):
+        """Both prompts must reject the exact same non-canonical shapes
+        (compound shell chains, venv activation, docker exec) using the
+        same vocabulary -- proving the fix did not diverge Phase-1 and
+        Chairman guidance."""
+        for prompt in (self._phase1_prompt(), self._chairman_prompt()):
+            assert "venv-Aktivierung" in prompt
+            assert "Docker-" in prompt
+            assert "zusammengesetzter" in prompt
+
+
+class TestVerificationFeasibilityBoundedRepair:
+    """CLAUDE-ARCH-S2-013E: the bounded, admissibility-triggered repair
+    loop applied to a verification-feasibility gap -- proving a repair
+    may correct verification evidence through the SAME, unweakened S2.3
+    check (app.engineering_decision._verification_feasibility_gaps()),
+    never by relaxing it."""
+
+    @staticmethod
+    def _council_input_needing_verification():
+        # Reuses the exact requirement/preflight shape of
+        # _make_council_input_with_two_binding_requirements() (which the
+        # shared _setup_standard_responses() phase1/phase2 fixtures are
+        # already built to satisfy -- req-1 and req-2 both referenced by
+        # every phase1 toolchain item), only adding a verification_method
+        # to req-1 so it also needs verification coverage.
+        from dataclasses import replace
+
+        req_esphome = replace(
+            _make_requirement("req-1", "esphome", "python_package", True),
+            verification_method="run the firmware test suite",
+        )
+        req_platformio = _make_requirement("req-2", "platformio", "executable", True)
+        return CouncilInput(
+            requirements=(req_esphome, req_platformio),
+            preflight=PreflightResult(
+                id="pre-1", project_id="test-project", overall_ready=False,
+                results=(
+                    PreflightRequirementResult(requirement_id="req-1", present=False, satisfied=False),
+                    PreflightRequirementResult(requirement_id="req-2", present=False, satisfied=False),
+                ),
+                missing_requirements=(req_esphome, req_platformio),
+                activations=(
+                    RequirementActivation("req-1", True, True),
+                    RequirementActivation("req-2", True, True),
+                ),
+                already_installed=(), warnings=(),
+            ),
+            detected_stack="esphome", project_id="esphome-p1",
+            project_files=("esphome-p1.yaml",), platform="linux",
+        )
+
+    def test_targeted_repair_adds_verification_coverage_and_becomes_admissible(self, tmp_path):
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, _ = _setup_standard_responses()
+        chairman_data = json.loads(ch_resp)
+        broken_variant = _variant("v1", "ESPHome-Firmware", "req-1", "req-2")
+        broken_variant["verification"] = "run tests"
+        # CLAUDE-ARCH-S2-014C (F4): req-1's toolchain item identity must
+        # semantically match the real Requirement ("esphome") it claims
+        # to cover -- the bare requirement_ref-shaped identity
+        # _toolchain_item() defaults to can never satisfy that check.
+        broken_variant["toolchain"][0]["name"] = "esphome"
+        broken_variant["toolchain"][0]["technical_identity"] = "esphome"
+        broken_variant["toolchain"][1]["name"] = "platformio"
+        broken_variant["toolchain"][1]["technical_identity"] = "platformio"
+        broken_variant["toolchain"][1]["type"] = "executable"
+        chairman_data["variants"] = [broken_variant]
+        chairman_data["recommendation"] = "v1"
+        broken_ch_resp = json.dumps(chairman_data)
+
+        fixed_data = json.loads(ch_resp)
+        fixed_variant = _variant("v1", "ESPHome-Firmware", "req-1", "req-2")
+        fixed_variant["verification"] = "run tests"
+        fixed_variant["toolchain"][0]["name"] = "esphome"
+        fixed_variant["toolchain"][0]["technical_identity"] = "esphome"
+        fixed_variant["toolchain"][1]["name"] = "platformio"
+        fixed_variant["toolchain"][1]["technical_identity"] = "platformio"
+        fixed_variant["toolchain"][1]["type"] = "executable"
+        # CLAUDE-ARCH-S2-013G: the verification mechanism's own evidence
+        # must independently corroborate "pytest" via a DEDICATED
+        # toolchain item -- never overloading the req-1 (esphome) item's
+        # own identity, which CLAUDE-ARCH-S2-014C (F4) now also requires
+        # to semantically match the Requirement it covers.
+        fixed_variant["toolchain"].append({
+            "requirement_ref": "req-1", "name": "pytest",
+            "technical_identity": "pytest", "type": "executable",
+            "install_method": None, "version": None, "purpose": "",
+            "depends_on": [], "state": "needs_install",
+            "environment_constraint": None, "provided_by": None,
+            "provides_verification": ["pytest"],
+        })
+        fixed_variant["verification_coverage"] = [{
+            "requirement_refs": ["req-1"], "kind": "test_command",
+            "mechanism": "pytest", "evidence": "pytest",
+        }]
+        fixed_data["variants"] = [fixed_variant]
+        fixed_data["recommendation"] = "v1"
+        fixed_ch_resp = json.dumps(fixed_data)
+
+        fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, broken_ch_resp)
+        chairman_provider = FakeLLMProvider([broken_ch_resp, fixed_ch_resp])
+        fake_providers["model-ch"] = chairman_provider
+
+        council_input = self._council_input_needing_verification()
+        with patch("app.engineering_council.create_council_provider") as mf:
+            mf.side_effect = lambda config, resolver, ollama_url=None: fake_providers[config.model]
+            council = EngineeringCouncil(
+                council_config=_make_council_config(),
+                secret_resolver=SimpleSecretResolver({"openrouter-api": "test"}),
+            )
+            result = council.evaluate(council_input)
+
+        assert len(chairman_provider.calls) == 2
+        assert result.council_complete
+        assert result.chairman_error is None
+
+        from app.engineering_decision import EngineeringReworkRequest, validate_candidates
+        from app.verification import trusted_verification_identity_groups
+        validations = validate_candidates(
+            result, preflight=council_input.preflight, platform="linux",
+            trusted_verification_groups=trusted_verification_identity_groups(
+                {"test_systems": ["pytest"], "build_systems": [], "firmware_indicators": []},
+            ),
+        )
+        assert validations[0].admissible is True
+
+    def test_repair_still_vague_stays_bounded_and_inadmissible(self, tmp_path):
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, _ = _setup_standard_responses()
+        chairman_data = json.loads(ch_resp)
+        broken_variant = _variant("v1", "ESPHome-Firmware", "req-1", "req-2")
+        broken_variant["verification"] = "run tests"
+        # CLAUDE-ARCH-S2-014C (F4): req-1's toolchain item identity must
+        # semantically match the real Requirement ("esphome") it claims
+        # to cover, so the ONLY remaining defect this test exercises is
+        # the missing verification coverage.
+        broken_variant["toolchain"][0]["name"] = "esphome"
+        broken_variant["toolchain"][0]["technical_identity"] = "esphome"
+        broken_variant["toolchain"][1]["name"] = "platformio"
+        broken_variant["toolchain"][1]["technical_identity"] = "platformio"
+        broken_variant["toolchain"][1]["type"] = "executable"
+        chairman_data["variants"] = [broken_variant]
+        chairman_data["recommendation"] = "v1"
+        broken_ch_resp = json.dumps(chairman_data)
+
+        fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, broken_ch_resp)
+        chairman_provider = FakeLLMProvider([broken_ch_resp, broken_ch_resp])
+        fake_providers["model-ch"] = chairman_provider
+
+        council_input = self._council_input_needing_verification()
+        with patch("app.engineering_council.create_council_provider") as mf:
+            mf.side_effect = lambda config, resolver, ollama_url=None: fake_providers[config.model]
+            council = EngineeringCouncil(
+                council_config=_make_council_config(),
+                secret_resolver=SimpleSecretResolver({"openrouter-api": "test"}),
+            )
+            result = council.evaluate(council_input)
+
+        assert len(chairman_provider.calls) == 2, "must never attempt a third synthesis call"
+        assert result.council_complete
+        assert result.chairman_error is None
+
+        from app.engineering_decision import validate_candidates
+        validations = validate_candidates(result, preflight=council_input.preflight, platform="linux")
+        assert validations[0].admissible is False
+        assert "missing required verification coverage" in validations[0].reasons[0]
+
+
+# =========================================================================
+# CLAUDE-ADC-COUNCIL-DIAGNOSTIC-CAPTURE-001: zero-retained Phase-1
+# proposal diagnostic capture
+# =========================================================================
+
+
+class TestZeroProposalReasonClassification:
+    """Pure classification unit tests -- no Council/provider infra at
+    all. Each mirrors exactly the shape _phase1_independent_proposals()
+    hands to _classify_zero_proposal_reason() once it already knows an
+    agent's Phase-1 result decoded successfully but retained zero
+    proposals."""
+
+    def test_empty_object_is_classified_as_empty_object(self):
+        assert _classify_zero_proposal_reason({}, [], []) == "empty_object"
+
+    def test_truthy_mapping_missing_variants_key(self):
+        assert _classify_zero_proposal_reason(
+            {"note": "no variants field at all"}, [], [],
+        ) == "missing_variants"
+
+    def test_empty_variants_iterable(self):
+        assert _classify_zero_proposal_reason(
+            {"variants": []}, [], [],
+        ) == "empty_variants"
+
+    def test_empty_dict_variants_is_still_empty_variants(self):
+        """A genuinely empty non-list container ("variants": {}) carries
+        exactly as little content as an empty list -- honestly described
+        the same way, never "other_internal"."""
+        assert _classify_zero_proposal_reason(
+            {"variants": {}}, {}, [],
+        ) == "empty_variants"
+
+    def test_empty_string_variants_is_still_empty_variants(self):
+        assert _classify_zero_proposal_reason(
+            {"variants": ""}, "", [],
+        ) == "empty_variants"
+
+    def test_nonempty_string_variants_is_never_empty_variants(self):
+        """CLAUDE-ADC-COUNCIL-DIAGNOSTIC-HARDENING-FIX-001 (F2): a
+        NONEMPTY malformed "variants" value (e.g. the LLM emitted a bare
+        string instead of a list) genuinely carries content -- it must
+        never be silently coerced into looking "empty" merely because it
+        fails an isinstance(..., list) check. With no rejections to
+        explain it (the pure classification input here, independent of
+        whatever the real candidate-processing loop would do with it),
+        the deterministic fallback is "other_internal", never
+        "empty_variants" and never a fabricated "all_candidates_rejected"
+        with no evidence behind it."""
+        assert _classify_zero_proposal_reason(
+            {"variants": "not a list"}, "not a list", [],
+        ) == "other_internal"
+
+    def test_nonempty_dict_variants_is_never_empty_variants(self):
+        """Same F2 shape as the string case, for a dict -- Codex's own
+        reproduction input."""
+        assert _classify_zero_proposal_reason(
+            {"variants": {"unexpected": "shape"}}, {"unexpected": "shape"}, [],
+        ) == "other_internal"
+
+    def test_nonempty_malformed_variants_with_actual_rejections_is_all_candidates_rejected(self):
+        """When the caller's own (unchanged) per-item loop DID process
+        and reject every entry of a nonempty malformed "variants" value
+        -- exactly what happens in production when the loop iterates a
+        nonempty dict's keys or a nonempty string's characters, each of
+        which fails to build into an AgentProposal -- that outcome is
+        accurately "all_candidates_rejected", not "other_internal"."""
+        rejected = [_candidate_rejection_diagnostic("u", ValueError("boom"))]
+        assert _classify_zero_proposal_reason(
+            {"variants": "unexpected"}, "unexpected", rejected,
+        ) == "all_candidates_rejected"
+
+    def test_all_candidates_rejected(self):
+        rejected = [_candidate_rejection_diagnostic(
+            {"toolchain": [{"requirement_ref": "req-x"}]},
+            ValueError(
+                "toolchain requirement_ref must exactly reference a "
+                "current CouncilInput requirement [category=invalid_requirement_ref]"
+            ),
+        )]
+        variants_field = [{"toolchain": [{"requirement_ref": "req-x"}]}]
+        assert _classify_zero_proposal_reason(
+            {"variants": variants_field}, variants_field, rejected,
+        ) == "all_candidates_rejected"
+
+
+class TestCandidateRejectionDiagnostic:
+    """Pure unit tests for the bounded, deterministic per-candidate
+    rejection evidence -- category plus only the offending structured
+    identity fields, never free text."""
+
+    def test_captures_tagged_category_and_offending_requirement_ref(self):
+        variant_data = {"toolchain": [{"requirement_ref": "req-x", "name": "bad tool"}]}
+        exc = ValueError(
+            "toolchain requirement_ref must exactly reference a current "
+            "CouncilInput requirement [category=invalid_requirement_ref]"
+        )
+
+        result = _candidate_rejection_diagnostic(variant_data, exc)
+
+        assert result == {
+            "category": "invalid_requirement_ref",
+            "rejected_requirement_refs": ["req-x"],
+            "rejected_provided_by": [],
+            "rejected_requirement_ref_invalid_types": [],
+            "rejected_provided_by_invalid_types": [],
+        }
+
+    def test_falls_back_to_unknown_category_when_no_tag(self):
+        variant_data = {"toolchain": [{"provided_by": "req-y"}]}
+        exc = ValueError(
+            "toolchain provided_by must reference a current CouncilInput requirement"
+        )
+
+        result = _candidate_rejection_diagnostic(variant_data, exc)
+
+        assert result["category"] == "unknown"
+        assert result["rejected_provided_by"] == ["req-y"]
+        assert result["rejected_requirement_refs"] == []
+
+    def test_malformed_toolchain_never_raises(self):
+        """A candidate whose own "toolchain" field is itself malformed
+        (not a list) must never crash the diagnostic capture -- it is
+        diagnostic-only and must degrade to empty evidence, never
+        propagate a second exception on top of the original one."""
+        result = _candidate_rejection_diagnostic(
+            {"toolchain": "not a list"}, ValueError("boom"),
+        )
+
+        assert result["rejected_requirement_refs"] == []
+        assert result["rejected_provided_by"] == []
+
+
+class TestCandidateRejectionDiagnosticF1PrivacyHardening:
+    """CLAUDE-ADC-COUNCIL-DIAGNOSTIC-HARDENING-FIX-001 (Codex review
+    CDX-ADC-COUNCIL-DIAGNOSTIC-TRACE-REVIEW-001, finding F1 -- HIGH):
+    reproduces Codex's own fixed inputs -- a malformed nested object in
+    requirement_ref/provided_by carrying canary keys "agent_reasoning"
+    and nested "credentials"."secret" -- and proves the sanitizer never
+    stringifies them into a persisted identifier."""
+
+    _CANARY_REASONING = "CANARY-AGENT-REASONING-MUST-NEVER-LEAK"
+    _CANARY_SECRET = "CANARY-SECRET-MUST-NEVER-LEAK"
+
+    def _canary_object(self):
+        return {
+            "agent_reasoning": self._CANARY_REASONING,
+            "credentials": {"secret": self._CANARY_SECRET},
+        }
+
+    def test_nested_object_requirement_ref_is_never_stringified(self):
+        variant_data = {"toolchain": [{"requirement_ref": self._canary_object()}]}
+        exc = ValueError(
+            "toolchain requirement_ref must exactly reference a current "
+            "CouncilInput requirement [category=invalid_requirement_ref]"
+        )
+
+        result = _candidate_rejection_diagnostic(variant_data, exc)
+
+        assert result["rejected_requirement_refs"] == []
+        assert result["rejected_requirement_ref_invalid_types"] == ["dict"]
+        serialized = json.dumps(result)
+        assert self._CANARY_REASONING not in serialized
+        assert self._CANARY_SECRET not in serialized
+        assert "agent_reasoning" not in serialized
+        assert "credentials" not in serialized
+
+    def test_nested_object_provided_by_is_never_stringified(self):
+        variant_data = {"toolchain": [{"provided_by": self._canary_object()}]}
+        exc = ValueError("toolchain provided_by must reference a current CouncilInput requirement")
+
+        result = _candidate_rejection_diagnostic(variant_data, exc)
+
+        assert result["rejected_provided_by"] == []
+        assert result["rejected_provided_by_invalid_types"] == ["dict"]
+        serialized = json.dumps(result)
+        assert self._CANARY_REASONING not in serialized
+        assert self._CANARY_SECRET not in serialized
+        assert "agent_reasoning" not in serialized
+        assert "credentials" not in serialized
+
+    def test_list_requirement_ref_carrying_a_canary_object_is_never_stringified(self):
+        variant_data = {"toolchain": [{
+            "requirement_ref": ["req-1", self._canary_object()],
+        }]}
+        exc = ValueError("boom [category=invalid_requirement_ref]")
+
+        result = _candidate_rejection_diagnostic(variant_data, exc)
+
+        assert result["rejected_requirement_refs"] == []
+        assert result["rejected_requirement_ref_invalid_types"] == ["list"]
+        serialized = json.dumps(result)
+        assert self._CANARY_REASONING not in serialized
+        assert self._CANARY_SECRET not in serialized
+
+    def test_unsafe_string_requirement_ref_is_dropped_not_leaked(self):
+        """A string value is still rejected (never persisted) when it
+        does not look like a bounded, single-token identifier -- e.g. it
+        embeds a whitespace-separated key=value pair a naive stringify
+        could otherwise carry through verbatim."""
+        unsafe = f"req-1 agent_reasoning={self._CANARY_REASONING}"
+        variant_data = {"toolchain": [{"requirement_ref": unsafe}]}
+        exc = ValueError("boom [category=invalid_requirement_ref]")
+
+        result = _candidate_rejection_diagnostic(variant_data, exc)
+
+        assert result["rejected_requirement_refs"] == []
+        assert result["rejected_requirement_ref_invalid_types"] == ["str"]
+        serialized = json.dumps(result)
+        assert self._CANARY_REASONING not in serialized
+        assert unsafe not in serialized
+
+    def test_overlong_string_requirement_ref_is_dropped_not_leaked(self):
+        overlong = "req-" + ("x" * 500)
+        variant_data = {"toolchain": [{"requirement_ref": overlong}]}
+        exc = ValueError("boom [category=invalid_requirement_ref]")
+
+        result = _candidate_rejection_diagnostic(variant_data, exc)
+
+        assert result["rejected_requirement_refs"] == []
+        assert result["rejected_requirement_ref_invalid_types"] == ["str"]
+
+    def test_valid_short_identifier_is_still_accepted_unchanged(self):
+        """The hardening must not reject genuinely valid identifiers --
+        a real, bounded, single-token requirement_ref still passes
+        through exactly as before."""
+        variant_data = {"toolchain": [{"requirement_ref": "req-esphome-1"}]}
+        exc = ValueError("boom [category=invalid_requirement_ref]")
+
+        result = _candidate_rejection_diagnostic(variant_data, exc)
+
+        assert result["rejected_requirement_refs"] == ["req-esphome-1"]
+        assert result["rejected_requirement_ref_invalid_types"] == []
+
+    _H1_COMPACT_CANARY = (
+        '{"agent_reasoning":"PRIVATE_REASONING_CANARY_002",'
+        '"credentials":{"secret":"PRIVATE_SECRET_CANARY_002"}}'
+    )
+
+    def test_compact_serialized_canary_string_requirement_ref_is_rejected(self):
+        """CLAUDE-ADC-COUNCIL-DIAGNOSTIC-PRIVACY-HARDENING-FIX-002 (Codex
+        rereview CDX-ADC-COUNCIL-DIAGNOSTIC-HARDENING-REREVIEW-002,
+        finding H1 -- HIGH): the EXACT reviewer canary -- a compact
+        (whitespace-free) JSON string, still a plain Python `str`, that
+        the PRIOR no-whitespace-only rule accepted. The strict positive
+        identifier policy rejects it purely on character class (braces/
+        quotes/colons are not in [A-Za-z0-9_.-])."""
+        variant_data = {"toolchain": [{"requirement_ref": self._H1_COMPACT_CANARY}]}
+        exc = ValueError("boom [category=invalid_requirement_ref]")
+
+        result = _candidate_rejection_diagnostic(variant_data, exc)
+
+        assert result["rejected_requirement_refs"] == []
+        assert result["rejected_requirement_ref_invalid_types"] == ["str"]
+        serialized = json.dumps(result)
+        assert "PRIVATE_REASONING_CANARY_002" not in serialized
+        assert "PRIVATE_SECRET_CANARY_002" not in serialized
+        assert "agent_reasoning" not in serialized
+        assert "credentials" not in serialized
+
+    def test_compact_serialized_canary_string_provided_by_is_rejected(self):
+        variant_data = {"toolchain": [{"provided_by": self._H1_COMPACT_CANARY}]}
+        exc = ValueError("toolchain provided_by must reference a current CouncilInput requirement")
+
+        result = _candidate_rejection_diagnostic(variant_data, exc)
+
+        assert result["rejected_provided_by"] == []
+        assert result["rejected_provided_by_invalid_types"] == ["str"]
+        serialized = json.dumps(result)
+        assert "PRIVATE_REASONING_CANARY_002" not in serialized
+        assert "PRIVATE_SECRET_CANARY_002" not in serialized
+        assert "agent_reasoning" not in serialized
+        assert "credentials" not in serialized
+
+
+class TestSanitizedCandidateIdentifierPolicy:
+    """CLAUDE-ADC-COUNCIL-DIAGNOSTIC-PRIVACY-HARDENING-FIX-002 (H1):
+    focused positive/negative coverage of the strict positive identifier
+    policy itself, independent of the surrounding rejection-diagnostic
+    machinery."""
+
+    @pytest.mark.parametrize("value", [
+        "req-1", "req_esphome", "req.esphome", "req-esphome-fw",
+        "REQ-1", "a", "req-3cycle-a", "python_package",
+    ])
+    def test_real_identifier_shapes_are_accepted(self, value):
+        assert _sanitized_candidate_identifier(value) == value
+
+    @pytest.mark.parametrize("value", [
+        '{"a":"b"}',                        # compact JSON object
+        '["a","b"]',                        # compact JSON array
+        'req"1',                            # quote
+        'req{1}',                           # braces
+        'req[1]',                           # brackets
+        'req:1',                            # colon
+        'req=1',                            # equals sign
+        'req,1',                            # comma
+        'req/1',                            # slash
+        'req\\1',                           # backslash
+        'req 1',                            # internal whitespace
+        'req\t1',                           # tab
+        'req\n1',                           # newline
+        'req\x001',                         # control character
+        '',                                 # empty
+        '   ',                              # whitespace-only
+    ])
+    def test_unsafe_syntax_is_rejected(self, value):
+        assert _sanitized_candidate_identifier(value) is None
+
+    def test_overlong_value_is_rejected(self):
+        assert _sanitized_candidate_identifier("req-" + "x" * 500) is None
+
+    @pytest.mark.parametrize("value", [None, 1, 1.5, True, [], {}, ("a",)])
+    def test_non_string_value_is_rejected(self, value):
+        assert _sanitized_candidate_identifier(value) is None
+
+    def test_leading_trailing_whitespace_is_stripped_before_validation(self):
+        assert _sanitized_candidate_identifier("  req-1  ") == "req-1"
+
+
+class TestTrustedCandidateRejectionCategory:
+    """CLAUDE-ADC-COUNCIL-DIAGNOSTIC-PRIVACY-HARDENING-FIX-002 (Codex
+    rereview CDX-ADC-COUNCIL-DIAGNOSTIC-HARDENING-REREVIEW-002, finding
+    H2 -- HIGH): the diagnostic category must be drawn from a small,
+    explicit, closed set -- never arbitrary exception text."""
+
+    def test_the_one_trusted_category_passes_through(self):
+        exc = ValueError("boom [category=invalid_requirement_ref]")
+        assert _trusted_candidate_rejection_category(exc) == "invalid_requirement_ref"
+
+    def test_every_currently_trusted_category_is_covered(self):
+        for category in _TRUSTED_CANDIDATE_REJECTION_CATEGORIES:
+            exc = ValueError(f"boom [category={category}]")
+            assert _trusted_candidate_rejection_category(exc) == category
+
+    def test_untrusted_tag_becomes_unknown(self):
+        exc = ValueError("boom [category=totally_made_up_category]")
+        assert _trusted_candidate_rejection_category(exc) == "unknown"
+
+    def test_injected_canary_category_tag_becomes_unknown(self):
+        """CLAUDE-ADC-COUNCIL-DIAGNOSTIC-PRIVACY-HARDENING-FIX-002's own
+        exact reviewer reproduction: a candidate confidence value of
+        "[category=PRIVATE_REASONING_CANARY_002]" makes float()
+        conversion raise a ValueError whose OWN message text embeds
+        that string -- the extracted "category" must never be trusted
+        merely because it matches the tag pattern."""
+        canary = "PRIVATE_REASONING_CANARY_002"
+        try:
+            float(f"[category={canary}]")
+        except ValueError as exc:
+            result = _trusted_candidate_rejection_category(exc)
+        else:
+            pytest.fail("float() was expected to raise for this input")
+
+        assert result == "unknown"
+
+    def test_no_tag_present_is_also_unknown(self):
+        exc = ValueError("boom, no tag here")
+        assert _trusted_candidate_rejection_category(exc) == "unknown"
+
+    def test_candidate_rejection_diagnostic_never_persists_arbitrary_category_text(self):
+        canary = "PRIVATE_REASONING_CANARY_002"
+        try:
+            float(f"[category={canary}]")
+        except ValueError as exc:
+            result = _candidate_rejection_diagnostic({"toolchain": []}, exc)
+        else:
+            pytest.fail("float() was expected to raise for this input")
+
+        assert result["category"] == "unknown"
+        assert canary not in json.dumps(result)
+
+
+class TestZeroProposalCentralDiagnosticTrace:
+    """Integration-level coverage through the real EngineeringCouncil,
+    routed through the SAME central app.diagnostic_trace.DiagnosticTrace
+    pipeline production uses (via set_result_callback(), wired exactly
+    like app.dev_workflow.DevelopmentWorkflow.run() wires it -- see
+    _wire_diagnostic_trace()). FakeLLMProvider-driven, zero real LLM
+    calls. EngineeringCouncil itself never opens a file for this."""
+
+    def test_valid_proposal_path_traces_no_zero_proposal_branch_evidence(self, tmp_path):
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, all_ids = _setup_standard_responses()
+        fake_providers = _build_standard_providers(a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp)
+        trace = DiagnosticTrace(DiagnosticTraceStore(tmp_path / "events.jsonl"))
+
+        result = _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path, diagnostic_trace=trace,
+        )
+
+        assert result.council_complete
+        events = trace.get_trace("test-run")
+        assert not any(
+            event.summary == "No usable structured proposal produced." for event in events
+        )
+
+    def test_missing_variants_and_empty_object_are_centrally_traced(self, tmp_path):
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, all_ids = _setup_standard_responses()
+        fake_providers = {
+            "model-ea": FakeLLMProvider([a1_resp, ph2_resp]),
+            "model-ti": FakeLLMProvider(['{"note": "no variants field at all"}', ph2_resp]),
+            "model-ra": FakeLLMProvider(["{}", ph2_resp]),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+        trace = DiagnosticTrace(DiagnosticTraceStore(tmp_path / "events.jsonl"))
+
+        _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path, diagnostic_trace=trace,
+        )
+
+        events = [
+            event for event in trace.get_trace("test-run")
+            if event.summary == "No usable structured proposal produced."
+        ]
+        by_actor = {event.details["actor"]: event for event in events}
+        assert set(by_actor) == {"Agent A2", "Agent A3"}, "A1 succeeded and must not get a zero-proposal event"
+
+        a2_verbose = by_actor["Agent A2"].details["council_output"]["verbose"]
+        assert a2_verbose["reason"] == "missing_variants"
+        assert a2_verbose["root_parsed_type"] == "dict"
+        assert a2_verbose["variants_field_present"] is False
+        assert a2_verbose["variants_field_count"] == 0
+        assert a2_verbose["requirement_ids"] == ["req-1", "req-2", "req-3", "req-4"]
+        assert a2_verbose["rejected_candidates"] == []
+
+        a3_verbose = by_actor["Agent A3"].details["council_output"]["verbose"]
+        assert a3_verbose["reason"] == "empty_object"
+        assert a3_verbose["root_parsed_type"] == "dict"
+        assert a3_verbose["variants_field_present"] is False
+
+    def test_all_candidates_rejected_is_centrally_traced_with_deterministic_category(self, tmp_path):
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, all_ids = _setup_standard_responses()
+        bad_variant_response = json.dumps({
+            "variants": [{
+                "variant_id": "A2-var-bad",
+                "name": "A2 bad variant",
+                "toolchain": [{
+                    "requirement_ref": "req-does-not-exist",
+                    "name": "phantom", "type": "executable",
+                }],
+            }],
+        })
+        fake_providers = {
+            "model-ea": FakeLLMProvider([a1_resp, ph2_resp]),
+            "model-ti": FakeLLMProvider([bad_variant_response, ph2_resp]),
+            "model-ra": FakeLLMProvider([a3_resp, ph2_resp]),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+        trace = DiagnosticTrace(DiagnosticTraceStore(tmp_path / "events.jsonl"))
+
+        _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path, diagnostic_trace=trace,
+        )
+
+        events = [
+            event for event in trace.get_trace("test-run")
+            if event.summary == "No usable structured proposal produced."
+        ]
+        assert len(events) == 1
+        verbose = events[0].details["council_output"]["verbose"]
+        assert events[0].details["actor"] == "Agent A2"
+        assert verbose["reason"] == "all_candidates_rejected"
+        assert verbose["variants_field_present"] is True
+        assert verbose["variants_field_count"] == 1
+        assert len(verbose["rejected_candidates"]) == 1
+        rejection = verbose["rejected_candidates"][0]
+        assert rejection["category"] == "invalid_requirement_ref"
+        assert rejection["rejected_requirement_refs"] == ["req-does-not-exist"]
+
+    def test_central_event_is_persisted_regardless_of_presentation_level(self, tmp_path):
+        """Persistence (DiagnosticTraceStore.append(), always called by
+        DiagnosticTrace.record()) never depends on any diagnostic-level
+        parameter -- that only governs RENDERING
+        (render_diagnostic_trace_event()). Reading the store back
+        directly (bypassing rendering entirely) proves the branch
+        evidence reached disk."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, all_ids = _setup_standard_responses()
+        fake_providers = {
+            "model-ea": FakeLLMProvider([a1_resp, ph2_resp]),
+            "model-ti": FakeLLMProvider(["{}", ph2_resp]),
+            "model-ra": FakeLLMProvider([a3_resp, ph2_resp]),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+        store_path = tmp_path / "events.jsonl"
+        trace = DiagnosticTrace(DiagnosticTraceStore(store_path))
+
+        _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path, diagnostic_trace=trace,
+        )
+
+        assert store_path.exists()
+        # Re-open a FRESH store/reader (no rendering, no detail level
+        # involved at all) to prove this is genuine on-disk persistence,
+        # not an in-memory artifact of the `trace` object used to write it.
+        reread = DiagnosticTraceStore(store_path).read("test-run")
+        matching = [e for e in reread if e.details.get("actor") == "Agent A2"]
+        assert matching
+        assert matching[0].details["council_output"]["verbose"]["reason"] == "empty_object"
+
+    def test_verbose_projection_shows_bounded_detail_while_info_and_normal_do_not(self, tmp_path):
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, all_ids = _setup_standard_responses()
+        fake_providers = {
+            "model-ea": FakeLLMProvider([a1_resp, ph2_resp]),
+            "model-ti": FakeLLMProvider(["{}", ph2_resp]),
+            "model-ra": FakeLLMProvider([a3_resp, ph2_resp]),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+        trace = DiagnosticTrace(DiagnosticTraceStore(tmp_path / "events.jsonl"))
+
+        _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path, diagnostic_trace=trace,
+        )
+
+        event = next(
+            e for e in trace.get_trace("test-run")
+            if e.details.get("actor") == "Agent A2"
+            and e.summary == "No usable structured proposal produced."
+        )
+
+        normal = render_diagnostic_trace_event(event, DiagnosticDetailLevel.NORMAL)
+        info = render_diagnostic_trace_event(event, DiagnosticDetailLevel.INFO)
+        verbose = render_diagnostic_trace_event(event, DiagnosticDetailLevel.VERBOSE)
+
+        assert "empty_object" not in normal
+        assert "variants_field_count" not in normal
+        assert "empty_object" not in info
+        assert "variants_field_count" not in info
+        assert "empty_object" in verbose
+        assert "variants_field_count" in verbose
+
+    def test_very_verbose_shows_at_least_as_much_as_verbose_but_is_not_required(self, tmp_path):
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, all_ids = _setup_standard_responses()
+        fake_providers = {
+            "model-ea": FakeLLMProvider([a1_resp, ph2_resp]),
+            "model-ti": FakeLLMProvider(["{}", ph2_resp]),
+            "model-ra": FakeLLMProvider([a3_resp, ph2_resp]),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+        trace = DiagnosticTrace(DiagnosticTraceStore(tmp_path / "events.jsonl"))
+
+        _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path, diagnostic_trace=trace,
+        )
+
+        event = next(
+            e for e in trace.get_trace("test-run")
+            if e.details.get("actor") == "Agent A2"
+            and e.summary == "No usable structured proposal produced."
+        )
+
+        verbose = render_diagnostic_trace_event(event, DiagnosticDetailLevel.VERBOSE)
+        very_verbose = render_diagnostic_trace_event(event, DiagnosticDetailLevel.VERY_VERBOSE)
+
+        assert "empty_object" in verbose
+        assert "empty_object" in very_verbose, (
+            "VERY_VERBOSE must never show LESS than VERBOSE already does"
+        )
+
+    def test_trace_survives_simulated_e2e_workspace_cleanup(self, tmp_path):
+        """Reproduces the exact evidence-loss shape this task closes: a
+        central DiagnosticTrace anchored OUTSIDE the E2E's own owned
+        temp workspace must still exist, with its content intact, after
+        that owned workspace is deleted -- exactly what Real-System-E2E's
+        own cleanup does to its tempfile.mkdtemp() workspace on every
+        run, pass or fail. Uses the SAME events.jsonl contract/format,
+        never a second sink."""
+        owned_workspace = tmp_path / "owned-e2e-workspace"
+        owned_workspace.mkdir()
+        persistent_diagnostics_dir = tmp_path / "persistent-diagnostics"
+        store_path = persistent_diagnostics_dir / "events.jsonl"
+
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, all_ids = _setup_standard_responses()
+        fake_providers = {
+            "model-ea": FakeLLMProvider([a1_resp, ph2_resp]),
+            "model-ti": FakeLLMProvider(["{}", ph2_resp]),
+            "model-ra": FakeLLMProvider([a3_resp, ph2_resp]),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+        trace = DiagnosticTrace(DiagnosticTraceStore(store_path))
+
+        _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path, diagnostic_trace=trace,
+        )
+        assert store_path.exists()
+
+        # Simulate Real-System-E2E's own owned-workspace cleanup --
+        # unrelated to, and never containing, the trace store above.
+        import shutil
+        shutil.rmtree(owned_workspace)
+
+        assert store_path.exists(), "central trace evidence must survive owned-workspace cleanup"
+        events = DiagnosticTraceStore(store_path).read("test-run")
+        assert any(
+            event.details.get("actor") == "Agent A2"
+            and event.details["council_output"]["verbose"]["reason"] == "empty_object"
+            for event in events
+        )
+
+    def test_no_dedicated_council_zero_proposal_sink_is_produced(self, tmp_path):
+        """CLAUDE-ADC-COUNCIL-DIAGNOSTIC-TRACE-INTEGRATION-FIX-001's own
+        correction requirement: no parallel
+        council_zero_proposal_events.jsonl file (or any file at all
+        beyond the one central events.jsonl this test itself points at)
+        is ever produced."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, all_ids = _setup_standard_responses()
+        fake_providers = {
+            "model-ea": FakeLLMProvider([a1_resp, ph2_resp]),
+            "model-ti": FakeLLMProvider(["{}", ph2_resp]),
+            "model-ra": FakeLLMProvider([a3_resp, ph2_resp]),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+        trace = DiagnosticTrace(DiagnosticTraceStore(tmp_path / "events.jsonl"))
+
+        _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path, diagnostic_trace=trace,
+        )
+
+        produced_files = sorted(p.name for p in tmp_path.rglob("*") if p.is_file())
+        assert "council_zero_proposal_events.jsonl" not in produced_files
+        assert produced_files == ["events.jsonl"]
+
+    def test_persisted_event_never_contains_raw_prompt_or_response_fields(self, tmp_path):
+        """Even when an agent's OWN (validly-decoded) JSON body happens
+        to carry arbitrary text -- here standing in for whatever a real
+        LLM's free-form reasoning/commentary might contain -- the
+        persisted event must never echo it verbatim: only the central
+        DiagnosticTrace's own allowlisted, structured fields
+        (app.diagnostic_trace.COUNCIL_OUTPUT_KEYS) may appear."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, all_ids = _setup_standard_responses()
+        distinctive_raw_marker = "SECRET-RAW-RESPONSE-MUST-NEVER-BE-PERSISTED"
+        fake_providers = {
+            "model-ea": FakeLLMProvider([a1_resp, ph2_resp]),
+            "model-ti": FakeLLMProvider(
+                [json.dumps({"agent_reasoning": distinctive_raw_marker}), ph2_resp]
+            ),
+            "model-ra": FakeLLMProvider(["{}", ph2_resp]),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+        store_path = tmp_path / "events.jsonl"
+        trace = DiagnosticTrace(DiagnosticTraceStore(store_path))
+
+        _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path, diagnostic_trace=trace,
+        )
+
+        raw_text = store_path.read_text(encoding="utf-8")
+        assert distinctive_raw_marker not in raw_text, (
+            "the LLM's own free-text value must never reach the persisted trace"
+        )
+        event = next(
+            e for e in trace.get_trace("test-run")
+            if e.details.get("actor") == "Agent A2"
+            and e.summary == "No usable structured proposal produced."
+        )
+        verbose = event.details["council_output"]["verbose"]
+        forbidden_keys = {"prompt", "raw_response", "reasoning", "agent_reasoning", "response"}
+        assert not (set(verbose.keys()) & forbidden_keys), (
+            "this event's own bounded payload must never carry a forbidden key"
+        )
+
+    def test_canary_nested_requirement_ref_never_reaches_persisted_events_jsonl_or_verbose_rendering(self, tmp_path):
+        """CLAUDE-ADC-COUNCIL-DIAGNOSTIC-HARDENING-FIX-001 (F1),
+        end-to-end reproduction of Codex's own fixed input through the
+        REAL EngineeringCouncil/central DiagnosticTrace pipeline (not
+        just the pure _candidate_rejection_diagnostic() unit): an agent
+        proposes a variant whose toolchain item's requirement_ref is a
+        nested object carrying canary keys "agent_reasoning" and nested
+        "credentials"."secret". Neither the canary values nor those key
+        names may appear anywhere in the persisted events.jsonl file, nor
+        in the VERBOSE (or any other level's) rendered projection of the
+        resulting event."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, all_ids = _setup_standard_responses()
+        canary_reasoning = "CANARY-AGENT-REASONING-MUST-NEVER-LEAK"
+        canary_secret = "CANARY-SECRET-MUST-NEVER-LEAK"
+        bad_variant_response = json.dumps({
+            "variants": [{
+                "variant_id": "A2-var-bad",
+                "name": "A2 bad variant",
+                "toolchain": [{
+                    "requirement_ref": {
+                        "agent_reasoning": canary_reasoning,
+                        "credentials": {"secret": canary_secret},
+                    },
+                    "name": "phantom", "type": "executable",
+                }],
+            }],
+        })
+        fake_providers = {
+            "model-ea": FakeLLMProvider([a1_resp, ph2_resp]),
+            "model-ti": FakeLLMProvider([bad_variant_response, ph2_resp]),
+            "model-ra": FakeLLMProvider([a3_resp, ph2_resp]),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+        store_path = tmp_path / "events.jsonl"
+        trace = DiagnosticTrace(DiagnosticTraceStore(store_path))
+
+        _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path, diagnostic_trace=trace,
+        )
+
+        raw_text = store_path.read_text(encoding="utf-8")
+        assert canary_reasoning not in raw_text, (
+            "the canary VALUE must never reach the persisted trace file at all"
+        )
+        assert canary_secret not in raw_text, (
+            "the canary VALUE must never reach the persisted trace file at all"
+        )
+
+        event = next(
+            e for e in trace.get_trace("test-run")
+            if e.details.get("actor") == "Agent A2"
+            and e.summary == "No usable structured proposal produced."
+        )
+        verbose = event.details["council_output"]["verbose"]
+        assert verbose["reason"] == "all_candidates_rejected"
+        assert verbose["rejected_candidates"][0]["rejected_requirement_refs"] == []
+        assert verbose["rejected_candidates"][0]["rejected_requirement_ref_invalid_types"] == ["dict"]
+        # Scoped to THIS event's own bounded payload (never a whole-file
+        # substring search, which would also match unrelated, already-
+        # legitimate content elsewhere in the trace -- e.g. a genuinely
+        # successful proposal's own real agent_reasoning field, or the
+        # pre-existing, unrelated VERY_VERBOSE effective_prompt echo):
+        # the canary keys themselves must not appear here either.
+        serialized_event = json.dumps(event.details)
+        assert canary_reasoning not in serialized_event
+        assert canary_secret not in serialized_event
+        assert "agent_reasoning" not in serialized_event
+        assert "credentials" not in serialized_event
+
+        for level in (
+            DiagnosticDetailLevel.NORMAL, DiagnosticDetailLevel.INFO,
+            DiagnosticDetailLevel.VERBOSE, DiagnosticDetailLevel.VERY_VERBOSE,
+        ):
+            rendered = render_diagnostic_trace_event(event, level)
+            assert canary_reasoning not in rendered
+            assert canary_secret not in rendered
+            assert "agent_reasoning" not in rendered
+            assert "credentials" not in rendered
+
+    def test_nonempty_malformed_dict_variants_from_the_real_llm_response_is_traced_correctly(self, tmp_path):
+        """CLAUDE-ADC-COUNCIL-DIAGNOSTIC-HARDENING-FIX-001 (F2),
+        end-to-end reproduction through the REAL, unchanged Phase-1 loop:
+        an agent's entire "variants" value decodes to a nonempty dict
+        (never a list) -- the productive loop iterates its keys (each a
+        string), every one fails to build into an AgentProposal, and the
+        resulting central-trace event must report "all_candidates_
+        rejected", never the previous, misleading "empty_variants"."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, all_ids = _setup_standard_responses()
+        malformed_response = json.dumps({"variants": {"unexpected": "shape", "another": "key"}})
+        fake_providers = {
+            "model-ea": FakeLLMProvider([a1_resp, ph2_resp]),
+            "model-ti": FakeLLMProvider([malformed_response, ph2_resp]),
+            "model-ra": FakeLLMProvider([a3_resp, ph2_resp]),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+        trace = DiagnosticTrace(DiagnosticTraceStore(tmp_path / "events.jsonl"))
+
+        _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path, diagnostic_trace=trace,
+        )
+
+        event = next(
+            e for e in trace.get_trace("test-run")
+            if e.details.get("actor") == "Agent A2"
+            and e.summary == "No usable structured proposal produced."
+        )
+        verbose = event.details["council_output"]["verbose"]
+        assert verbose["reason"] == "all_candidates_rejected"
+        assert verbose["variants_field_type"] == "dict"
+        assert verbose["variants_field_count"] == 2
+        assert len(verbose["rejected_candidates"]) == 2
+
+    _H2_CANARY = "PRIVATE_REASONING_CANARY_002"
+    _H2_COMPACT_CANARY = (
+        '{"agent_reasoning":"PRIVATE_REASONING_CANARY_002",'
+        '"credentials":{"secret":"PRIVATE_SECRET_CANARY_002"}}'
+    )
+
+    def _assert_event_and_rendering_never_leak(self, trace, *forbidden):
+        event = next(
+            e for e in trace.get_trace("test-run")
+            if e.details.get("actor") == "Agent A2"
+            and e.summary == "No usable structured proposal produced."
+        )
+        serialized_event = json.dumps(event.details)
+        for marker in forbidden:
+            assert marker not in serialized_event
+        for level in (
+            DiagnosticDetailLevel.NORMAL, DiagnosticDetailLevel.INFO,
+            DiagnosticDetailLevel.VERBOSE, DiagnosticDetailLevel.VERY_VERBOSE,
+        ):
+            rendered = render_diagnostic_trace_event(event, level)
+            for marker in forbidden:
+                assert marker not in rendered
+        return event
+
+    def test_h1_compact_serialized_canary_requirement_ref_never_reaches_persisted_event_or_verbose_rendering(self, tmp_path):
+        """CLAUDE-ADC-COUNCIL-DIAGNOSTIC-PRIVACY-HARDENING-FIX-002,
+        Codex RED reproduction #1, end-to-end: the reviewer's exact
+        compact-JSON-string canary as a candidate's requirement_ref,
+        through the REAL, unmodified Phase-1 loop."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, all_ids = _setup_standard_responses()
+        bad_variant_response = json.dumps({
+            "variants": [{
+                "variant_id": "A2-var-bad", "name": "A2 bad variant",
+                "toolchain": [{
+                    "requirement_ref": self._H2_COMPACT_CANARY,
+                    "name": "phantom", "type": "executable",
+                }],
+            }],
+        })
+        fake_providers = {
+            "model-ea": FakeLLMProvider([a1_resp, ph2_resp]),
+            "model-ti": FakeLLMProvider([bad_variant_response, ph2_resp]),
+            "model-ra": FakeLLMProvider([a3_resp, ph2_resp]),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+        store_path = tmp_path / "events.jsonl"
+        trace = DiagnosticTrace(DiagnosticTraceStore(store_path))
+
+        _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path, diagnostic_trace=trace,
+        )
+
+        raw_text = store_path.read_text(encoding="utf-8")
+        assert "PRIVATE_REASONING_CANARY_002" not in raw_text
+        assert "PRIVATE_SECRET_CANARY_002" not in raw_text
+
+        event = self._assert_event_and_rendering_never_leak(
+            trace, "PRIVATE_REASONING_CANARY_002", "PRIVATE_SECRET_CANARY_002",
+            "agent_reasoning", "credentials",
+        )
+        verbose = event.details["council_output"]["verbose"]
+        rejection = verbose["rejected_candidates"][0]
+        assert rejection["category"] == "invalid_requirement_ref"
+        assert rejection["rejected_requirement_refs"] == []
+        assert rejection["rejected_requirement_ref_invalid_types"] == ["str"]
+
+    def test_h1_compact_serialized_canary_provided_by_never_reaches_persisted_event_or_verbose_rendering(self, tmp_path):
+        """Codex RED reproduction #2 (same canary, provided_by field)."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, all_ids = _setup_standard_responses()
+        bad_variant_response = json.dumps({
+            "variants": [{
+                "variant_id": "A2-var-bad", "name": "A2 bad variant",
+                "toolchain": [{
+                    "requirement_ref": "req-1",
+                    "provided_by": self._H2_COMPACT_CANARY,
+                    "name": "phantom", "type": "executable",
+                }],
+            }],
+        })
+        fake_providers = {
+            "model-ea": FakeLLMProvider([a1_resp, ph2_resp]),
+            "model-ti": FakeLLMProvider([bad_variant_response, ph2_resp]),
+            "model-ra": FakeLLMProvider([a3_resp, ph2_resp]),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+        store_path = tmp_path / "events.jsonl"
+        trace = DiagnosticTrace(DiagnosticTraceStore(store_path))
+
+        _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path, diagnostic_trace=trace,
+        )
+
+        raw_text = store_path.read_text(encoding="utf-8")
+        assert "PRIVATE_REASONING_CANARY_002" not in raw_text
+        assert "PRIVATE_SECRET_CANARY_002" not in raw_text
+
+        event = self._assert_event_and_rendering_never_leak(
+            trace, "PRIVATE_REASONING_CANARY_002", "PRIVATE_SECRET_CANARY_002",
+            "agent_reasoning", "credentials",
+        )
+        verbose = event.details["council_output"]["verbose"]
+        rejection = verbose["rejected_candidates"][0]
+        assert rejection["rejected_provided_by"] == []
+        assert rejection["rejected_provided_by_invalid_types"] == ["str"]
+
+    def test_h2_invalid_confidence_canary_category_becomes_unknown_end_to_end(self, tmp_path):
+        """CLAUDE-ADC-COUNCIL-DIAGNOSTIC-PRIVACY-HARDENING-FIX-002,
+        Codex RED reproduction #3, end-to-end through the REAL,
+        unmodified Phase-1 loop: a candidate whose toolchain is
+        otherwise valid but whose "confidence" field is the reviewer's
+        exact canary tag string, making float() raise a ValueError whose
+        own message embeds it. The persisted category must be the
+        trusted "unknown" fallback, never the injected tag."""
+        a1_resp, a2_resp, a3_resp, ph2_resp, ch_resp, all_ids = _setup_standard_responses()
+        bad_variant_response = json.dumps({
+            "variants": [{
+                "variant_id": "A2-var-bad", "name": "A2 bad variant",
+                "toolchain": [{
+                    "requirement_ref": "req-1", "name": "ok", "type": "executable",
+                }],
+                "confidence": f"[category={self._H2_CANARY}]",
+            }],
+        })
+        fake_providers = {
+            "model-ea": FakeLLMProvider([a1_resp, ph2_resp]),
+            "model-ti": FakeLLMProvider([bad_variant_response, ph2_resp]),
+            "model-ra": FakeLLMProvider([a3_resp, ph2_resp]),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+        store_path = tmp_path / "events.jsonl"
+        trace = DiagnosticTrace(DiagnosticTraceStore(store_path))
+
+        _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path, diagnostic_trace=trace,
+        )
+
+        raw_text = store_path.read_text(encoding="utf-8")
+        assert self._H2_CANARY not in raw_text
+
+        event = self._assert_event_and_rendering_never_leak(trace, self._H2_CANARY)
+        verbose = event.details["council_output"]["verbose"]
+        assert verbose["reason"] == "all_candidates_rejected"
+        assert verbose["rejected_candidates"][0]["category"] == "unknown"
+
+
+# =========================================================================
+# CLAUDE-ADC-S23-ENVCONSTRAINT-PROMPT-FIX-001: Council producer contract
+# for ToolchainItem.environment_constraint -- exact platform identifier
+# or null, never a deployment/placement/execution-environment description.
+# =========================================================================
+
+
+_DEPLOYMENT_TERMS_FORBIDDEN_IN_ENVIRONMENT_CONSTRAINT = (
+    "host", "container", "docker", "within_container", "within_venv",
+    "build-server",
+)
+
+
+class TestEnvironmentConstraintPromptContract:
+    """Behavior-oriented assertions on the Phase-1 and Chairman prompt
+    TEXT itself (never a whole-prompt snapshot) proving:
+    (a) environment_constraint is documented as null-or-exact-platform
+        only, dynamically reflecting CouncilInput.platform -- not
+        hardcoded to "linux";
+    (b) deployment/placement/execution-environment concepts are
+        explicitly forbidden there and pointed at variant.environment
+        instead.
+    This is a prompt-contract-only change: _violates_platform_constraint(),
+    S2.3 admissibility, and every other behavior are untouched by this
+    task (verified separately via the existing, unmodified engineering_
+    decision platform-constraint test suite -- see focused results)."""
+
+    def test_phase1_prompt_documents_environment_constraint_as_null_or_exact_platform(self):
+        prompt = build_phase1_prompt(
+            _make_council_input(), AGENT_ROLE_ENV_ARCHITECT, 3,
+        )
+
+        assert "ENVIRONMENT_CONSTRAINT" in prompt
+        assert (
+            'entweder null ODER exakt der' in prompt
+            or "AUSSCHLIESSLICH entweder null" in prompt
+        )
+
+    @pytest.mark.parametrize("platform", ["linux", "windows"])
+    def test_phase1_prompt_propagates_the_actual_platform_value_not_hardcoded(self, platform):
+        council_input = replace(_make_council_input(), platform=platform)
+
+        prompt = build_phase1_prompt(council_input, AGENT_ROLE_ENV_ARCHITECT, 3)
+
+        assert f"PLATTFORM: {platform}" in prompt
+        # The ENVIRONMENT_CONSTRAINT bullet must name THIS run's own
+        # platform value, not a hardcoded example -- proven by requiring
+        # the value inside the bullet's own text window.
+        idx = prompt.index("ENVIRONMENT_CONSTRAINT")
+        bullet_window = prompt[idx:idx + 700]
+        assert f"({platform})" in bullet_window
+        assert f"auf {platform} NUR" in bullet_window
+
+    def test_phase1_prompt_forbids_deployment_placement_terms_in_environment_constraint(self):
+        prompt = build_phase1_prompt(
+            _make_council_input(), AGENT_ROLE_ENV_ARCHITECT, 3,
+        )
+        idx = prompt.index("ENVIRONMENT_CONSTRAINT")
+        bullet_window = prompt[idx:prompt.index("PROVIDES_VERIFICATION")]
+
+        for term in _DEPLOYMENT_TERMS_FORBIDDEN_IN_ENVIRONMENT_CONSTRAINT:
+            assert term in bullet_window, f"{term!r} must be named as forbidden"
+        assert "NIEMALS" in bullet_window or "niemals" in bullet_window
+
+    def test_phase1_prompt_points_deployment_concepts_at_variant_environment_field(self):
+        prompt = build_phase1_prompt(
+            _make_council_input(), AGENT_ROLE_ENV_ARCHITECT, 3,
+        )
+        idx = prompt.index("ENVIRONMENT_CONSTRAINT")
+        bullet_window = prompt[idx:prompt.index("PROVIDES_VERIFICATION")]
+
+        assert '"environment"' in bullet_window
+        assert "host|container|target|physical_hardware|simulation" in prompt
+
+    def test_phase1_json_schema_shows_environment_constraint_as_null_or_platform_placeholder(self):
+        prompt = build_phase1_prompt(
+            _make_council_input(), AGENT_ROLE_ENV_ARCHITECT, 3,
+        )
+        assert '"environment_constraint": null | "<exakter PLATTFORM-Wert' in prompt
+
+    def test_chairman_prompt_now_states_the_platform(self):
+        prompt = build_chairman_prompt(
+            json.dumps([{"variant_id": "v1", "name": "Test"}]), json.dumps([]),
+            _make_council_input(),
+        )
+        assert "PLATTFORM: linux" in prompt
+
+    def test_chairman_prompt_documents_environment_constraint_as_null_or_exact_platform(self):
+        prompt = build_chairman_prompt(
+            json.dumps([{"variant_id": "v1", "name": "Test"}]), json.dumps([]),
+            _make_council_input(),
+        )
+
+        assert "ENVIRONMENT_CONSTRAINT" in prompt
+        assert "Gültigkeitsregel geht vor Erhaltungsregel" in prompt
+
+    @pytest.mark.parametrize("platform", ["linux", "windows"])
+    def test_chairman_prompt_propagates_the_actual_platform_value_not_hardcoded(self, platform):
+        council_input = replace(_make_council_input(), platform=platform)
+
+        prompt = build_chairman_prompt(
+            json.dumps([{"variant_id": "v1", "name": "Test"}]), json.dumps([]),
+            council_input,
+        )
+
+        assert f"PLATTFORM: {platform}" in prompt
+        idx = prompt.index("ENVIRONMENT_CONSTRAINT")
+        bullet_window = prompt[idx:idx + 700]
+        assert f"({platform})" in bullet_window
+
+    def test_chairman_prompt_forbids_deployment_placement_terms_in_environment_constraint(self):
+        prompt = build_chairman_prompt(
+            json.dumps([{"variant_id": "v1", "name": "Test"}]), json.dumps([]),
+            _make_council_input(),
+        )
+        idx = prompt.index("ENVIRONMENT_CONSTRAINT")
+        bullet_window = prompt[idx:prompt.index("verification_coverage:")]
+
+        for term in _DEPLOYMENT_TERMS_FORBIDDEN_IN_ENVIRONMENT_CONSTRAINT:
+            assert term in bullet_window, f"{term!r} must be named as forbidden"
+
+    def test_chairman_prompt_forbids_synthesizing_new_deployment_descriptions_during_merge(self):
+        prompt = build_chairman_prompt(
+            json.dumps([{"variant_id": "v1", "name": "Test"}]), json.dumps([]),
+            _make_council_input(),
+        )
+        idx = prompt.index("ENVIRONMENT_CONSTRAINT")
+        bullet_window = prompt[idx:prompt.index("verification_coverage:")]
+
+        assert "unverändert" in bullet_window
+        assert "ursprünglichen Vorschlag" in bullet_window
+        assert "Merge" in bullet_window or "zusammengeführten" in bullet_window
+        assert '"environment"' in bullet_window
+
+    def test_chairman_prompt_without_council_input_still_builds_and_defaults_platform(self):
+        """council_input=None is an existing, valid call shape (see
+        build_chairman_prompt's own default) -- the new platform lookup
+        must not break it."""
+        prompt = build_chairman_prompt(
+            json.dumps([{"variant_id": "v1", "name": "Test"}]), json.dumps([]),
+            None,
+        )
+        assert "PLATTFORM: unbekannt" in prompt
+        assert "ENVIRONMENT_CONSTRAINT" in prompt
+
+
+class TestChairmanEnvironmentConstraintContradictionCorrection:
+    """CLAUDE-ADC-S23-ENVCONSTRAINT-PROMPT-FIX-002: FIX-001's Chairman
+    bullet said BOTH "environment_constraint is only null-or-exact-
+    platform" AND "preserve each source value UNVERÄNDERT even during
+    merges" -- unconditionally preserving an already-invalid source
+    value (e.g. "host", "container") perpetuates exactly the shape the
+    first sentence forbids. These tests mechanically fail against
+    FIX-001's own contradictory wording and pass only against the
+    corrected text. Phase-1's own bullet is untouched and out of scope
+    here -- see TestEnvironmentConstraintPromptContract for its
+    (unmodified) coverage."""
+
+    def _chairman_bullet_window(self, platform="linux"):
+        prompt = build_chairman_prompt(
+            json.dumps([{"variant_id": "v1", "name": "Test"}]), json.dumps([]),
+            replace(_make_council_input(), platform=platform),
+        )
+        idx = prompt.index("ENVIRONMENT_CONSTRAINT")
+        return prompt[idx:prompt.index("verification_coverage:")]
+
+    def test_valid_source_values_may_still_be_preserved_unchanged(self):
+        """A source value that is ALREADY valid (null or exactly the
+        project platform) may still be carried through a merge
+        unchanged -- the correction must not forbid the one case where
+        preservation is actually correct."""
+        bullet_window = self._chairman_bullet_window()
+
+        assert "NUR DANN" in bullet_window
+        assert "unverändert" in bullet_window
+        assert "BEREITS gültig" in bullet_window
+        assert "null oder exakt linux" in bullet_window
+
+    def test_invalid_freeform_source_values_must_not_be_blindly_preserved(self):
+        """The exact NIO shape: an invalid, deployment/placement-shaped
+        source value (host/container/docker/within_venv/build-server/
+        external hardware) must NOT be instructed to survive a merge
+        merely because "preserve unchanged" exists elsewhere in the
+        bullet."""
+        bullet_window = self._chairman_bullet_window()
+
+        assert "NICHT blind übernehmen" in bullet_window
+        assert "ungültiger" in bullet_window or "ungültig" in bullet_window
+        for term in _DEPLOYMENT_TERMS_FORBIDDEN_IN_ENVIRONMENT_CONSTRAINT:
+            assert term in bullet_window
+
+    def test_no_heuristic_mapping_of_invalid_values_is_instructed(self):
+        """Explicitly forbids the exact heuristic normalization shapes
+        named in the correction task (host->platform, container->null),
+        never merely omitting them."""
+        bullet_window = self._chairman_bullet_window()
+
+        assert "heuristisch" in bullet_window
+        assert "UNZULÄSSIG" in bullet_window
+        assert '"container" automatisch zu null' in bullet_window
+        assert '"host" automatisch zu linux' in bullet_window
+
+    def test_chairman_must_redetermine_value_from_actual_platform_requirement(self):
+        """Instead of preserving OR heuristically mapping an invalid
+        source value, the Chairman must independently decide the
+        correct value from the item's real technical need -- exact
+        platform only if truly required, else null."""
+        bullet_window = self._chairman_bullet_window()
+
+        assert "TATSÄCHLICHEN" in bullet_window
+        assert "wirklich zwingend genau" in bullet_window
+        assert "sonst null" in bullet_window
+
+    @pytest.mark.parametrize("platform", ["linux", "windows"])
+    def test_corrected_rule_is_dynamic_per_platform_not_hardcoded(self, platform):
+        bullet_window = self._chairman_bullet_window(platform=platform)
+
+        assert f"null oder exakt {platform}" in bullet_window
+        assert f'"host" automatisch zu {platform}' in bullet_window
+        assert f"exakt {platform}, wenn dieses Item" in bullet_window
+
+    def test_deployment_placement_redirect_to_variant_environment_survives_correction(self):
+        """The unrelated, already-correct sentence directing deployment/
+        placement concepts to variant.environment/purpose/description
+        must survive this correction unchanged in substance."""
+        bullet_window = self._chairman_bullet_window()
+
+        assert '"environment"' in bullet_window
+        assert "purpose" in bullet_window
+        assert "description" in bullet_window

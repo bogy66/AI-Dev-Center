@@ -1,5 +1,6 @@
 """Shared composition root for every productive canonical adapter."""
 from dataclasses import dataclass
+from pathlib import Path
 
 from app.agent_executor import ProviderAgentExecutor
 from app.ai_config import load_ai_config
@@ -8,6 +9,7 @@ from app.dev_workflow import DevelopmentWorkflow, WorkflowExecutionError
 from app.development_stage import DeveloperAgent, DevelopmentStage
 from app.development_testing_stage import DevelopmentTestingStage
 from app.developer_file_applier import DeveloperFileApplier
+from app.diagnostic_trace import DiagnosticTrace, DiagnosticTraceStore
 from app.engineering_council import EngineeringCouncil
 from app.llm_provider_factory import create_llm_provider
 from app.local_secret_store import LocalSecretStore
@@ -15,6 +17,8 @@ from app.project_inspector import ProjectInspector
 from app.project_setup_application import ProjectSetupApplicationService
 from app.project_test_runner import ProjectTestRunner
 from app.python_package_executor import PythonPackageExecutor
+from app.setup_execution_state import SetupExecutionStateStore
+from app.approved_plan_content import ApprovedPlanContentStore
 from app.requirement_preflight import RequirementPreflight
 from app.requirement_validator import RequirementValidator
 from app.setup_approval import SetupApproval
@@ -41,7 +45,23 @@ class CanonicalComponents:
     signal_project_bindings: SignalProjectBindingService
 
 
-def build_canonical_components(config_path="config/ai-dev-center.yml"):
+def build_canonical_components(
+    config_path="config/ai-dev-center.yml", diagnostic_trace_path: str | Path | None = None,
+):
+    """Compose the productive canonical adapter.
+
+    `diagnostic_trace_path` (CLAUDE-ADC-COUNCIL-DIAGNOSTIC-TRACE-
+    INTEGRATION-FIX-001): optional explicit location for the central
+    app.diagnostic_trace.DiagnosticTrace's own events.jsonl (the SAME
+    contract/format ProjectSetupApplicationService already writes,
+    never a new sink/format). When omitted (every existing caller),
+    behavior is completely unchanged: ProjectSetupApplicationService
+    still derives its own default, CWD-relative path exactly as before.
+    A caller that runs with a temporarily-changed working directory it
+    later deletes -- Real-System-E2E's own owned temp workspace being
+    the motivating case -- passes an explicit, anchored path here so
+    that evidence survives its cleanup, without EngineeringCouncil or
+    any other component ever opening a file itself for this."""
     config = load_ai_config(config_path)
     council_config = config.council
     if council_config is None or not council_config.enabled:
@@ -68,17 +88,24 @@ def build_canonical_components(config_path="config/ai-dev-center.yml"):
     )
     materializer = ToolchainMaterializer()
     package_executor = PythonPackageExecutor()
+    execution_state_store = SetupExecutionStateStore()
+    approved_content_store = ApprovedPlanContentStore()
     workflow = DevelopmentWorkflow(
         discovery, RequirementValidator, RequirementPreflight,
         executor=package_executor, council=council,
         materializer=materializer,
         development_testing_stage=development_testing,
+        execution_state_store=execution_state_store,
     )
     installers = StructuredInstallerRegistry()
     installers.register(StructuredInstallerRegistration("pip", package_executor))
     installers.register(StructuredInstallerRegistration("python_package", package_executor))
     workflow_manager = WorkflowManager()
     plan_store = WorkflowPlanStore(".workflow-plans")
+    diagnostic_trace = (
+        DiagnosticTrace(DiagnosticTraceStore(diagnostic_trace_path))
+        if diagnostic_trace_path is not None else None
+    )
     service = ProjectSetupApplicationService(
         workflow, ProjectInspector(),
         workflow_manager=workflow_manager,
@@ -87,6 +114,8 @@ def build_canonical_components(config_path="config/ai-dev-center.yml"):
         verification_registry=verification_registry,
         project_definition_store=ProjectDefinitionStore(),
         technical_config=config,
+        approved_content_store=approved_content_store,
+        diagnostic_trace=diagnostic_trace,
     )
     signal_project_bindings = SignalProjectBindingService(workflow_manager)
     return CanonicalComponents(

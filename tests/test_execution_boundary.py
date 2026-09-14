@@ -384,6 +384,80 @@ class TestWorkflowIntegration:
         assert err is not None
 
 
+class TestControlledSetupEffectCompletenessContract:
+    """CLAUDE-PRE-E2E-009A: the generalized failure class behind
+    CLAUDE-E2E-NIO-008A ("a producer may create an executable SetupStep
+    whose controlled consumer cannot actually execute that artifact")
+    is not specific to python_package_install -- it recurs for ANY
+    currently controlled SetupEffect that lacks its own explicit,
+    registered install_method compatibility validator. Absence of a
+    validator must never be silently treated as proof of compatibility
+    for a controlled effect."""
+
+    def test_every_currently_controlled_setup_effect_has_a_registered_capability_and_validator(self):
+        """No "???" may remain for a currently executable controlled
+        effect: every entry in CONTROLLED_SETUP_EFFECTS must have both
+        a capability/tool_name mapping AND a compatibility validator
+        already registered. Mechanically enumerates the real registries
+        -- never a hand-maintained, driftable duplicate list."""
+        from app.execution import (
+            CONTROLLED_SETUP_EFFECTS, _CAPABILITY_BY_SETUP_EFFECT,
+            _install_method_validators,
+        )
+
+        validators = _install_method_validators()
+        missing_capability = sorted(CONTROLLED_SETUP_EFFECTS - _CAPABILITY_BY_SETUP_EFFECT.keys())
+        missing_validator = sorted(CONTROLLED_SETUP_EFFECTS - validators.keys())
+
+        assert not missing_capability, (
+            f"controlled SetupEffect(s) with no registered capability/tool_name "
+            f"mapping: {missing_capability}"
+        )
+        assert not missing_validator, (
+            f"controlled SetupEffect(s) with no registered install_method "
+            f"compatibility validator: {missing_validator}"
+        )
+
+    def test_a_controlled_effect_without_a_registered_validator_fails_closed_not_open(self, monkeypatch):
+        """CLAUDE-PRE-E2E-009A: simulates the exact future scenario this
+        contract exists to prevent -- a new SetupEffect is added to
+        CONTROLLED_SETUP_EFFECTS (making it genuinely executable)
+        without anyone remembering to also register its compatibility
+        validator. This must never silently default to
+        compatible=True for arbitrary, unchecked install_method text --
+        that is precisely the class of gap Real-System-E2E #4 exposed
+        for python_package_install, generalized to any future
+        controlled effect."""
+        import app.execution as execution_module
+
+        fake_effect = "future_controlled_effect_with_no_validator"
+        monkeypatch.setattr(
+            execution_module, "CONTROLLED_SETUP_EFFECTS",
+            frozenset(execution_module.CONTROLLED_SETUP_EFFECTS | {fake_effect}),
+        )
+
+        assert execution_module.is_controlled_setup_effect(fake_effect) is True
+        assert execution_module.is_install_method_compatible_with_controlled_executor(
+            fake_effect, "literally anything, even a compound shell command", "somepkg",
+        ) is False
+
+    def test_uncontrolled_effect_remains_unconstrained_by_this_check(self):
+        """Uncontrolled/manual-review effects explicitly remain outside
+        this requirement (Part 3): a genuinely non-controlled effect is
+        never blocked by the absence of a validator, since it was never
+        going to become an executable "install" action in the first
+        place."""
+        from app.execution import is_install_method_compatible_with_controlled_executor
+        from app.requirement_model import SetupEffect
+
+        assert is_install_method_compatible_with_controlled_executor(
+            SetupEffect.SYSTEM_PACKAGE_INSTALL, "anything", "somepkg",
+        ) is True
+        assert is_install_method_compatible_with_controlled_executor(
+            None, "anything", "somepkg",
+        ) is True
+
+
 def _write(path, content):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)

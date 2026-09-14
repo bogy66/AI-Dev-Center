@@ -41,7 +41,11 @@ def _set_override(llm=None, mcp=None):
     llm, mcp = _mock_components(llm, mcp)
     app.dependency_overrides[get_workflow_components] = lambda: (llm, mcp)
     plan = MagicMock(id="plan-123", status="pending_approval")
-    result = MagicMock(setup_plan=plan)
+    # CLAUDE-ARCH-S2-013C: engineering_selection=None explicitly simulates
+    # an already-resumed/complete WorkflowResult (setup_plan populated) --
+    # without this, an unconfigured MagicMock attribute is truthy and
+    # would be misread as a pending S2.4 engineering-selection boundary.
+    result = MagicMock(setup_plan=plan, engineering_selection=None)
     components = MagicMock()
     components.service.plan_project_setup.return_value = result
     components.plan_store = MagicMock()

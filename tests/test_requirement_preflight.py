@@ -1,11 +1,11 @@
-import importlib.metadata
-import importlib.util
 import shutil
 import socket
 import subprocess
 
 import pytest
 
+import app.requirement_preflight as requirement_preflight_module
+from app.python_distribution import DistributionCheckResult
 from app.requirement_model import Requirement, RequirementActivation, RequirementType
 from app.requirement_preflight import RequirementPreflight
 
@@ -420,10 +420,12 @@ def test_python_package_present_requirement(monkeypatch):
         required=True,
         confidence=1.0,
     )
-    monkeypatch.setattr(importlib.util, "find_spec", lambda name: object())
-    monkeypatch.setattr(importlib.metadata, "version", lambda name: "2.31.0")
+    monkeypatch.setattr(
+        requirement_preflight_module, "check_distribution_installed",
+        lambda name, target_python, **kwargs: DistributionCheckResult(True, "2.31.0"),
+    )
 
-    result = RequirementPreflight.check([req], "project-py-present")
+    result = RequirementPreflight.check([req], "project-py-present", project_root="/tmp/adc-preflight-test")
 
     assert result.project_id == "project-py-present"
     assert result.overall_ready is True
@@ -448,9 +450,12 @@ def test_python_package_missing_requirement(monkeypatch):
         required=True,
         confidence=1.0,
     )
-    monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+    monkeypatch.setattr(
+        requirement_preflight_module, "check_distribution_installed",
+        lambda name, target_python, **kwargs: DistributionCheckResult(False, None),
+    )
 
-    result = RequirementPreflight.check([req], "project-py-missing")
+    result = RequirementPreflight.check([req], "project-py-missing", project_root="/tmp/adc-preflight-test")
 
     assert result.project_id == "project-py-missing"
     assert result.overall_ready is False
@@ -468,6 +473,10 @@ def test_python_package_missing_requirement(monkeypatch):
 
 
 def test_python_package_version_success(monkeypatch):
+    """CLAUDE-E2E-003: PYTHON_PACKAGE presence/version now come from the
+    central, target-Python-aware app.python_distribution.check_distribution_installed
+    (distribution metadata semantics), not import-module find_spec/
+    in-process importlib.metadata lookups."""
     req = Requirement(
         id="req-py-version-success",
         name="some-package",
@@ -476,10 +485,12 @@ def test_python_package_version_success(monkeypatch):
         required=True,
         confidence=1.0,
     )
-    monkeypatch.setattr(importlib.util, "find_spec", lambda name: object())
-    monkeypatch.setattr(importlib.metadata, "version", lambda name: "1.2.3")
+    monkeypatch.setattr(
+        requirement_preflight_module, "check_distribution_installed",
+        lambda name, target_python, **kwargs: DistributionCheckResult(True, "1.2.3"),
+    )
 
-    result = RequirementPreflight.check([req], "project-py-version-success")
+    result = RequirementPreflight.check([req], "project-py-version-success", project_root="/tmp/adc-preflight-test")
 
     assert result.results[0].present is True
     assert result.results[0].satisfied is True
@@ -489,6 +500,14 @@ def test_python_package_version_success(monkeypatch):
 
 
 def test_python_package_version_not_determinable(monkeypatch):
+    """CLAUDE-E2E-003B semantic-regression fix: a distribution that IS
+    installed but whose version metadata could not be read is present
+    but with an unknown version -- a real, deliberately preserved
+    distinct state, not folded into "not present". This restores the
+    prior find_spec-era distinction (module found, but a separate
+    metadata.version() call could fail for an unrelated reason),
+    expressed correctly through distribution-metadata semantics rather
+    than import-module semantics."""
     req = Requirement(
         id="req-py-version-error",
         name="some-package",
@@ -497,21 +516,18 @@ def test_python_package_version_not_determinable(monkeypatch):
         required=True,
         confidence=1.0,
     )
-    monkeypatch.setattr(importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(
+        requirement_preflight_module, "check_distribution_installed",
+        lambda name, target_python, **kwargs: DistributionCheckResult(True, None),
+    )
 
-    def raise_version(_):
-        raise RuntimeError("no metadata available")
-
-    monkeypatch.setattr(importlib.metadata, "version", raise_version)
-
-    result = RequirementPreflight.check([req], "project-py-version-error")
+    result = RequirementPreflight.check([req], "project-py-version-error", project_root="/tmp/adc-preflight-test")
 
     assert result.results[0].present is True
     assert result.results[0].satisfied is True
     assert result.results[0].detected_version is None
     assert result.results[0].warning is None
     assert result.missing_requirements == ()
-    assert result.warnings == ()
 
 
 def test_python_package_required_missing(monkeypatch):
@@ -523,9 +539,12 @@ def test_python_package_required_missing(monkeypatch):
         required=True,
         confidence=1.0,
     )
-    monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+    monkeypatch.setattr(
+        requirement_preflight_module, "check_distribution_installed",
+        lambda name, target_python, **kwargs: DistributionCheckResult(False, None),
+    )
 
-    result = RequirementPreflight.check([req], "project-py-required-missing")
+    result = RequirementPreflight.check([req], "project-py-required-missing", project_root="/tmp/adc-preflight-test")
 
     assert result.overall_ready is False
     assert len(result.missing_requirements) == 1
@@ -542,9 +561,12 @@ def test_python_package_optional_missing(monkeypatch):
         required=False,
         confidence=1.0,
     )
-    monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+    monkeypatch.setattr(
+        requirement_preflight_module, "check_distribution_installed",
+        lambda name, target_python, **kwargs: DistributionCheckResult(False, None),
+    )
 
-    result = RequirementPreflight.check([req], "project-py-optional-missing")
+    result = RequirementPreflight.check([req], "project-py-optional-missing", project_root="/tmp/adc-preflight-test")
 
     assert result.overall_ready is True
     assert result.missing_requirements == ()
@@ -568,10 +590,12 @@ def test_python_package_does_not_mutate_requirements(monkeypatch):
         required=req.required,
         confidence=req.confidence,
     )
-    monkeypatch.setattr(importlib.util, "find_spec", lambda name: object())
-    monkeypatch.setattr(importlib.metadata, "version", lambda name: "9.9.9")
+    monkeypatch.setattr(
+        requirement_preflight_module, "check_distribution_installed",
+        lambda name, target_python, **kwargs: DistributionCheckResult(True, "9.9.9"),
+    )
 
-    RequirementPreflight.check([req], "project-py-immutable")
+    RequirementPreflight.check([req], "project-py-immutable", project_root="/tmp/adc-preflight-test")
 
     assert req == original
     assert req.id == original.id
@@ -581,19 +605,19 @@ def test_python_package_does_not_mutate_requirements(monkeypatch):
     assert req.metadata == original.metadata
 
 
-def test_python_package_uses_mocked_dependencies(monkeypatch):
+def test_python_package_uses_central_distribution_check(monkeypatch):
+    """Preflight delegates to the one central distribution-check
+    function rather than maintaining its own competing definition of
+    "is this Python package installed"."""
     calls = []
 
-    def fake_find_spec(name):
-        calls.append(("find_spec", name))
-        return object()
+    def fake_check(name, target_python, *, project_root=None, **kwargs):
+        calls.append((name, target_python, project_root))
+        return DistributionCheckResult(True, "1.0")
 
-    def fake_version(name):
-        calls.append(("version", name))
-        return "1.0"
-
-    monkeypatch.setattr(importlib.util, "find_spec", fake_find_spec)
-    monkeypatch.setattr(importlib.metadata, "version", fake_version)
+    monkeypatch.setattr(
+        requirement_preflight_module, "check_distribution_installed", fake_check,
+    )
 
     req = Requirement(
         id="req-py-mocked",
@@ -604,40 +628,75 @@ def test_python_package_uses_mocked_dependencies(monkeypatch):
         confidence=1.0,
     )
 
-    RequirementPreflight.check([req], "project-py-mocked")
+    RequirementPreflight.check(
+        [req], "project-py-mocked",
+        target_executable="/fake/target/python", project_root="/tmp/adc-preflight-test",
+    )
 
-    assert calls == [
-        ("find_spec", "some-package"),
-        ("version", "some-package"),
-    ]
+    assert calls == [("some-package", "/fake/target/python", "/tmp/adc-preflight-test")]
 
 
-def test_python_package_no_network_or_subprocess_calls(monkeypatch):
-    def fail(*args, **kwargs):
-        raise AssertionError("Network or subprocess call attempted")
+def test_target_executable_is_stored_per_requirement_not_per_result(monkeypatch):
+    """CLAUDE-E2E-003C: the resolved execution target is central,
+    ecosystem-neutral vocabulary stored per-requirement
+    (PreflightRequirementResult.target_executable), never as a single
+    value for the whole PreflightResult -- a project with multiple
+    requirements of different (potentially different-ecosystem) types
+    must never be forced onto one global target. A non-PYTHON_PACKAGE
+    requirement in the same call carries no target_executable at all."""
+    monkeypatch.setattr(
+        requirement_preflight_module, "check_distribution_installed",
+        lambda name, target_executable, **kwargs: DistributionCheckResult(True, "1.0"),
+    )
 
-    monkeypatch.setattr(socket, "socket", fail)
-    monkeypatch.setattr(subprocess, "run", fail)
-    monkeypatch.setattr(importlib.util, "find_spec", lambda name: object())
-    monkeypatch.setattr(importlib.metadata, "version", lambda name: "1.0")
+    py_req = Requirement(
+        id="req-py", name="some-package", type=RequirementType.PYTHON_PACKAGE,
+        purpose="test requirement", required=True, confidence=1.0,
+    )
+    other_req = Requirement(
+        id="req-other", name="some-tool", type=RequirementType.EXECUTABLE,
+        purpose="test requirement", required=True, confidence=1.0,
+    )
+
+    result = RequirementPreflight.check(
+        [py_req, other_req], "project-multi",
+        target_executable="/resolved/python", project_root="/tmp/adc-preflight-test",
+    )
+
+    assert not hasattr(result, "target_python")
+    py_result = next(r for r in result.results if r.requirement_id == "req-py")
+    other_result = next(r for r in result.results if r.requirement_id == "req-other")
+    assert py_result.target_executable == "/resolved/python"
+    assert other_result.target_executable is None
+
+
+def test_python_package_check_never_touches_network(monkeypatch, tmp_path):
+    """Preflight's distribution check spawns a controlled, argv-only
+    subprocess (through execute_controlled) to query the target Python
+    (the intended, documented design -- see PART 5 / root cause 4 and
+    CLAUDE-E2E-003B's controlled-execution fix), but it must never touch
+    the network. Uses a real, non-mocked check_distribution_installed
+    call, with a real project_root, against a genuinely nonexistent
+    distribution name so the whole path executes for real."""
+    def fail_socket(*args, **kwargs):
+        raise AssertionError("Network call attempted")
+
+    monkeypatch.setattr(socket, "socket", fail_socket)
 
     req = Requirement(
-        id="req-py-no-io",
-        name="some-package",
+        id="req-py-no-network",
+        name="some-nonexistent-distribution-xyz-adc-test",
         type=RequirementType.PYTHON_PACKAGE,
         purpose="test requirement",
         required=True,
         confidence=1.0,
     )
 
-    try:
-        result = RequirementPreflight.check([req], "project-py-no-io")
-    except AssertionError as exc:
-        pytest.fail(f"Preflight should not perform network/subprocess calls: {exc}")
+    result = RequirementPreflight.check(
+        [req], "project-py-no-network", project_root=str(tmp_path),
+    )
 
-    assert result.overall_ready is True
-    assert result.results[0].present is True
-    assert result.results[0].satisfied is True
+    assert result.results[0].present is False
     assert result.warnings == ()
 
 

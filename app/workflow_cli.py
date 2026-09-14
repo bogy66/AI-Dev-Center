@@ -60,6 +60,22 @@ def print_result(config, result) -> None:
     print(f"Missing count: {len(result.preflight_result.missing_requirements)}")
     print(f"Warning count: {len(result.preflight_result.warnings)}")
 
+    if result.setup_plan is None:
+        # CLAUDE-ARCH-S2-013C: the productive S2.4 Human Engineering
+        # Authority boundary is not (yet) interactive for this CLI adapter
+        # -- run() now stops here whenever at least one candidate is
+        # admissible, rather than auto-accepting the Chairman
+        # recommendation. This CLI never had (and still does not add) a
+        # selection prompt; it reports the pending decision instead of
+        # crashing on a missing SetupPlan.
+        selection = result.engineering_selection
+        print("Engineering selection pending (no SetupPlan yet).")
+        if selection is not None:
+            print(f"Chairman recommendation: {selection.chairman_recommendation}")
+            admissible_ids = [v.variant.id for v in selection.validations if v.admissible]
+            print(f"Admissible alternatives: {admissible_ids}")
+        return
+
     print(f"SetupPlan status: {result.setup_plan.status}")
     print(f"Number of SetupSteps: {len(result.setup_plan.steps)}")
 
@@ -117,8 +133,9 @@ def main() -> None:
             project_id=project_path.name,
         )
 
-        store = WorkflowPlanStore(".workflow-plans")
-        store.save(result.setup_plan)
+        if result.setup_plan is not None:
+            store = WorkflowPlanStore(".workflow-plans")
+            store.save(result.setup_plan)
 
     except WorkflowExecutionError as exc:
         print(f"Workflow blocked: {exc}", file=sys.stderr)

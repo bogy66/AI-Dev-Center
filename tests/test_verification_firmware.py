@@ -201,6 +201,201 @@ class TestESPHome:
         finally:
             ControlledRunnerRegistry.execute_step = original_exec
 
+    def test_esphome_validate_fail_stderr_only_retains_stderr_in_diagnostics(self):
+        """CLAUDE-E2E-002: a stderr-only failure must retain that stderr
+        text in diagnostics (this already worked before the fix; kept as
+        an explicit regression guard)."""
+        import subprocess, shutil
+        original = subprocess.run
+        original_which = shutil.which
+
+        class FakeProcess:
+            returncode = 1
+            stdout = ""
+            stderr = "Error: 'board' is a required option for component [esp32]"
+            timed_out = False
+
+        subprocess.run = lambda *a, **kw: FakeProcess()
+        shutil.which = lambda x: "/usr/bin/esphome"
+        try:
+            runner = ESPHomeCheckRunner()
+            step = VerificationStep(
+                step_id="esph-v", area=".", working_directory=".",
+                verification_kind="validate", test_system="esphome",
+                runner_type="esphome_check", policy="controlled_execution",
+            )
+            result = runner.execute(step, "/tmp")
+            assert result.status == FAIL.value
+            assert result.return_code == 1
+            assert "Error: 'board' is a required option" in result.diagnostics
+        finally:
+            subprocess.run = original
+            shutil.which = original_which
+
+    def test_esphome_validate_fail_stdout_only_retains_stdout_in_diagnostics(self):
+        """CLAUDE-E2E-002: a stdout-only failure (e.g. ESPHome reporting
+        its actual error on stdout with no stderr at all) must retain
+        that stdout text in diagnostics."""
+        import subprocess, shutil
+        original = subprocess.run
+        original_which = shutil.which
+
+        class FakeProcess:
+            returncode = 1
+            stdout = "Error: 'board' is a required option for component [esp32]"
+            stderr = ""
+            timed_out = False
+
+        subprocess.run = lambda *a, **kw: FakeProcess()
+        shutil.which = lambda x: "/usr/bin/esphome"
+        try:
+            runner = ESPHomeCheckRunner()
+            step = VerificationStep(
+                step_id="esph-v", area=".", working_directory=".",
+                verification_kind="validate", test_system="esphome",
+                runner_type="esphome_check", policy="controlled_execution",
+            )
+            result = runner.execute(step, "/tmp")
+            assert result.status == FAIL.value
+            assert result.return_code == 1
+            assert "Error: 'board' is a required option" in result.diagnostics
+        finally:
+            subprocess.run = original
+            shutil.which = original_which
+
+    def test_esphome_validate_fail_both_streams_retains_both_in_diagnostics(self):
+        """CLAUDE-E2E-002 core proof: reproduces the real ESPHome
+        Real-System E2E gap directly -- ESPHome writes informational
+        'Reading configuration...' lines to stdout and its actual
+        validation error to stderr. Before this fix, diagnostics would
+        have contained only the stderr text; the INFO lines were
+        already visible separately, but any tool that reverses which
+        stream carries the real error would have silently lost it.
+        Both streams must now be present in diagnostics."""
+        import subprocess, shutil
+        original = subprocess.run
+        original_which = shutil.which
+
+        class FakeProcess:
+            returncode = 1
+            stdout = (
+                "INFO ESPHome 2026.8.1\n"
+                "INFO Reading configuration hello-world.yaml..."
+            )
+            stderr = "Error: 'board' is a required option for component [esp32]"
+            timed_out = False
+
+        subprocess.run = lambda *a, **kw: FakeProcess()
+        shutil.which = lambda x: "/usr/bin/esphome"
+        try:
+            runner = ESPHomeCheckRunner()
+            step = VerificationStep(
+                step_id="esph-v", area=".", working_directory=".",
+                verification_kind="validate", test_system="esphome",
+                runner_type="esphome_check", policy="controlled_execution",
+            )
+            result = runner.execute(step, "/tmp")
+            assert result.status == FAIL.value
+            assert result.return_code == 1
+            assert "INFO Reading configuration hello-world.yaml" in result.diagnostics
+            assert "Error: 'board' is a required option" in result.diagnostics
+            assert result.stdout == FakeProcess.stdout
+            assert result.stderr == FakeProcess.stderr
+        finally:
+            subprocess.run = original
+            shutil.which = original_which
+
+    def test_esphome_validate_fail_both_streams_still_blocks_compile(self):
+        """The compile-blocked-by-failed-validate contract is unaffected
+        by the diagnostics fix: a validate failure carrying both streams
+        still blocks the dependent compile step."""
+        import subprocess, shutil
+        original = subprocess.run
+        original_which = shutil.which
+
+        class FakeProcess:
+            returncode = 1
+            stdout = "INFO ESPHome 2026.8.1\nINFO Reading configuration hello-world.yaml..."
+            stderr = "Error: 'board' is a required option for component [esp32]"
+            timed_out = False
+
+        subprocess.run = lambda *a, **kw: FakeProcess()
+        shutil.which = lambda x: "/usr/bin/esphome"
+        try:
+            registry = build_default_registry()
+            validate_step = VerificationStep(
+                step_id="esph-v", area=".", working_directory=".",
+                verification_kind="validate", test_system="esphome",
+                runner_type="esphome_check", policy="controlled_execution",
+            )
+            compile_step = VerificationStep(
+                step_id="esph-c", area=".", working_directory=".",
+                verification_kind="compile", test_system="esphome",
+                runner_type="esphome_check", policy="controlled_execution",
+                depends_on=(validate_step.step_id,),
+            )
+            plan = VerificationPlan(
+                run_id="run-both-streams", project_root="/tmp",
+                project_kind="firmware", area_count=1,
+                steps=(validate_step, compile_step),
+            )
+
+            result = registry.execute_plan(plan)
+
+            validate_result = next(s for s in result.steps if s.step_id == "esph-v")
+            compile_result = next(s for s in result.steps if s.step_id == "esph-c")
+            assert validate_result.status == FAIL.value
+            assert "Error: 'board' is a required option" in validate_result.diagnostics
+            assert compile_result.status == BLOCKED.value
+        finally:
+            subprocess.run = original
+            shutil.which = original_which
+
+    def test_esphome_timeout_both_streams_retains_both_in_diagnostics(self):
+        """CLAUDE-E2E-002 requirement 2: the same both-streams
+        preservation must apply to timeout diagnostics, not only to
+        plain failures."""
+        import subprocess, shutil
+        original = subprocess.run
+        original_which = shutil.which
+
+        class TimeoutProcess:
+            returncode = -1
+            stdout = "INFO ESPHome 2026.8.1\nINFO compiling..."
+            stderr = "killed: timeout exceeded"
+            timed_out = True
+
+        subprocess.run = lambda *a, **kw: TimeoutProcess()
+        shutil.which = lambda x: "/usr/bin/esphome"
+        try:
+            runner = ESPHomeCheckRunner(timeout=1)
+            step = VerificationStep(
+                step_id="esph-t", area=".", working_directory=".",
+                verification_kind="compile", test_system="esphome",
+                runner_type="esphome_check", policy="controlled_execution",
+            )
+            result = runner.execute(step, "/tmp")
+            assert result.status == TIMEOUT.value
+            assert result.timed_out
+            assert "Execution timed out" in result.diagnostics
+            assert "INFO compiling" in result.diagnostics
+            assert "killed: timeout exceeded" in result.diagnostics
+        finally:
+            subprocess.run = original
+            shutil.which = original_which
+
+    def test_esphome_diagnostics_fix_does_not_weaken_execution_policy(self):
+        """The diagnostics fix touches only how output text is
+        assembled, not how the process is invoked: still no shell, still
+        no run/upload/flash verbs, still routed through the same
+        controlled esphome_bin + args tuple."""
+        import inspect
+        src = inspect.getsource(ESPHomeCheckRunner.execute)
+        assert "shell=True" not in src
+        assert "esphome run" not in src
+        assert "esphome upload" not in src
+        assert "flash" not in src
+
 
 # ============================================================================
 # PlatformIO Tests
@@ -870,3 +1065,55 @@ class TestBuildStepResult:
         built = _build_step_result(_make_step(), result, ("esphome", "config", "."))
         assert built.stdout == "out"
         assert built.stderr == "err"
+
+    def test_fail_with_both_streams_retains_both_in_diagnostics(self):
+        """CLAUDE-E2E-002 core proof, exercised directly against the
+        shared _build_step_result (used by ESPHomeCheckRunner,
+        PlatformIORunner, and CMakeRunner alike) rather than through any
+        one specific runner: when both streams are non-empty, neither is
+        silently discarded."""
+        result = FakeCompletedProcess(
+            returncode=1,
+            stdout="INFO Reading configuration hello-world.yaml...",
+            stderr="Error: 'board' is a required option",
+        )
+        built = _build_step_result(_make_step(), result, ("tool", "check", "."))
+        assert built.status == FAIL.value
+        assert "INFO Reading configuration hello-world.yaml" in built.diagnostics
+        assert "Error: 'board' is a required option" in built.diagnostics
+
+    def test_timeout_with_both_streams_retains_both_in_diagnostics(self):
+        result = FakeCompletedProcess(
+            returncode=-1, stdout="working...", stderr="killed",
+            timed_out=True,
+        )
+        built = _build_step_result(_make_step(), result, ("tool", "check", "."))
+        assert built.status == TIMEOUT.value
+        assert "Execution timed out" in built.diagnostics
+        assert "working..." in built.diagnostics
+        assert "killed" in built.diagnostics
+
+    def test_both_streams_diagnostics_still_bounded_by_max_output(self):
+        """Combining both streams must not multiply the bounded
+        diagnostic size beyond _MAX_OUTPUT."""
+        half = "x" * (_MAX_OUTPUT // 2 + 100)
+        result = FakeCompletedProcess(returncode=1, stdout=half, stderr=half)
+        built = _build_step_result(_make_step(), result, ("tool", "check", "."))
+        assert len(built.diagnostics) <= _MAX_OUTPUT
+
+    def test_return_code_retained_when_both_streams_present(self):
+        result = FakeCompletedProcess(
+            returncode=7, stdout="info line", stderr="the real error",
+        )
+        built = _build_step_result(_make_step(), result, ("tool", "check", "."))
+        assert built.return_code == 7
+
+    def test_pass_fail_classification_unaffected_by_both_streams(self):
+        """The diagnostics fix must not change PASS/FAIL classification:
+        a return code of 0 still passes even if both streams have data."""
+        result = FakeCompletedProcess(
+            returncode=0, stdout="ok", stderr="deprecation warning",
+        )
+        built = _build_step_result(_make_step(), result, ("tool", "check", "."))
+        assert built.status == PASS.value
+        assert built.passed is True

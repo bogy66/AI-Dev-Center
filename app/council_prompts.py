@@ -10,6 +10,48 @@ import json
 
 from app.council_models import CouncilInput
 
+# Shared install_method / display-name contract text.  These blocks are
+# reused VERBATIM by both the Phase-1 proposal prompt (build_phase1_prompt)
+# and the Chairman merge prompt (build_chairman_prompt) so the two prompt
+# paths cannot drift into inconsistent rules for the same producer contract.
+_INSTALL_METHOD_CONTROLLED_FORMS = """\
+    * "pip"
+    * "python_package"
+    * "pip install <technical_identity>"
+    * "python -m pip install <technical_identity>\""""
+
+_INSTALL_METHOD_NULL_SEMANTICS = """\
+  null ist dabei KEINE fünfte install_method-Form, sondern bedeutet
+  ausschließlich "keine bekannte/angegebene kontrollierte
+  Installationsmethode". install_method=null ist ausschließlich dann
+  zulässig, wenn für dieses Item keine der vier obigen Formen als
+  kontrollierte, bekannte Installationsmethode vorliegt oder sich sicher
+  ableiten lässt — ein Item mit install_method=null ist NICHT automatisch
+  materialisierbar/installierbar und bleibt manual_review (fail-closed).
+  null erlaubt NIEMALS, eine technical_identity, einen Install-Befehl oder
+  eine sonstige install_method aus dem Anzeigenamen "name", aus
+  "purpose"/"description" oder aus anderem Freitext abzuleiten oder zu
+  erraten."""
+
+_PLACEMENT_NOT_IN_NAME_RULE = """\
+  WO diese Variante ausgeführt wird bzw. WO die Installation stattfindet
+  (Host/venv/Container) gehört AUSSCHLIESSLICH in die Felder
+  "environment" (auf Variantenebene), "purpose" oder "description" —
+  niemals in "install_method" und niemals in "name". Ein Anzeigename darf
+  KEINE Platzierungs-/Deployment-Information enthalten oder andeuten
+  (z.B. einen Zusatz, Klammerhinweis oder Suffix, der Host-, venv- oder
+  Container-Zugehörigkeit nennt) — der Anzeigename beschreibt
+  ausschließlich das Tool/Paket selbst, unabhängig davon, ob diese
+  Variante auf einem Host, in einer virtuellen Umgebung oder in einem
+  Container läuft. Ein Anzeigename wie "ESPHome Python Package (in
+  container)" ist NICHT zulässig — auch nicht als Ergebnis eines
+  Chairman-Merges; verwende stattdessen einen platzierungsfreien
+  Anzeigenamen wie "ESPHome Python Package" und beschreibe die
+  Container-/venv-/Host-Platzierung ausschließlich in "environment",
+  "purpose" oder "description". Ein platzierungsfreier Anzeigename ändert
+  NICHTS an install_method: install_method bleibt exakt eine der vier
+  oben genannten Formen (oder null) mit derselben technical_identity."""
+
 
 def _build_intelligence_section(pi: dict | None) -> str:
     """Build a deterministic structured context from project intelligence.
@@ -146,14 +188,16 @@ _PHASE1_JSON_SCHEMA = """\
         {
           "requirement_ref": "<existing Requirement.id realized by this item>",
           "name": "python",
+          "technical_identity": "esphome" | null,
           "type": "executable|python_package|system_package|sdk|toolchain|flasher|…",
           "install_method": "pip install esphome" | null,
           "version": "3.12" | null,
           "purpose": "Wofür wird dieses Tool in dieser Variante gebraucht?",
           "depends_on": ["python"],
           "state": "already_installed|needs_install|unavailable",
-          "environment_constraint": null,
-          "provided_by": null
+          "environment_constraint": null | "<exakter PLATTFORM-Wert, z.B. windows>",
+          "provided_by": null,
+          "provides_verification": ["pytest"]
         }
       ],
       "advantages": ["Vorteil 1", "Vorteil 2"],
@@ -162,6 +206,15 @@ _PHASE1_JSON_SCHEMA = """\
       "confidence": 0.8,
       "feasibility": "high|medium|low",
       "verification": "esphome version && esphome compile",
+      "verification_coverage": [
+        {
+          "requirement_refs": ["req-1"],
+          "kind": "test_command|build_command|static_analysis|probe|smoke_test|config_validation|manual_review",
+          "mechanism": "pytest",
+          "evidence": "req-1",
+          "human_governed": false
+        }
+      ],
       "agent_reasoning": "Warum schlägst du als Environment Architect diese Variante vor?"
     }
   ]
@@ -298,6 +351,98 @@ VERBINDLICHER REQUIREMENT-TO-IMPLEMENTATION-VERTRAG:
   Requirement explizit in dieser Variante enthalten ist.
   Ein mit provided_by versehenes ToolchainItem erhält keinen eigenen Setup-Schritt;
   seine Bereitstellung wird durch das referenzierte Item sichergestellt.
+- TECHNICAL_IDENTITY:
+  "name" ist ein menschenlesbarer Anzeigename (z.B. "ESPHome CLI") und darf
+  Leerzeichen/Prosa enthalten. "technical_identity" ist die exakte, technische
+  Kennung, die das jeweilige Paket-/Tool-System für dieses Item tatsächlich
+  benötigt — bei type="python_package" die reale PyPI-Distributionskennung,
+  die mit "pip install <technical_identity>" tatsächlich funktioniert (z.B.
+  "esphome") — immer ein einzelnes Token ohne Leerzeichen, nie freier Text.
+  Setze technical_identity immer explizit, wenn sich name und die echte
+  technische Kennung unterscheiden könnten; sonst null.
+- INSTALL_METHOD (nur für type="python_package"):
+  "install_method" wird von einem festen, kontrollierten Executor
+  ausgeführt, der NUR eine der folgenden vier Formen versteht — jede
+  andere Form macht das Item nicht automatisch installierbar und erzwingt
+  manual_review:
+{_INSTALL_METHOD_CONTROLLED_FORMS}
+  <technical_identity> ist dabei GENAU der Wert aus dem Feld
+  "technical_identity" dieses Items (oder "name", falls technical_identity
+  null ist und name bereits eine gültige Distributionskennung ist) — nie
+  ein anderes Paket, keine zusätzlichen Flags, kein weiteres Paket, kein
+  Shell-Metazeichen, kein zusammengesetzter Befehl (z.B. "&&"), keine
+  venv-Aktivierung (z.B. "source .venv/bin/activate"), kein "python3 -m
+  venv ...", kein Docker-/Container-Befehl (z.B. "docker exec ... pip
+  install ..."). Das gilt UNABHÄNGIG davon, ob diese Variante auf einem
+  Host, in einer virtuellen Umgebung oder in einem Container läuft —
+  install_method bleibt in JEDEM Fall exakt eine der vier obigen Formen.
+  Setze install_method auf null, wenn kein automatisierter, kontrollierter
+  Install-Schritt existiert oder bekannt ist (z.B. bei state=
+  "already_installed"/"unavailable" oder einem anderen type).
+{_INSTALL_METHOD_NULL_SEMANTICS}
+{_PLACEMENT_NOT_IN_NAME_RULE}
+- ENVIRONMENT_CONSTRAINT:
+  "environment_constraint" ist AUSSCHLIESSLICH entweder null ODER exakt der
+  oben unter PLATTFORM genannte Wert ({council_input.platform}) — niemals
+  irgendein anderer Plattform-Bezeichner und niemals Freitext. Setze
+  "environment_constraint" auf {council_input.platform} NUR, wenn dieses
+  ToolchainItem technisch zwingend genau dieses Betriebssystem/diese
+  Plattform benötigt (z.B. ein Windows-only-Treiber auf einem Windows-
+  Projekt). Ist das Item plattformunabhängig — der Normalfall —, setze
+  "environment_constraint" auf null.
+  "environment_constraint" beschreibt AUSSCHLIESSLICH eine Betriebssystem-/
+  Plattform-Anforderung, NIEMALS eine Deployment-, Platzierungs- oder
+  Ausführungsumgebungs-Beschreibung. Begriffe wie "host", "container",
+  "docker", "within_container", "within_venv", "build-server", externe
+  Hardware oder Serial-/udev-Platzierungshinweise gehören NIEMALS in
+  "environment_constraint" — diese Konzepte werden bereits durch das
+  Variantenfeld "environment" (host|container|target|physical_hardware|
+  simulation) und ggf. "purpose"/"description" abgedeckt.
+- PROVIDES_VERIFICATION:
+  Jedes ToolchainItem KANN im Feld "provides_verification" die Menge der
+  Verifikationsmechanismus-Kennungen deklarieren, die DIESES Item tatsächlich
+  ausführen kann (z.B. ein "pytest"-Paket deklariert ["pytest"], ein
+  "npm"-Executable deklariert ["npm_test"], ein "cmake"-Executable
+  deklariert ["ctest"]). Das ist eine strukturierte, von dir als Produzent
+  erklärte Fähigkeitsrelation — exakt wie "provided_by" bereits eine
+  Installationsbeziehung zwischen zwei ToolchainItems derselben Variante
+  erklärt. S2.3 nutzt dieses Feld, um mechanisch zu beweisen, dass ein
+  verification_coverage-Eintrag zu einem WIRKLICH kompatiblen Toolchain-Item
+  gehört, statt Mechanismus-Namen frei zu raten oder anhand von Teilstrings
+  zu vergleichen. Deklariere provides_verification nur für Mechanismen, die
+  dieses Item auf DIESER Variante auch tatsächlich ausführen kann.
+- VERIFICATION_COVERAGE:
+  "verification" bleibt ein kurzer, menschenlesbarer Freitext-Überblick. Für
+  jedes bindende Requirement, das laut seinem eigenen verification_method
+  eine Verifikation verlangt, füge zusätzlich einen strukturierten Eintrag in
+  "verification_coverage" hinzu:
+    requirement_refs: die requirement_ref(s), die dieser EINE Mechanismus
+      abdeckt (mehrere möglich).
+    kind: AUSSCHLIESSLICH eine der sieben Kategorien test_command,
+      build_command, static_analysis, probe, smoke_test, config_validation,
+      manual_review — niemals eine andere.
+    mechanism: eine einzelne, technische Kennung ohne Leerzeichen (z.B.
+      "pytest", "npm_test", "cargo_test", "go_test", "ctest",
+      "platformio_test", "esphome_validate") — niemals ein Shell-Kommando,
+      niemals Fließtext wie "Tests laufen lassen". Dieser Mechanismus MUSS
+      in "provides_verification" eines ToolchainItems DERSELBEN Variante
+      enthalten sein, dessen state NICHT "unavailable" ist — sonst gilt das
+      Requirement als technisch nicht verifizierbar (ADC kann den
+      Mechanismus dann weder kontrollieren noch beobachten).
+    evidence: die requirement_ref ODER der name/technical_identity GENAU
+      dieses ToolchainItems, das "mechanism" in seinem eigenen
+      "provides_verification" deklariert. Bei kind="manual_review" darf
+      evidence stattdessen eine der abgedeckten requirement_refs sein — dann
+      MUSS zusätzlich "human_governed": true gesetzt werden, um eine bewusst
+      als menschliche Prüfung governte Verifikation auszudrücken (niemals
+      ein stillschweigend angenommener manueller Schritt). Bei
+      kind="probe" oder "config_validation" darf evidence ebenfalls eine
+      abgedeckte requirement_ref sein, wenn kein installierbares Werkzeug
+      existiert, an das sich die Evidenz binden ließe.
+  Freier Text allein in "verification" begründet KEINE Abdeckung — ohne
+  einen passenden, mechanistisch kompatiblen verification_coverage-Eintrag
+  gilt das Requirement als technisch nicht verifizierbar und die Variante
+  wird von S2.3 abgelehnt.
 
 Antworte NUR mit validem JSON — kein Begleittext, keine Erklärungen.
 
@@ -430,6 +575,19 @@ DEINE NUR-AUFGABEN (ausschließlich diese, nichts anderes):
    ursprünglichen variant_ids.  Vermerke in "origin_agents", welche Agenten
    zur Variante beigetragen haben.
 
+   VOLLSTÄNDIGKEITSPFLICHT: Jede im Feld "variants" zurückgegebene finale
+   Variante repräsentiert eine vollständig eigenständige Lösung.  Ihre
+   Toolchain MUSS für JEDE Requirement-ID aus der Requirements-Liste ein
+   ToolchainItem mit passendem requirement_ref enthalten (direkt, oder als
+   transitiv bereitgestellt über "provided_by").  Wenn kein einzelner
+   Agenten-Vorschlag allein alle Requirements abdeckt (z. B. weil ein
+   Agent nur die Programmiersprachen-/Paket-Installation und ein anderer
+   nur die Build-Werkzeug-Installation vorschlägt), MUSS der Merge die
+   komplementären Vorschläge unterschiedlicher Agenten zu mindestens
+   einer gemeinsamen, vollständigen Variante zusammenführen.  Eine
+   Variante, die nur einen Teil der Requirements abdeckt, ist keine
+   gültige eigenständige Lösung.
+
 3. RANKING:
    Ranke die konsolidierten Varianten anhand der Agenten-Votes.
    Gewichtung: average_scores (60 %), consensus_level (25 %),
@@ -475,6 +633,7 @@ def build_chairman_prompt(
 
     project_id = council_input.project_id if council_input else "unbekannt"
     stack = council_input.detected_stack or "unbekannt" if council_input else "unbekannt"
+    platform = council_input.platform if council_input else "unbekannt"
     intelligence_section = (
         _build_intelligence_section(council_input.project_intelligence)
         if council_input and council_input.project_intelligence else ""
@@ -495,6 +654,7 @@ def build_chairman_prompt(
 ============================================================
 PROJEKT: {project_id}
 STACK: {stack}
+PLATTFORM: {platform}
 ============================================================
 
 EXISTING-PROJECT INTELLIGENCE:
@@ -529,7 +689,74 @@ REQUIREMENT-TO-IMPLEMENTATION-VERTRAG FÜR SYNTHESE UND MERGES:
   Diese Regel erteilt keine Ausführungsautorität; Human Approval und
   kontrollierte Ausführung bleiben unverändert.
 - Bei Merges: Bewahre provided_by-Beziehungen aus den ursprünglichen ToolchainItems.
-  Entferne kein provided_by ohne technischen Grund.
+  Entferne kein provided_by ohne technischen Grund. Bewahre ebenso
+  provides_verification-Deklarationen aus den ursprünglichen ToolchainItems
+  unverändert — sie sind eine vom Item selbst erklärte Fähigkeit und ändern
+  sich durch einen Merge nicht.
+- technical_identity ist die exakte technische Kennung des Pakets/Tools
+  (z.B. bei type="python_package" die PyPI-Kennung), nicht der
+  Anzeigename "name". Übernimm technical_identity unverändert aus den
+  Vorschlägen, wenn ein Vorschlag es gesetzt hat.
+- INSTALL_METHOD (Gültigkeitsregel geht vor Erhaltungsregel, nur für
+  type="python_package"): "install_method" wird von einem festen,
+  kontrollierten Executor ausgeführt, der NUR eine der folgenden vier
+  Formen versteht:
+{_INSTALL_METHOD_CONTROLLED_FORMS}
+  <technical_identity> ist dabei GENAU der (ggf. beim Merge bereits
+  korrigierte) Wert aus "technical_identity" bzw. "name" dieses Items.
+  Übernimm install_method aus den Ausgangsvorschlägen NUR DANN
+  unverändert, wenn es BEREITS eine dieser vier Formen ist. Ist der
+  Ausgangswert stattdessen ein zusammengesetzter Shell-Befehl, eine
+  venv-Aktivierung (z.B. "source .venv/bin/activate"), ein "python3 -m
+  venv ..."-Aufruf oder ein Docker-/Container-Befehl (z.B. "docker exec
+  ... pip install ..."), darfst du diesen Wert NICHT blind übernehmen —
+  setze install_method stattdessen auf die passende der vier obigen
+  Formen mit derselben technical_identity, oder auf null, falls sich aus
+  den Ausgangsvorschlägen keine der vier Formen sicher ableiten lässt.
+{_INSTALL_METHOD_NULL_SEMANTICS}
+{_PLACEMENT_NOT_IN_NAME_RULE}
+- ENVIRONMENT_CONSTRAINT (Gültigkeitsregel geht vor Erhaltungsregel):
+  "environment_constraint" ist AUSSCHLIESSLICH entweder null ODER exakt der
+  oben unter PLATTFORM genannte Wert ({platform}) — niemals eine
+  Beschreibung von Deployment, Platzierung oder Ausführungsumgebung wie
+  "host", "container", "docker", "within_container", "within_venv",
+  "build-server", externe Hardware oder Serial-/udev-Platzierungshinweise.
+  Übernimm den environment_constraint-Wert eines ToolchainItems aus dem
+  ursprünglichen Vorschlag NUR DANN unverändert, wenn er BEREITS gültig
+  ist (null oder exakt {platform}). Ist der ursprüngliche Wert stattdessen
+  irgendein anderer Freitext- oder Deployment-/Platzierungswert (z.B.
+  "host", "container", "docker", "within_venv", "build-server", externe
+  Hardware), darfst du ihn NICHT blind übernehmen — ein ungültiger
+  Ursprungswert bleibt ungültig, auch wenn du ihn nur weiterreichst. Bilde
+  einen solchen ungültigen Wert aber auch NICHT heuristisch auf
+  {platform} oder null ab (z.B. "container" automatisch zu null oder
+  "host" automatisch zu {platform} zu machen ist BEIDES UNZULÄSSIG).
+  Bestimme stattdessen selbst — ausgehend von der TATSÄCHLICHEN
+  technischen Anforderung dieses ToolchainItems in der zusammengeführten
+  Variante, nicht von seinem ungültigen Ursprungswert — den korrekten
+  Wert neu: exakt {platform}, wenn dieses Item wirklich zwingend genau
+  diese Plattform benötigt, sonst null. Synthetisiere oder erfinde beim
+  Zusammenführen KEINE neue Deployment-/Platzierungsbeschreibung in
+  dieses Feld — solche Konzepte gehören ausschließlich in "environment"
+  oder andere beschreibende Felder (z.B. "purpose", "description"),
+  niemals in "environment_constraint".
+- verification_coverage: Übernimm verification_coverage-Einträge unverändert
+  aus den Vorschlägen, wenn ein Vorschlag sie gesetzt hat, und passe
+  requirement_refs bei einem Merge an die tatsächlich zusammengeführten
+  Requirements an. Jedes bindende Requirement mit eigenem
+  verification_method benötigt in JEDER finalen Variante mindestens einen
+  verification_coverage-Eintrag mit gültigem kind (test_command/
+  build_command/static_analysis/probe/smoke_test/config_validation/
+  manual_review), einem einzelnen technischen mechanism-Token (nie
+  Fließtext) und evidence, die die requirement_ref oder den name/
+  technical_identity GENAU des ToolchainItems referenziert, das diesen
+  mechanism in seinem eigenen provides_verification deklariert (aus der
+  Toolchain DERSELBEN finalen Variante) — reine Fließtext-Nähe (z.B.
+  "pytest" klingt nach Python) genügt NICHT, es muss dieselbe technische
+  Kennung sein. Bei kind="manual_review" ist statt eines ToolchainItems
+  eine abgedeckte requirement_ref als evidence zulässig, aber NUR zusammen
+  mit "human_governed": true. Freier Text allein im Feld "verification"
+  reicht dafür nicht aus.
 
 VORSCHLÄGE (Phase 1 — alle Agenten):
 {proposals_json}
@@ -569,14 +796,16 @@ JSON-SCHEMA:
         {{
           "requirement_ref": "req-1",
           "name": "python",
+          "technical_identity": null,
           "type": "executable",
           "install_method": null,
           "version": null,
           "purpose": "Python runtime",
           "depends_on": [],
           "state": "already_installed",
-          "environment_constraint": null,
-          "provided_by": null
+          "environment_constraint": null | "<exakter PLATTFORM-Wert, z.B. windows>",
+          "provided_by": null,
+          "provides_verification": ["pytest"]
         }}
       ],
       "advantages": ["Vorteil 1"],
@@ -584,7 +813,16 @@ JSON-SCHEMA:
       "risks": ["Risiko 1"],
       "confidence": 0.9,
       "feasibility": "high",
-      "verification": "esphome version"
+      "verification": "esphome version",
+      "verification_coverage": [
+        {{
+          "requirement_refs": ["req-1"],
+          "kind": "test_command",
+          "mechanism": "pytest",
+          "evidence": "req-1",
+          "human_governed": false
+        }}
+      ]
     }}
   ],
   "rejected_variants": [
