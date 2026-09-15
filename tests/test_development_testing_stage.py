@@ -132,12 +132,16 @@ def test_upstream_failure_stops_without_synthesizing_results(tmp_path, failing_c
 
 
 # ---------------------------------------------------------------------
-# CLAUDE-ADC-REWORK-DIAGNOSTIC-FIDELITY-FIX-007: the verification_registry
+# CLAUDE-ADC-REWORK-DIAGNOSTIC-FIDELITY-FIX-007/008: the verification_registry
 # branch synthesizes a TestResult from a VerificationResult. Previously
-# this discarded every failing step's real stdout/stderr/return_code and
-# kept only a bare "area/step: status" summary line -- these tests prove
-# the real, actionable per-step evidence now survives into the TestResult
-# that feeds TestingStage/ControlledReworkStage, for any verifier kind.
+# this discarded every failing step's real stdout/stderr/return_code (and,
+# separately, its `diagnostics`/`error_category` -- the only explanation
+# BLOCKED/EXECUTION_ERROR steps ever populate) and kept only a bare
+# "area/step: status" summary line -- these tests prove the real,
+# actionable per-step evidence now survives into the TestResult that
+# feeds TestingStage/ControlledReworkStage, for any verifier kind, and
+# that multiple failing steps remain individually attributable rather
+# than flattened into one ambiguous command/return_code.
 # ---------------------------------------------------------------------
 
 def _verification_stage(verification_result, project_test_runner=None):
@@ -179,15 +183,27 @@ def test_verification_failure_preserves_real_step_stdout_stderr_return_code(tmp_
     result = stage.run(_request(tmp_path))
 
     runner.run.assert_not_called()
-    assert result.test_result.passed is False
-    assert result.test_result.return_code == 2
-    assert result.test_result.timed_out is False
-    assert "Failed config: actionable message" in result.test_result.stdout
-    assert "stderr detail" in result.test_result.stderr
-    assert result.test_result.command == ("tool validate config",)
+    test_result = result.test_result
+    assert test_result.passed is False
+    assert test_result.return_code == 2
+    assert test_result.timed_out is False
+    assert test_result.stdout == "Failed config: actionable message"
+    assert test_result.stderr == "stderr detail"
+    assert test_result.command == ("tool", "validate", "config")
+
+    # A single failing step is a faithful, unambiguous case: the scalar
+    # fields above already describe it exactly, but step_failures still
+    # carries the same evidence explicitly for attribution.
+    assert len(test_result.step_failures) == 1
+    only = test_result.step_failures[0]
+    assert only.area == "root"
+    assert only.step_id == "validate"
+    assert only.return_code == 2
+    assert only.stdout == "Failed config: actionable message"
+    assert only.stderr == "stderr detail"
 
 
-def test_verification_multiple_failures_aggregate_deterministically(tmp_path):
+def test_verification_multiple_failures_remain_individually_attributable(tmp_path):
     passing_step = VerificationStepResult(
         step_id="unit", area="root", status=PASS.value, verification_kind="test",
         runner_type="pytest", passed=True, return_code=0,
@@ -199,9 +215,10 @@ def test_verification_multiple_failures_aggregate_deterministically(tmp_path):
         stdout="first failure", stderr="first stderr", command=("tool", "validate"), timed_out=False,
     )
     second_failure = VerificationStepResult(
-        step_id="compile", area="root", status=FAIL.value, verification_kind="compile",
+        step_id="compile", area="root", status="blocked", verification_kind="compile",
         runner_type="generic_builder", passed=False, return_code=None,
         stdout="", stderr="", command=(), timed_out=False,
+        diagnostics="Blocked by failed dependency: root-validate",
     )
     verification_result = VerificationResult(
         run_id="r", steps=(passing_step, first_failure, second_failure), aggregate_status=FAIL.value,
@@ -212,10 +229,20 @@ def test_verification_multiple_failures_aggregate_deterministically(tmp_path):
 
     test_result = result.test_result
     assert test_result.passed is False
-    assert test_result.return_code == 2, "must use the first failing step that actually has a return_code"
-    assert "first failure" in test_result.stdout
-    assert "first stderr" in test_result.stderr
-    assert "root/compile" in test_result.stdout, "the second failing step is still represented, even with no stdout of its own"
+    # No single step's return_code may be presented as if it described
+    # every failure -- the scalar aggregate is a neutral marker instead.
+    assert test_result.return_code == 1
+    assert test_result.command == ("verification",)
+
+    failures = test_result.step_failures
+    assert len(failures) == 2
+    assert failures[0].step_id == "validate"
+    assert failures[0].return_code == 2
+    assert failures[0].stdout == "first failure"
+    assert failures[0].stderr == "first stderr"
+    assert failures[1].step_id == "compile"
+    assert failures[1].return_code is None
+    assert failures[1].diagnostics == "Blocked by failed dependency: root-validate"
 
 
 def test_verification_all_steps_passing_yields_a_passed_test_result(tmp_path):

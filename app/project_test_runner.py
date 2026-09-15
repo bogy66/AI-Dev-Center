@@ -13,6 +13,30 @@ class TestExecutionRequest:
 
 
 @dataclass(frozen=True)
+class StepFailureEvidence:
+    """One deterministically attributable failing step's own evidence.
+
+    Generic across any controlled verifier (pytest, a compiler, a config
+    validator, ...) -- mirrors the fields a VerificationStepResult already
+    carries, so a TestResult built from several failing steps can still
+    represent each one individually instead of flattening them into a
+    single, potentially misattributed command/return_code/stdout/stderr.
+    """
+    area: str
+    step_id: str
+    runner_type: str
+    verification_kind: str
+    status: str
+    command: tuple[str, ...] = ()
+    return_code: int | None = None
+    timed_out: bool = False
+    error_category: str | None = None
+    diagnostics: str = ""
+    stdout: str = ""
+    stderr: str = ""
+
+
+@dataclass(frozen=True)
 class TestResult:
     passed: bool
     return_code: int
@@ -20,6 +44,12 @@ class TestResult:
     stderr: str
     command: tuple[str, ...]
     timed_out: bool = False
+    # Populated only when this TestResult was folded from a VerificationResult
+    # with one or more failing steps; empty for a plain pytest/unittest run.
+    # The scalar fields above remain a safe, neutral aggregate view (never a
+    # single step's value presented as if it described every failure); this
+    # tuple is the attributable per-step detail.
+    step_failures: tuple[StepFailureEvidence, ...] = ()
 
 
 class ProjectTestRunner:

@@ -1,21 +1,51 @@
 """Canonical coordination of existing development and testing stages."""
 from dataclasses import dataclass
 
-from app.project_test_runner import TestExecutionRequest, TestResult
+from app.project_test_runner import StepFailureEvidence, TestExecutionRequest, TestResult
+
+
+def _step_failure_evidence(step) -> StepFailureEvidence:
+    """Carry one failing VerificationStepResult's full evidence forward.
+
+    Reads only the fields VerificationStepResult already declares --
+    including `diagnostics`/`error_category`, which is the *only*
+    explanation some controlled outcomes (BLOCKED, EXECUTION_ERROR,
+    INVALID_PLAN, ...) ever populate, since their stdout/stderr are
+    empty by construction. Never verifier-specific: every field here
+    comes from the generic VerificationStepResult contract.
+    """
+    return StepFailureEvidence(
+        area=step.area,
+        step_id=step.step_id,
+        runner_type=step.runner_type,
+        verification_kind=step.verification_kind,
+        status=step.status,
+        command=step.command,
+        return_code=step.return_code,
+        timed_out=step.timed_out,
+        error_category=step.error_category,
+        diagnostics=step.diagnostics,
+        stdout=step.stdout,
+        stderr=step.stderr,
+    )
 
 
 def _test_result_from_verification(executable_steps) -> TestResult:
     """Fold real per-step verification evidence into one TestResult.
 
-    A `VerificationResult` carries the actual stdout/stderr/return_code
-    for each step (whatever kind of verifier produced it -- pytest, a
-    compiler, a config validator, ...), but `TestResult` only has one
-    stdout/stderr/return_code/command slot. Only `failure_summary` (a
-    bare "area/step: status" line, with no diagnostic text at all) was
-    being carried into it, so a failing rework Developer never actually
-    saw *why* a step failed -- only that it did. This aggregates the
-    real evidence from every failing step, in plan order, so nothing
-    verifier-specific has to be hard-coded here.
+    A `VerificationResult` carries the actual stdout/stderr/return_code/
+    diagnostics for each step (whatever kind of verifier produced it --
+    pytest, a compiler, a config validator, ...), but `TestResult` only
+    has one scalar stdout/stderr/return_code/command slot. Rather than
+    flattening every failing step into that one slot -- which either
+    drops diagnostics-only failures (BLOCKED/EXECUTION_ERROR steps whose
+    stdout/stderr are empty by construction) or falsely presents one
+    step's command/return_code as if it described every failure -- each
+    failing step's full evidence is preserved individually in
+    `step_failures`. The scalar fields stay a safe, neutral aggregate:
+    a real, faithful mirror of the one step's evidence when exactly one
+    step failed, or a neutral "N steps failed" marker (never one
+    arbitrarily chosen step's value) when several did.
     """
     passed_all = all(s.passed for s in executable_steps)
     if passed_all:
@@ -25,31 +55,29 @@ def _test_result_from_verification(executable_steps) -> TestResult:
         )
 
     failing = [s for s in executable_steps if not s.passed]
-    stdout_parts: list[str] = []
-    stderr_parts: list[str] = []
-    commands: list[str] = []
-    timed_out = False
-    return_code = None
-    for step in failing:
-        header = f"[{step.area}/{step.step_id} ({step.runner_type}/{step.verification_kind}): {step.status}]"
-        stdout_parts.append(header)
-        if step.stdout:
-            stdout_parts.append(step.stdout)
-        if step.stderr:
-            stderr_parts.append(f"{header}\n{step.stderr}")
-        if step.command:
-            commands.append(" ".join(str(part) for part in step.command))
-        timed_out = timed_out or step.timed_out
-        if return_code is None and step.return_code is not None:
-            return_code = step.return_code
+    step_failures = tuple(_step_failure_evidence(s) for s in failing)
+    timed_out = any(s.timed_out for s in failing)
+
+    if len(failing) == 1:
+        only = failing[0]
+        return TestResult(
+            passed=False,
+            return_code=only.return_code if only.return_code is not None else 1,
+            stdout=only.stdout,
+            stderr=only.stderr,
+            command=only.command if only.command else ("verification",),
+            timed_out=timed_out,
+            step_failures=step_failures,
+        )
 
     return TestResult(
         passed=False,
-        return_code=return_code if return_code is not None else 1,
-        stdout="\n".join(stdout_parts),
-        stderr="\n".join(stderr_parts),
-        command=tuple(commands) if commands else ("verification",),
+        return_code=1,
+        stdout=f"{len(failing)} verification steps failed; see step_failures for per-step detail.",
+        stderr="",
+        command=("verification",),
         timed_out=timed_out,
+        step_failures=step_failures,
     )
 
 

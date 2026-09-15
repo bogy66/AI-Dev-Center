@@ -1,11 +1,18 @@
-"""Regressions for CLAUDE-ADC-REWORK-DIAGNOSTIC-FIDELITY-FIX-007.
+"""Regressions for CLAUDE-ADC-REWORK-DIAGNOSTIC-FIDELITY-FIX-007/008.
 
 Real-System-E2E showed a rework Developer receiving only the
 DiagnosisReviewer's own paraphrase of a failure ("configuration
 validation failed") while the actual, actionable evidence (the real
 command, return code, stdout, stderr) from the previous controlled test
-run never reached it. These tests prove the deterministic evidence now
-reaches the rework contract, is bounded/truncated safely, remains
+run never reached it. FIX-007 closed the plumbing gap for a single
+failing step; an independent review then found two more gaps FIX-008
+closes here: BLOCKED/EXECUTION_ERROR steps -- whose only explanation
+lives in `diagnostics`, since their stdout/stderr are empty by
+construction -- were silently dropped, and multiple failing steps were
+flattened into one ambiguous command/return_code line. These tests prove
+the deterministic evidence (including diagnostics-only failures) now
+reaches the rework contract, stays individually attributable across
+multiple failing steps, is bounded/truncated safely, remains
 supplemental to (never a replacement for) the reviewer's interpretation,
 and that the surrounding one-rework/fail-closed architecture is
 unchanged. Nothing here is specific to any one verifier (ESPHome or
@@ -316,4 +323,87 @@ def test_productive_rework_boundary_preserves_deterministic_evidence_and_reviewe
 
     # The reviewer's generic interpretation is present too, but supplemental --
     # it never replaced the specific evidence above.
+    assert "configuration validation failed" in rework_developer_prompt
+
+
+# ---------------------------------------------------------------------
+# FIX-008 productive boundary regression: the initial VerificationResult
+# now contains a FAIL step (with stdout/stderr) AND a dependent BLOCKED
+# step (diagnostics only) AND a sibling EXECUTION_ERROR step -- exactly
+# the shape of the triggering Real-System-E2E's own "validate failed,
+# compile blocked" sequence, generalized with one more failure mode.
+# ---------------------------------------------------------------------
+
+def _mixed_failure_verification_result():
+    validate_step = VerificationStepResult(
+        step_id="validate", area="root", status=FAIL.value,
+        verification_kind="validate", runner_type="generic_config_validator",
+        passed=False, return_code=2,
+        stdout="Failed config: remove the deprecated key and use the new component block instead.",
+        stderr="ERROR: config schema violation at line 4",
+        command=("generic-tool", "validate", "config.file"), timed_out=False,
+    )
+    compile_step = VerificationStepResult(
+        step_id="compile", area="root", status="blocked",
+        verification_kind="compile", runner_type="generic_builder",
+        passed=False,
+        diagnostics="Blocked by failed dependency: root-validate",
+    )
+    flash_step = VerificationStepResult(
+        step_id="flash", area="root", status="execution_error",
+        verification_kind="flash", runner_type="generic_flasher",
+        passed=False, error_category="OSError",
+        diagnostics="device not found on /dev/ttyUSB0",
+    )
+    return VerificationResult(
+        run_id="run-1", steps=(validate_step, compile_step, flash_step), aggregate_status=FAIL.value,
+    )
+
+
+def test_productive_rework_boundary_preserves_evidence_from_every_failing_step(tmp_path):
+    executor = _FakeExecutor()
+    development_stage = DevelopmentStage(DeveloperAgent(executor))
+    test_change_generator = TestChangeGenerator(executor)
+    project_test_runner = Mock()
+    testing_stage = TestingStage(DiagnosisReviewer(executor))
+    verification_registry = _FakeVerificationRegistry(_mixed_failure_verification_result())
+    project_inspector = _FakeProjectInspector()
+
+    development_testing_stage = DevelopmentTestingStage(
+        development_stage, test_change_generator, DeveloperFileApplier,
+        project_test_runner, testing_stage,
+        verification_registry=verification_registry, project_inspector=project_inspector,
+    )
+    controlled_rework_stage = ControlledReworkStage(development_testing_stage)
+    request = DevelopmentRequest("project", tmp_path, "Create a generic validated config project")
+
+    result = controlled_rework_stage.run(request)
+
+    project_test_runner.run.assert_not_called()
+    assert result.rework_executed is True
+    assert result.status == "rework_required"
+
+    developer_calls = executor.calls_for("developer")
+    assert len(developer_calls) == 2
+    rework_developer_prompt = developer_calls[1][1]
+
+    # The FAIL step's real stdout/stderr/return_code.
+    assert "Failed config: remove the deprecated key" in rework_developer_prompt
+    assert "ERROR: config schema violation at line 4" in rework_developer_prompt
+
+    # The BLOCKED step's ONLY evidence -- its diagnostics -- must still
+    # arrive, even though its stdout/stderr are both empty.
+    assert "Blocked by failed dependency: root-validate" in rework_developer_prompt
+
+    # The EXECUTION_ERROR step's error_category and diagnostics.
+    assert "OSError" in rework_developer_prompt
+    assert "device not found on /dev/ttyUSB0" in rework_developer_prompt
+
+    # Each failing step remains its own, separately identifiable record.
+    validate_idx = rework_developer_prompt.index("step_id=validate")
+    compile_idx = rework_developer_prompt.index("step_id=compile")
+    flash_idx = rework_developer_prompt.index("step_id=flash")
+    assert validate_idx < compile_idx < flash_idx
+
+    # The reviewer's generic interpretation remains present, supplementally.
     assert "configuration validation failed" in rework_developer_prompt
