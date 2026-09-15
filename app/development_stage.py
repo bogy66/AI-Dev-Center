@@ -25,10 +25,10 @@ class DevelopmentResult:
 
 
 class DeveloperAgent:
-    """3.1 Development Change Generation: generate structured changes only.
+    """Development Change Generation: generate structured changes only.
 
     Never mutates the filesystem or provenance -- that is exclusively
-    3.3's (ChangeApplicationService) responsibility.
+    ChangeApplicationService's responsibility.
     """
     def __init__(self, executor):
         self._executor = executor
@@ -38,7 +38,7 @@ class DeveloperAgent:
 
 
 class DevelopmentStage:
-    """Orchestrates 3.1 (generation) then 3.3 (application) for development changes."""
+    """Orchestrates change generation then change application for development changes."""
 
     def __init__(self, developer_agent: DeveloperAgent, file_applier_factory=DeveloperFileApplier,
                  change_application: ChangeApplicationService | None = None):

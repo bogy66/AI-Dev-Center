@@ -1,6 +1,7 @@
 """Regressions for CLAUDE-ADC-S3-CHANGE-GENERATION-APPLICATION-ARCH-FIX-001.
 
-Proves DeveloperAgent (3.1) and TestChangeGenerator (3.2) share ONE
+Proves DeveloperAgent (Development Change Generation) and
+TestChangeGenerator (Test Change Generation) share ONE
 structured-generate-and-repair implementation (app.structured_change_
 generation.generate_structured_changes) while remaining distinct role
 boundaries with correct, explicit role identity -- and that neither

@@ -1,7 +1,7 @@
-"""Shared structured-JSON generate+repair mechanism for 3.1/3.2.
+"""Shared structured-JSON generate+repair mechanism for change generation.
 
-`DeveloperAgent` (3.1 Development Change Generation) and
-`TestChangeGenerator` (3.2 Test Change Generation) are distinct role
+`DeveloperAgent` (Development Change Generation) and
+`TestChangeGenerator` (Test Change Generation) are distinct role
 boundaries -- they must stay separate classes with an explicit,
 distinct role identity ("developer" vs "tester") -- but the MECHANICS
 of "call the role once, parse the structured JSON contract, and on a

@@ -1,12 +1,13 @@
-"""Subsystem 3.3: Change Application & Provenance Attribution.
+"""Change Application & Provenance Attribution.
 
 The one, central implementation of "apply a structured change-set to a
 project, routed through RunChangeProvenance when available, under the
 correct lifecycle phase" -- used identically for development changes
-(3.1's output) and test changes (3.2's output), for both the initial
-cycle and the rework cycle. Mutation policy (how a change-set actually
-reaches the filesystem, which phase label attributes it, and what
-"applied successfully" means) belongs here and nowhere else; 3.1/3.2
+(Development Change Generation's output) and test changes (Test Change
+Generation's output), for both the initial cycle and the rework cycle.
+Mutation policy (how a change-set actually reaches the filesystem,
+which phase label attributes it, and what "applied successfully"
+means) belongs here and nowhere else; the change-generation components
 never mutate the filesystem or provenance themselves.
 """
 from __future__ import annotations

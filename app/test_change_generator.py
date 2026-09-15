@@ -3,10 +3,10 @@ from app.structured_change_generation import generate_structured_changes
 
 
 class TestChangeGenerator:
-    """3.2 Test Change Generation: generate structured test changes only.
+    """Test Change Generation: generate structured test changes only.
 
     Never mutates the filesystem or provenance -- that is exclusively
-    3.3's (ChangeApplicationService) responsibility.
+    ChangeApplicationService's responsibility.
     """
     __test__ = False
     def __init__(self, executor):

@@ -1,9 +1,10 @@
 """Regressions for CLAUDE-ADC-S3-CHANGE-GENERATION-APPLICATION-ARCH-FIX-001.
 
-app.change_application is the single, central 3.3 (Change Application &
-Provenance Attribution) implementation used by BOTH development changes
-(3.1's output) and test changes (3.2's output), for both the initial and
-rework cycle. These tests exercise it directly, independent of
+app.change_application is the single, central Change Application &
+Provenance Attribution implementation used by BOTH development changes
+(Development Change Generation's output) and test changes (Test Change
+Generation's output), for both the initial and rework cycle. These
+tests exercise it directly, independent of
 DevelopmentStage/DevelopmentTestingStage.
 """
 from unittest.mock import Mock
