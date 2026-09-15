@@ -1,0 +1,116 @@
+THEMA: Adaptive ADC Engineering Intelligence statt frühem Fine-Tuning
+
+Zielbild:
+ADC soll langfristig eine eigene Engineering Intelligence besitzen, die ADC,
+seine Architektur, Requirements, Contracts, Entscheidungen, Tests, historischen
+Fehler und Real-System-E2E-Learnings versteht und auf dieser Basis ADC selbst
+weiterentwickeln kann.
+
+Wichtige Architekturentscheidung:
+Ein frühes Fine-Tuning eines eigenen Modells ist derzeit NICHT das bevorzugte
+Vorgehen.
+
+Begründung:
+ADC entwickelt sich aktuell sehr schnell weiter. Architektur, Contracts,
+Subsystem-Verantwortlichkeiten, Testregeln, Sicherheitsgrenzen und Engineering-
+Entscheidungen verändern sich laufend.
+
+Ein statisch fine-getuntes Modell würde deshalb sehr schnell veralten und könnte
+alte oder bereits korrigierte ADC-Regeln internalisieren.
+
+CURRENT:
+- ADC-Wissen liegt verteilt in Code, Tests, Dokumentation, Requirements,
+  Contracts, Engineering Decisions und bisherigen Entwicklungserfahrungen.
+- Claude/Codex/OpenCode benötigen für Aufgaben regelmäßig erneut Kontext über
+  ADC-Architektur, Regeln und bisherigen Entwicklungsstand.
+- Real-System-E2E-Learnings werden bereits in deterministische Regression-TCs
+  und Contracts überführt, bilden aber noch keine zentrale lernende
+  Engineering-Wissensbasis.
+
+TARGET:
+Eine adaptive ADC Engineering Intelligence, zunächst bevorzugt in Python,
+bestehend aus:
+
+1. strukturierter ADC Knowledge Base
+2. persistentem Engineering Memory
+3. Retrieval des jeweils aktuellen Repository-/Projektzustands
+4. Requirements- und Contract-Wissen
+5. Engineering Decisions
+6. Test- und Regression-Historie
+7. Real-System-E2E-Learnings
+8. bekannten Risiken und offenen Capability-Gaps
+9. Reasoning/Planning-Agent
+10. kritischem Evaluator
+11. Learning Loop für neue akzeptierte Engineering-Erfahrungen
+
+Grundprinzip:
+
+Aktueller ADC-Zustand
+→ relevante Knowledge-/Memory-Artefakte laden
+→ Problem verstehen
+→ betroffene Subsysteme und Contracts bestimmen
+→ Änderung planen
+→ implementieren
+→ deterministisch verifizieren
+→ Real-System-Evidence bewerten
+→ akzeptiertes neues Wissen strukturiert speichern
+
+Lernprinzip für Real-System-E2E:
+
+Real-System-E2E NIO
+→ Root Cause
+→ fehlendes/unvollständiges Requirement oder Contract
+→ permanenter deterministischer Regression-TC
+→ RED before fix
+→ Fix
+→ GREEN
+→ relevante Permutationen
+→ Full Suite
+→ neues Engineering Learning persistent speichern
+
+Das Lernen soll nicht nur konkrete Fehler speichern, sondern soweit mechanisch
+begründet generalisieren.
+
+Beispiel:
+
+Beobachtung:
+ESPHome erzeugt während Verification selbst Projektartefakte.
+
+Nicht gewünschtes Lernen:
+"ESPHome .gitignore speziell behandeln."
+
+Gewünschtes generalisiertes Lernen:
+"Externe Engineering-Tools können während kontrollierter Ausführung
+Projektzustand verändern. Run-introduced Änderungen außerhalb genehmigter
+Provenance müssen erkannt und sicher behandelt werden."
+
+Fine-Tuning:
+Fine-Tuning bleibt eine spätere Option.
+
+Es wird erst sinnvoll, wenn:
+- ADC-Architektur deutlich stabiler ist,
+- ausreichend viele hochwertige akzeptierte Engineering-Fälle existieren,
+- Input → Analyse → Entscheidung → Fix → Evidence zuverlässig dokumentiert ist,
+- ein repräsentativer Trainingsdatensatz aufgebaut wurde,
+- und klar ist, welches Verhalten überhaupt dauerhaft in Modellgewichte
+  übernommen werden soll.
+
+Bis dahin gilt bevorzugt:
+
+LLM
++ aktueller Repository-Zustand
++ strukturierte ADC Knowledge Base
++ persistentes Engineering Memory
++ Requirements/Contracts
++ Engineering Decisions
++ Test-/E2E-Learnings
++ kritische Verifikation
+
+statt:
+
+statisch fine-getuntes ADC-Modell.
+
+Langfristige Vision:
+ADC versteht ADC und kann ADC unter denselben Architektur-, Approval-,
+Security- und Evidence-Regeln analysieren, weiterentwickeln und verifizieren,
+mit denen ADC andere Software-, Firmware- und Hardware-Projekte entwickelt.
