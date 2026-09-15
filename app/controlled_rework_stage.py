@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from app.development_stage import DevelopmentRequest
 from app.development_testing_stage import DevelopmentTestingResult
+from app.diagnostic_evidence import format_test_result_evidence
 from app.testing_stage import ReworkRequest
 
 
@@ -26,10 +27,20 @@ class ReworkDevelopmentRequest:
 
     @property
     def task(self):
+        # CLAUDE-ADC-REWORK-DIAGNOSTIC-FIDELITY-FIX-007: `diagnostics`
+        # above is the DiagnosisReviewer's own interpretation, and it may
+        # be as generic as "configuration validation failed" -- it is
+        # supplemental context, never a substitute for the actual
+        # deterministic evidence of what the previous controlled test
+        # run produced. Without the block below, a rework Developer only
+        # ever saw the reviewer's paraphrase and lost the real
+        # command/return_code/stdout/stderr entirely.
+        evidence = format_test_result_evidence(self.previous_test_result)
         return (
             f"{self.original_request.task}\n\n"
             f"Rework required: {self.rework_request.reason}\n"
-            f"Diagnostics: {self.rework_request.diagnostics}"
+            f"Diagnostics: {self.rework_request.diagnostics}\n\n"
+            f"Previous test evidence:\n{evidence}"
         )
 
     @property

@@ -5,6 +5,7 @@ import pytest
 
 from app.development_stage import DevelopmentRequest
 from app.development_testing_stage import DevelopmentTestingStage, DevelopmentTestingResult
+from app.verification import FAIL, PASS, VerificationResult, VerificationStepResult
 
 
 def _request(tmp_path):
@@ -128,3 +129,124 @@ def test_upstream_failure_stops_without_synthesizing_results(tmp_path, failing_c
     }[failing_component]
     actual_calls = (development.run.call_count, generator.generate.call_count, applier.apply.call_count, runner.run.call_count, testing.run.call_count)
     assert actual_calls == expected_calls
+
+
+# ---------------------------------------------------------------------
+# CLAUDE-ADC-REWORK-DIAGNOSTIC-FIDELITY-FIX-007: the verification_registry
+# branch synthesizes a TestResult from a VerificationResult. Previously
+# this discarded every failing step's real stdout/stderr/return_code and
+# kept only a bare "area/step: status" summary line -- these tests prove
+# the real, actionable per-step evidence now survives into the TestResult
+# that feeds TestingStage/ControlledReworkStage, for any verifier kind.
+# ---------------------------------------------------------------------
+
+def _verification_stage(verification_result, project_test_runner=None):
+    development_stage = Mock()
+    development_stage.run.return_value = SimpleNamespace(status="success")
+    generator = Mock()
+    generator.generate.return_value = {"changes": []}
+    applier = Mock()
+    applier.apply.return_value = {"applied": [], "skipped": []}
+    factory = Mock(return_value=applier)
+    runner = project_test_runner if project_test_runner is not None else Mock()
+    testing_stage = Mock()
+    testing_stage.run.side_effect = lambda development, test: SimpleNamespace(
+        status="accepted" if test.passed else "rework_required", rework_request=None,
+    )
+    registry = Mock()
+    registry.execute_plan.return_value = verification_result
+    inspector = Mock()
+    inspector.build_intelligence.return_value = None
+
+    stage = DevelopmentTestingStage(
+        development_stage, generator, factory, runner, testing_stage,
+        verification_registry=registry, project_inspector=inspector,
+    )
+    return stage, runner, registry
+
+
+def test_verification_failure_preserves_real_step_stdout_stderr_return_code(tmp_path):
+    step = VerificationStepResult(
+        step_id="validate", area="root", status=FAIL.value,
+        verification_kind="validate", runner_type="generic_config_validator",
+        passed=False, return_code=2,
+        stdout="Failed config: actionable message", stderr="stderr detail",
+        command=("tool", "validate", "config"), timed_out=False,
+    )
+    verification_result = VerificationResult(run_id="r", steps=(step,), aggregate_status=FAIL.value)
+    stage, runner, registry = _verification_stage(verification_result)
+
+    result = stage.run(_request(tmp_path))
+
+    runner.run.assert_not_called()
+    assert result.test_result.passed is False
+    assert result.test_result.return_code == 2
+    assert result.test_result.timed_out is False
+    assert "Failed config: actionable message" in result.test_result.stdout
+    assert "stderr detail" in result.test_result.stderr
+    assert result.test_result.command == ("tool validate config",)
+
+
+def test_verification_multiple_failures_aggregate_deterministically(tmp_path):
+    passing_step = VerificationStepResult(
+        step_id="unit", area="root", status=PASS.value, verification_kind="test",
+        runner_type="pytest", passed=True, return_code=0,
+        stdout="ok", stderr="", command=("pytest",), timed_out=False,
+    )
+    first_failure = VerificationStepResult(
+        step_id="validate", area="root", status=FAIL.value, verification_kind="validate",
+        runner_type="generic_config_validator", passed=False, return_code=2,
+        stdout="first failure", stderr="first stderr", command=("tool", "validate"), timed_out=False,
+    )
+    second_failure = VerificationStepResult(
+        step_id="compile", area="root", status=FAIL.value, verification_kind="compile",
+        runner_type="generic_builder", passed=False, return_code=None,
+        stdout="", stderr="", command=(), timed_out=False,
+    )
+    verification_result = VerificationResult(
+        run_id="r", steps=(passing_step, first_failure, second_failure), aggregate_status=FAIL.value,
+    )
+    stage, runner, registry = _verification_stage(verification_result)
+
+    result = stage.run(_request(tmp_path))
+
+    test_result = result.test_result
+    assert test_result.passed is False
+    assert test_result.return_code == 2, "must use the first failing step that actually has a return_code"
+    assert "first failure" in test_result.stdout
+    assert "first stderr" in test_result.stderr
+    assert "root/compile" in test_result.stdout, "the second failing step is still represented, even with no stdout of its own"
+
+
+def test_verification_all_steps_passing_yields_a_passed_test_result(tmp_path):
+    step = VerificationStepResult(
+        step_id="unit", area="root", status=PASS.value, verification_kind="test",
+        runner_type="pytest", passed=True, return_code=0,
+        stdout="", stderr="", command=("pytest",), timed_out=False,
+    )
+    verification_result = VerificationResult(run_id="r", steps=(step,), aggregate_status=PASS.value)
+    stage, runner, registry = _verification_stage(verification_result)
+
+    result = stage.run(_request(tmp_path))
+
+    runner.run.assert_not_called()
+    assert result.test_result.passed is True
+    assert result.test_result.return_code == 0
+
+
+def test_verification_no_executable_steps_falls_back_to_project_test_runner(tmp_path):
+    step = VerificationStepResult(
+        step_id="unit", area="root", status="not_applicable", verification_kind="test",
+        runner_type="none", passed=True, return_code=None,
+        stdout="", stderr="", command=(), timed_out=False,
+    )
+    verification_result = VerificationResult(run_id="r", steps=(step,), aggregate_status="not_applicable")
+    fallback_result = SimpleNamespace(passed=True, timed_out=False)
+    runner = Mock()
+    runner.run.return_value = fallback_result
+    stage, runner, registry = _verification_stage(verification_result, project_test_runner=runner)
+
+    result = stage.run(_request(tmp_path))
+
+    runner.run.assert_called_once()
+    assert result.test_result is fallback_result
