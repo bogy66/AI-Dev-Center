@@ -1,6 +1,7 @@
 """Canonical coordination of existing development and testing stages."""
 from dataclasses import dataclass
 
+from app.change_application import ChangeApplicationService
 from app.project_test_runner import StepFailureEvidence, TestExecutionRequest, TestResult
 
 
@@ -97,10 +98,11 @@ class DevelopmentTestingResult:
 
 
 class DevelopmentTestingStage:
-    def __init__(self, development_stage, test_change_generator, file_applier_factory, project_test_runner, testing_stage, verification_registry=None, project_inspector=None):
+    def __init__(self, development_stage, test_change_generator, file_applier_factory, project_test_runner, testing_stage, verification_registry=None, project_inspector=None,
+                 change_application: ChangeApplicationService | None = None):
         self._development_stage = development_stage
         self._test_change_generator = test_change_generator
-        self._file_applier_factory = file_applier_factory
+        self._change_application = change_application or ChangeApplicationService(file_applier_factory)
         self._project_test_runner = project_test_runner
         self._testing_stage = testing_stage
         self._verification_registry = verification_registry
@@ -109,9 +111,11 @@ class DevelopmentTestingStage:
     def run(self, request):
         development_result = self._development_stage.run(request)
         test_changes = self._test_change_generator.generate(request)
-        applier = self._file_applier_factory(request.project_path)
-        phase = "rework_test" if getattr(request, "rework_request", None) else "test"
-        apply_result = request.provenance_recorder.apply(applier, test_changes, phase) if getattr(request, "provenance_recorder", None) else applier.apply(test_changes)
+        is_rework = bool(getattr(request, "rework_request", None))
+        apply_result = self._change_application.apply(
+            request.project_path, test_changes, "test", is_rework,
+            provenance_recorder=getattr(request, "provenance_recorder", None),
+        )
 
         verification_result = None
         test_result = None
