@@ -7,8 +7,10 @@ from dataclasses import dataclass
 from app.ai_requirement_discovery import AIRequirementDiscovery
 from app.council_models import CouncilInput, CouncilResult
 from app.engineering_council import EngineeringCouncil
+from app.python_distribution import is_valid_distribution_identifier
 from app.requirement_model import (
     DiscoveryResult,
+    RequirementType,
     PreflightResult,
     SetupPlan,
     ValidationResult,
@@ -190,6 +192,15 @@ class DevelopmentWorkflow:
             "required": requirement.required,
             "status": getattr(requirement.status, "value", requirement.status),
         }
+        if requirement.type == RequirementType.PYTHON_PACKAGE:
+            identity = requirement.technical_identity
+            view.update({
+                "technical_identity_present": identity is not None,
+                "technical_identity_python_type": type(identity).__name__,
+                "technical_identity_valid": is_valid_distribution_identifier(identity),
+            })
+            if is_valid_distribution_identifier(identity):
+                view["safe_identifier"] = identity
         if activation is not None:
             view["state"] = activation.state
         if fullest:

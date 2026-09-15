@@ -1728,7 +1728,7 @@ class TestDeterministicMissingPythonPackageProductiveFlow:
         # whatever happens to be installed in the venv running it.
         package_name = "Some-Fictional-ADC-Test-Package"
         requirement = Requirement(
-            id="req-fictional", name=package_name,
+            id="req-fictional", name=package_name, technical_identity=package_name,
             type=RequirementType.PYTHON_PACKAGE, purpose="firmware toolchain",
             required=True, confidence=0.9,
         )
@@ -1814,6 +1814,7 @@ class TestTargetPythonSurvivesPathMutation:
 
         requirement = Requirement(
             id="req-fictional", name="Some-Fictional-ADC-Test-Package",
+            technical_identity="Some-Fictional-ADC-Test-Package",
             type=RequirementType.PYTHON_PACKAGE, purpose="firmware toolchain",
             required=True, confidence=0.9,
         )

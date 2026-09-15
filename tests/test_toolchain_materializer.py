@@ -80,6 +80,7 @@ def activation_preflight(requirement, activation, *, satisfied=False):
 
 def project_requirement(req_id, req_type=RequirementType.PYTHON_PACKAGE):
     return Requirement(
+        technical_identity=("future-tool") if req_type == "python_package" else None,
         id=req_id, name="future-tool", type=req_type, purpose="continued development",
         required=True, confidence=0.9, install_method="structured-installer",
     )
@@ -1315,6 +1316,7 @@ def test_provided_by_valid_provider_suppresses_manual_review_for_sdk():
         install_method="manual setup",
     )
     platform_req = Requirement(
+        technical_identity="ESPHome",
         id="req-esphome",
         name="ESPHome",
         type=RequirementType.PYTHON_PACKAGE,
@@ -1441,6 +1443,7 @@ def test_provided_by_deferred_provider_fails_closed_to_baseline():
         install_method="manual setup",
     )
     platform_req = Requirement(
+        technical_identity="Deferred Platform",
         id="req-platform-deferred",
         name="Deferred Platform",
         type=RequirementType.PYTHON_PACKAGE,
@@ -1566,6 +1569,7 @@ def test_provided_by_mixed_items_one_provided_one_not():
         install_method="manual",
     )
     platform = Requirement(
+        technical_identity="Platform",
         id="req-platform",
         name="Platform",
         type=RequirementType.PYTHON_PACKAGE,
@@ -1639,6 +1643,7 @@ def test_provided_by_preserves_requirement_activation_and_preflight():
         install_method="manual",
     )
     platform_req = Requirement(
+        technical_identity="ActivePlatform",
         id="req-platform-active",
         name="ActivePlatform",
         type=RequirementType.PYTHON_PACKAGE,
@@ -1815,6 +1820,7 @@ def test_unrelated_active_unsatisfied_requirement_still_blocks_with_provided_req
         install_method="manual",
     )
     platform = Requirement(
+        technical_identity="ProvidingPlatform",
         id="req-providing-platform",
         name="ProvidingPlatform",
         type=RequirementType.PYTHON_PACKAGE,

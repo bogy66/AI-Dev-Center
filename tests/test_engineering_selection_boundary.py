@@ -168,6 +168,7 @@ class TestProductiveEngineeringSelectionBoundary:
             _, _, _, _, plan_result,
         ) = _make_components()
         req = Requirement(
+            technical_identity="x",
             id="req-x", name="x", type="python_package",
             purpose="p", required=True, confidence=0.9,
         )

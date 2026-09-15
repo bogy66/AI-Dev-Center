@@ -1,5 +1,6 @@
+from app.python_distribution import is_valid_distribution_identifier
 from app.requirement_model import (
-    Requirement, ValidationResult, normalize_requirement_activations,
+    Requirement, RequirementType, ValidationResult, normalize_requirement_activations,
 )
 
 
@@ -35,6 +36,18 @@ class RequirementValidator:
             if not isinstance(req.type, str) or not req.type.strip():
                 req_errors.append(
                     f"Requirement '{req.id}': type must be a non-empty string."
+                )
+
+            # Keep unknown identity visible and binding, rather than dropping
+            # a legacy requirement from the workflow. Preflight and S2.3 fail
+            # closed until discovery supplies an unambiguous identity.
+            if (
+                req.type == RequirementType.PYTHON_PACKAGE
+                and not is_valid_distribution_identifier(req.technical_identity)
+            ):
+                req_warnings.append(
+                    f"Requirement '{req.id}': missing or invalid structured "
+                    "technical_identity; package identity indeterminate."
                 )
 
             # purpose

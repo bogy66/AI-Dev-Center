@@ -18,6 +18,7 @@ def _requirement(
 ):
     return Requirement(
         id=id,
+        technical_identity=name if type == RequirementType.PYTHON_PACKAGE else None,
         name=name,
         type=type,
         purpose="test",

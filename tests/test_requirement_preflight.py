@@ -23,6 +23,7 @@ def make_requirement(req_id, required):
 
 def make_typed_requirement(req_id, req_type, required=True, name=None):
     return Requirement(
+        technical_identity=(name or f"req-{req_id}") if req_type == "python_package" else None,
         id=req_id,
         name=name or f"req-{req_id}",
         type=req_type,
@@ -413,6 +414,7 @@ def test_executable_no_real_system_dependencies(monkeypatch):
 
 def test_python_package_present_requirement(monkeypatch):
     req = Requirement(
+        technical_identity="requests",
         id="req-py-present",
         name="requests",
         type=RequirementType.PYTHON_PACKAGE,
@@ -443,6 +445,7 @@ def test_python_package_present_requirement(monkeypatch):
 
 def test_python_package_missing_requirement(monkeypatch):
     req = Requirement(
+        technical_identity="not-installed",
         id="req-py-missing",
         name="not-installed",
         type=RequirementType.PYTHON_PACKAGE,
@@ -478,6 +481,7 @@ def test_python_package_version_success(monkeypatch):
     (distribution metadata semantics), not import-module find_spec/
     in-process importlib.metadata lookups."""
     req = Requirement(
+        technical_identity="some-package",
         id="req-py-version-success",
         name="some-package",
         type=RequirementType.PYTHON_PACKAGE,
@@ -509,6 +513,7 @@ def test_python_package_version_not_determinable(monkeypatch):
     expressed correctly through distribution-metadata semantics rather
     than import-module semantics."""
     req = Requirement(
+        technical_identity="some-package",
         id="req-py-version-error",
         name="some-package",
         type=RequirementType.PYTHON_PACKAGE,
@@ -532,6 +537,7 @@ def test_python_package_version_not_determinable(monkeypatch):
 
 def test_python_package_required_missing(monkeypatch):
     req = Requirement(
+        technical_identity="missing-required",
         id="req-py-required-missing",
         name="missing-required",
         type=RequirementType.PYTHON_PACKAGE,
@@ -554,6 +560,7 @@ def test_python_package_required_missing(monkeypatch):
 
 def test_python_package_optional_missing(monkeypatch):
     req = Requirement(
+        technical_identity="missing-optional",
         id="req-py-optional-missing",
         name="missing-optional",
         type=RequirementType.PYTHON_PACKAGE,
@@ -575,6 +582,7 @@ def test_python_package_optional_missing(monkeypatch):
 
 def test_python_package_does_not_mutate_requirements(monkeypatch):
     req = Requirement(
+        technical_identity="some-package",
         id="req-py-immutable",
         name="some-package",
         type=RequirementType.PYTHON_PACKAGE,
@@ -583,6 +591,7 @@ def test_python_package_does_not_mutate_requirements(monkeypatch):
         confidence=1.0,
     )
     original = Requirement(
+        technical_identity=req.technical_identity,
         id=req.id,
         name=req.name,
         type=req.type,
@@ -620,6 +629,7 @@ def test_python_package_uses_central_distribution_check(monkeypatch):
     )
 
     req = Requirement(
+        technical_identity="some-package",
         id="req-py-mocked",
         name="some-package",
         type=RequirementType.PYTHON_PACKAGE,
@@ -650,6 +660,7 @@ def test_target_executable_is_stored_per_requirement_not_per_result(monkeypatch)
     )
 
     py_req = Requirement(
+        technical_identity="some-package",
         id="req-py", name="some-package", type=RequirementType.PYTHON_PACKAGE,
         purpose="test requirement", required=True, confidence=1.0,
     )
@@ -684,6 +695,7 @@ def test_python_package_check_never_touches_network(monkeypatch, tmp_path):
     monkeypatch.setattr(socket, "socket", fail_socket)
 
     req = Requirement(
+        technical_identity="some-nonexistent-distribution-xyz-adc-test",
         id="req-py-no-network",
         name="some-nonexistent-distribution-xyz-adc-test",
         type=RequirementType.PYTHON_PACKAGE,

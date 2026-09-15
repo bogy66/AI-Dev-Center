@@ -31,9 +31,9 @@ class SetupPlanner:
             controlled = is_controlled_setup_effect(effect)
             action = "install" if controlled else "manual_review"
 
-            if controlled:
-                package = req.name
-            elif req.type == RequirementType.PYTHON_PACKAGE:
+            if req.type == RequirementType.PYTHON_PACKAGE:
+                package = req.technical_identity
+            elif controlled:
                 package = req.name
             else:
                 package = None

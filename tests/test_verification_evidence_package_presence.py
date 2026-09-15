@@ -105,6 +105,7 @@ from tests.test_engineering_decision import _requirement_needing_verification
 
 def _requirement(req_id="req-pkg", name="acme-widgets"):
     return Requirement(
+        technical_identity=name,
         id=req_id, name=name, type=RequirementType.PYTHON_PACKAGE,
         purpose="test dependency", required=True, confidence=0.9,
         verification_method=f"pip show {name}",
@@ -672,6 +673,7 @@ class TestExistingEsphomeValidatePathUnaffected:
 class TestIdentityBindingToTechnicalIdentity:
     def test_esphome_identity_rejects_requests_requirement(self):
         req = Requirement(
+            technical_identity="esphome",
             id="req-a", name="esphome", type=RequirementType.PYTHON_PACKAGE,
             purpose="test", required=True, confidence=0.9,
             verification_method="pip show requests",
@@ -682,6 +684,7 @@ class TestIdentityBindingToTechnicalIdentity:
 
     def test_requests_identity_rejects_esphome_requirement(self):
         req = Requirement(
+            technical_identity="requests",
             id="req-a", name="requests", type=RequirementType.PYTHON_PACKAGE,
             purpose="test", required=True, confidence=0.9,
             verification_method="pip show esphome",
@@ -692,6 +695,7 @@ class TestIdentityBindingToTechnicalIdentity:
 
     def test_pep503_equivalent_spelling_is_valid(self):
         req = Requirement(
+            technical_identity="acme-widgets",
             id="req-a", name="acme-widgets", type=RequirementType.PYTHON_PACKAGE,
             purpose="test", required=True, confidence=0.9,
             verification_method="pip show Acme_Widgets",
@@ -702,6 +706,7 @@ class TestIdentityBindingToTechnicalIdentity:
 
     def test_no_verification_method_at_all_never_establishes_capability(self):
         req = Requirement(
+            technical_identity="acme-widgets",
             id="req-a", name="acme-widgets", type=RequirementType.PYTHON_PACKAGE,
             purpose="test", required=True, confidence=0.9,
         )
@@ -759,11 +764,13 @@ class TestPerRequirementIndependentBinding:
         fully admissible -- Requirement A's own compatibility must never
         corroborate Requirement B."""
         req_a = Requirement(
+            technical_identity="acme-widgets",
             id="req-a", name="acme-widgets", type=RequirementType.PYTHON_PACKAGE,
             purpose="test", required=True, confidence=0.9,
             verification_method="pip show acme-widgets",
         )
         req_b = Requirement(
+            technical_identity="requests",
             id="req-b", name="requests", type=RequirementType.PYTHON_PACKAGE,
             purpose="test", required=True, confidence=0.9,
             verification_method="pip show esphome",
@@ -791,11 +798,13 @@ class TestPerRequirementIndependentBinding:
         item's technical identity -- a legitimate case this fix must
         still allow to pass."""
         req_a = Requirement(
+            technical_identity="acme-widgets",
             id="req-a", name="acme-widgets", type=RequirementType.PYTHON_PACKAGE,
             purpose="test", required=True, confidence=0.9,
             verification_method="pip show acme-widgets",
         )
         req_b = Requirement(
+            technical_identity="requests",
             id="req-b", name="requests", type=RequirementType.PYTHON_PACKAGE,
             purpose="test", required=True, confidence=0.9,
             verification_method="pip show requests",
@@ -838,6 +847,7 @@ class TestVerificationRequirementShapeRejections:
     ])
     def test_rejected_shapes_never_establish_capability(self, verification_method):
         req = Requirement(
+            technical_identity="acme-widgets",
             id="req-a", name="acme-widgets", type=RequirementType.PYTHON_PACKAGE,
             purpose="test", required=True, confidence=0.9,
             verification_method=verification_method,
@@ -1023,7 +1033,8 @@ class TestProductiveGreenfieldEnvironmentTargetBinding:
 
     def _requirement(self):
         return Requirement(
-            id="req-pkg", name=self.DISTRIBUTION, type=RequirementType.PYTHON_PACKAGE,
+            technical_identity=self.DISTRIBUTION,
+            id="req-pkg", name="Greenfield Package CLI", type=RequirementType.PYTHON_PACKAGE,
             purpose="greenfield dependency", required=True, confidence=0.9,
             verification_method=f"pip show {self.DISTRIBUTION}",
         )

@@ -20,6 +20,25 @@ _INSTALL_METHOD_CONTROLLED_FORMS = """\
     * "pip install <technical_identity>"
     * "python -m pip install <technical_identity>\""""
 
+_PYTHON_PACKAGE_PRESENCE_CONTRACT = """- Python-package Requirements: name is a human display label only. Copy the
+  Requirement's explicit technical_identity into its covering ToolchainItem;
+  never derive distribution identity from name or prose. Missing/ambiguous
+  Requirement identity stays unresolved, never silently repaired by Council.
+- For controlled Python package presence, use install_method from the four
+  controlled forms, provides_verification=["pip_show"], and an explicit
+  verification_coverage entry with kind="smoke_test", mechanism="pip_show",
+  requirement_refs=[the exact binding Requirement id], evidence=that item's
+  requirement_ref. Requirement verification_method must be
+  "pip show <technical_identity>" for the SAME distribution (PEP 503 equality).
+- This establishes controlled install/post-install verification capability,
+  not current package presence. Empty Greenfield projects need no project
+  files for this capability. Host/venv target resolution remains mandatory;
+  unsupported container/docker environments remain inadmissible.
+- Project validation/compile mechanisms (including esphome_validate and
+  esphome_compile) do not replace package-presence pip_show coverage. Existing
+  project verification requires independent Project Intelligence evidence.
+"""
+
 _INSTALL_METHOD_NULL_SEMANTICS = """\
   null ist dabei KEINE fünfte install_method-Form, sondern bedeutet
   ausschließlich "keine bekannte/angegebene kontrollierte
@@ -225,6 +244,7 @@ def _serialize_requirement(req) -> dict:
     return {
         "id": req.id,
         "name": req.name,
+        "technical_identity": req.technical_identity,
         "type": req.type,
         "purpose": req.purpose,
         "required": req.required,
@@ -241,7 +261,8 @@ def _serialize_preflight(preflight) -> dict | None:
     return {
         "overall_ready": preflight.overall_ready,
         "missing": [
-            {"requirement_id": r.id, "name": r.name, "type": r.type}
+            {"requirement_id": r.id, "name": r.name, "type": r.type,
+             "technical_identity": r.technical_identity}
             for r in preflight.missing_requirements
         ],
         "results": [
@@ -358,8 +379,9 @@ VERBINDLICHER REQUIREMENT-TO-IMPLEMENTATION-VERTRAG:
   benötigt — bei type="python_package" die reale PyPI-Distributionskennung,
   die mit "pip install <technical_identity>" tatsächlich funktioniert (z.B.
   "esphome") — immer ein einzelnes Token ohne Leerzeichen, nie freier Text.
-  Setze technical_identity immer explizit, wenn sich name und die echte
-  technische Kennung unterscheiden könnten; sonst null.
+  Für python_package ist technical_identity immer explizit erforderlich,
+  auch wenn name gleich lautet; nutze die strukturierte Requirement-Identität.
+  Bei anderen Typen setze sie, wenn die technische Kennung abweicht.
 - INSTALL_METHOD (nur für type="python_package"):
   "install_method" wird von einem festen, kontrollierten Executor
   ausgeführt, der NUR eine der folgenden vier Formen versteht — jede
@@ -367,8 +389,7 @@ VERBINDLICHER REQUIREMENT-TO-IMPLEMENTATION-VERTRAG:
   manual_review:
 {_INSTALL_METHOD_CONTROLLED_FORMS}
   <technical_identity> ist dabei GENAU der Wert aus dem Feld
-  "technical_identity" dieses Items (oder "name", falls technical_identity
-  null ist und name bereits eine gültige Distributionskennung ist) — nie
+  "technical_identity" dieses Items — niemals aus "name" abgeleitet, nie
   ein anderes Paket, keine zusätzlichen Flags, kein weiteres Paket, kein
   Shell-Metazeichen, kein zusammengesetzter Befehl (z.B. "&&"), keine
   venv-Aktivierung (z.B. "source .venv/bin/activate"), kein "python3 -m
@@ -380,6 +401,7 @@ VERBINDLICHER REQUIREMENT-TO-IMPLEMENTATION-VERTRAG:
   Install-Schritt existiert oder bekannt ist (z.B. bei state=
   "already_installed"/"unavailable" oder einem anderen type).
 {_INSTALL_METHOD_NULL_SEMANTICS}
+{_PYTHON_PACKAGE_PRESENCE_CONTRACT}
 {_PLACEMENT_NOT_IN_NAME_RULE}
 - ENVIRONMENT_CONSTRAINT:
   "environment_constraint" ist AUSSCHLIESSLICH entweder null ODER exakt der
@@ -703,7 +725,7 @@ REQUIREMENT-TO-IMPLEMENTATION-VERTRAG FÜR SYNTHESE UND MERGES:
   Formen versteht:
 {_INSTALL_METHOD_CONTROLLED_FORMS}
   <technical_identity> ist dabei GENAU der (ggf. beim Merge bereits
-  korrigierte) Wert aus "technical_identity" bzw. "name" dieses Items.
+  korrigierte) Wert aus "technical_identity" dieses Items, niemals aus "name".
   Übernimm install_method aus den Ausgangsvorschlägen NUR DANN
   unverändert, wenn es BEREITS eine dieser vier Formen ist. Ist der
   Ausgangswert stattdessen ein zusammengesetzter Shell-Befehl, eine
@@ -714,6 +736,7 @@ REQUIREMENT-TO-IMPLEMENTATION-VERTRAG FÜR SYNTHESE UND MERGES:
   Formen mit derselben technical_identity, oder auf null, falls sich aus
   den Ausgangsvorschlägen keine der vier Formen sicher ableiten lässt.
 {_INSTALL_METHOD_NULL_SEMANTICS}
+{_PYTHON_PACKAGE_PRESENCE_CONTRACT}
 {_PLACEMENT_NOT_IN_NAME_RULE}
 - ENVIRONMENT_CONSTRAINT (Gültigkeitsregel geht vor Erhaltungsregel):
   "environment_constraint" ist AUSSCHLIESSLICH entweder null ODER exakt der

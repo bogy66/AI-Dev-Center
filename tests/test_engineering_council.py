@@ -213,6 +213,7 @@ def _make_requirement(req_id: str = "req-1", name: str = "python",
                       rtype: str = "executable", required: bool = True) -> Requirement:
     return Requirement(
         id=req_id, name=name, type=rtype, purpose="test",
+        technical_identity=name if rtype == "python_package" else None,
         required=required, confidence=0.9,
         evidence=(RequirementEvidence(id="ev-1", source_type="test", description="test"),),
         status=Status.DISCOVERED,

@@ -48,6 +48,7 @@ from app.requirement_model import (
 
 def _requirement(req_id="req-esphome", required=True):
     return Requirement(
+        technical_identity="esphome",
         id=req_id, name="esphome", type=RequirementType.PYTHON_PACKAGE,
         purpose="firmware build", required=required, confidence=0.9,
     )
@@ -55,6 +56,7 @@ def _requirement(req_id="req-esphome", required=True):
 
 def _requirement_needing_verification(req_id="req-esphome", verification_method="pytest tests/"):
     return Requirement(
+        technical_identity="esphome",
         id=req_id, name="esphome", type=RequirementType.PYTHON_PACKAGE,
         purpose="firmware build", required=True, confidence=0.9,
         verification_method=verification_method,
@@ -1201,6 +1203,7 @@ class TestVerificationCoverageAdmissibility:
 
 def _esphome_binding_setup():
     req = Requirement(
+        technical_identity="esphome",
         id="req-esphome", name="esphome", type=RequirementType.PYTHON_PACKAGE,
         purpose="firmware build", required=True, confidence=0.9,
     )
@@ -1873,10 +1876,12 @@ class TestRequirementByIdAmbiguity:
         FIRST one."""
         from app.engineering_decision import _requirement_by_id
         first = Requirement(
+            technical_identity="acme-widgets",
             id="req-dup", name="acme-widgets", type=RequirementType.PYTHON_PACKAGE,
             purpose="first claim", required=True, confidence=0.9,
         )
         second = Requirement(
+            technical_identity="totally-different-package",
             id="req-dup", name="totally-different-package", type=RequirementType.PYTHON_PACKAGE,
             purpose="second claim", required=True, confidence=0.9,
         )
@@ -1892,10 +1897,12 @@ class TestRequirementByIdAmbiguity:
         the rule is order-independent, not merely 'never picks first'."""
         from app.engineering_decision import _requirement_by_id
         first = Requirement(
+            technical_identity="acme-widgets",
             id="req-dup", name="acme-widgets", type=RequirementType.PYTHON_PACKAGE,
             purpose="first claim", required=True, confidence=0.9,
         )
         second = Requirement(
+            technical_identity="totally-different-package",
             id="req-dup", name="totally-different-package", type=RequirementType.PYTHON_PACKAGE,
             purpose="second claim", required=True, confidence=0.9,
         )
@@ -1911,10 +1918,12 @@ class TestRequirementByIdAmbiguity:
         living in the same collection -- both are searched, together."""
         from app.engineering_decision import _requirement_by_id
         missing_one = Requirement(
+            technical_identity="acme-widgets",
             id="req-dup", name="acme-widgets", type=RequirementType.PYTHON_PACKAGE,
             purpose="missing claim", required=True, confidence=0.9,
         )
         installed_one = Requirement(
+            technical_identity="acme-widgets",
             id="req-dup", name="acme-widgets", type=RequirementType.PYTHON_PACKAGE,
             purpose="already-installed claim", required=True, confidence=0.9,
         )

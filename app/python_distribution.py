@@ -74,7 +74,7 @@ def is_valid_distribution_identifier(text: str | None) -> bool:
     name from arbitrary human-readable text, only to validate that a
     candidate value is already shaped like one.
     """
-    return bool(text) and _DISTRIBUTION_IDENTIFIER.fullmatch(text.strip()) is not None
+    return isinstance(text, str) and bool(text) and _DISTRIBUTION_IDENTIFIER.fullmatch(text.strip()) is not None
 
 
 # CLAUDE-ADC-S23-VERIFICATION-IDENTITY-TARGET-BINDING-FIX-003: the one

@@ -75,6 +75,7 @@ Observed project information:
 
 For each requirement provide these fields inside the "requirements" array:
   * name (string — human/domain-facing requirement display name; may differ from the executable identity)
+  * technical_identity (string or null — for python_package, exact Python distribution identity, separately established from package/project facts; never guess it from name; null if unknown or ambiguous)
   * type (one of {types}; describes what kind of thing is required, not how it is installed; do not classify something by an installation mechanism merely because one installation option can provide it)
   * purpose (short description)
   * required (boolean — is this a durable project requirement?)
@@ -96,6 +97,12 @@ Rules:
 - Forward-looking requirements must have active_for_current_request=false,
   blocks_current_operation=false.
 - Use "unknown" for the type if you cannot determine it.
+- For python_package with a known technical_identity, package presence uses
+  verification_method="pip show <technical_identity>". This describes the
+  controlled target-Python check, not observed installation success.
+  install_method is "pip" or "python_package" when justified. Project
+  validation/compile commands are separate requirements, not package presence.
+- Preserve technical_identity and this package-presence contract during repair.
 
 Return ONLY the JSON object described above. No markdown fences unless the
 provider requires them.
@@ -121,6 +128,10 @@ Project information: {project_info}
 
 Rules:
 - Preserve every requirement you already identified. Do not omit any.
+- Preserve name and technical_identity separately. Never infer distribution
+  identity from display text. For a known python_package identity use
+  verification_method="pip show <technical_identity>" for package presence;
+  project validation/compile commands do not establish package presence.
 - Do NOT invent new requirements or facts.
 - Return ONLY the JSON object with "requirements" as the single top-level key.
 - No other keys, no additional commentary.
@@ -248,6 +259,7 @@ Rules:
             install_method=data.get("install_method"),
             verification_method=data.get("verification_method"),
             verification_executable=data.get("verification_executable"),
+            technical_identity=data.get("technical_identity"),
             status=Status.DISCOVERED,
             metadata=metadata,
         )

@@ -144,6 +144,10 @@ class Requirement:
     status: str = Status.DISCOVERED
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
+    # Explicit Python distribution identity; name remains a display label.
+    # None is legacy/unknown, never an invitation to infer from name.
+    technical_identity: str | None = None
+
     def __post_init__(self):
         object.__setattr__(self, "evidence", _as_tuple(self.evidence))
 

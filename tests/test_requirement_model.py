@@ -122,6 +122,7 @@ def test_required_prerequisite_types_retain_blocking_default(req_type):
     toolchains, hardware, connections) must keep the original
     required-implies-blocking default."""
     req = Requirement(
+        technical_identity=(f"{req_type}-thing") if req_type == "python_package" else None,
         id=f"req-{req_type}", name=f"{req_type}-thing", type=req_type,
         purpose="prerequisite", required=True, confidence=0.9,
     )
@@ -214,6 +215,7 @@ def test_requirement_supports_discovery_fields():
         snippet="config:",
     )
     req = Requirement(
+        technical_identity="some_tool",
         id="req-1",
         name="some_tool",
         type=RequirementType.PYTHON_PACKAGE,

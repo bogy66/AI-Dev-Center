@@ -23,6 +23,7 @@ class TestRequirementCreation:
             confidence_contribution=0.8,
         )
         req = Requirement(
+            technical_identity="esphome",
             id="req-1",
             name="esphome",
             type=RequirementType.PYTHON_PACKAGE,
@@ -45,6 +46,7 @@ class TestRequirementSet:
         ev1 = RequirementEvidence(id="e1", source_type="file", description="desc1")
         ev2 = RequirementEvidence(id="e2", source_type="file", description="desc2")
         req1 = Requirement(
+            technical_identity="esphome",
             id="r1",
             name="esphome",
             type=RequirementType.PYTHON_PACKAGE,
@@ -54,6 +56,7 @@ class TestRequirementSet:
             evidence=[ev1],
         )
         req2 = Requirement(
+            technical_identity="pyserial",
             id="r2",
             name="pyserial",
             type=RequirementType.PYTHON_PACKAGE,

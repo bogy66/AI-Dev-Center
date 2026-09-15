@@ -67,9 +67,8 @@ class RequirementPreflight:
         project_root, when supplied, lets PYTHON_PACKAGE requirements be
         checked through the central controlled execution boundary
         (execute_controlled) — there is no direct, unconfined subprocess
-        fallback of any kind. Without it (or when a requirement's name
-        is not itself already a valid, single structured technical
-        identifier), PYTHON_PACKAGE presence is reported as not locally
+        fallback of any kind. Without it (or when a requirement's technical_identity
+        is not a valid, single structured distribution identifier), PYTHON_PACKAGE presence is reported as not locally
         verifiable, the same treatment already given to every other
         requirement type this function cannot safely check.
         """
@@ -113,20 +112,14 @@ class RequirementPreflight:
                 # post-install verification uses, always routed through
                 # the central controlled execution boundary.
                 #
-                # requirement.name is a human/display label at this
-                # stage (Council has not yet run, so no structured
-                # technical_identity exists yet) -- it is only used here
-                # when it already looks like a single, valid technical
-                # identifier; a free-form label like "ESPHome CLI" is
-                # never guessed at, and is instead reported not-locally-
-                # verifiable, exactly like any other unverifiable case.
+                # Only explicit Requirement-side distribution identity is evidence.
                 if project_root is None or not is_valid_distribution_identifier(
-                    requirement.name,
+                    requirement.technical_identity,
                 ):
                     warning = RequirementPreflight.NOT_LOCALLY_VERIFIABLE_WARNING
                 else:
                     check_result = check_distribution_installed(
-                        requirement.name, resolved_target_executable,
+                        requirement.technical_identity, resolved_target_executable,
                         project_root=project_root,
                     )
                     present = check_result.installed

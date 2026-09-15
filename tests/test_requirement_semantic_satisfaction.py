@@ -51,6 +51,7 @@ from tests.test_engineering_decision import _binding_preflight, _multi_requireme
 
 def _req(req_id, name="esphome", req_type=RequirementType.PYTHON_PACKAGE, **kwargs):
     return Requirement(
+        technical_identity=(name) if req_type == "python_package" else None,
         id=req_id, name=name, type=req_type, purpose="test", required=True,
         confidence=0.9, **kwargs,
     )

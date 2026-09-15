@@ -491,78 +491,29 @@ def _toolchain_item_identity(item: ToolchainItem) -> str:
 def _toolchain_item_matches_requirement_semantics(
     item: ToolchainItem, requirement,
 ) -> bool:
-    """CLAUDE-ARCH-S2-014C (F4): closes the gap CDX-REVIEW-S2-014A
-    reproduced -- matching `requirement_ref` alone was previously treated
-    as proof that a binding Requirement is satisfied, even when the
-    claimed ToolchainItem is semantically unrelated (e.g. a required
-    Python package "satisfied" by an unrelated executable that merely
-    happens to reuse the same requirement_ref string). `requirement_ref`
-    is a REFERENCE, not proof of semantic satisfaction; this function
-    mechanically compares the candidate item against the SAME structured
-    S1 Requirement fields ADC already has -- never a second, invented
-    requirements model:
+    """Check type, explicit package identity and declared exact version.
 
-    * type: `item.type` must equal `requirement.type` -- the SAME
-      technology-neutral vocabulary both already share
-      (app.requirement_model.RequirementType / the Chairman/Phase-1
-      prompt's own `"type"` field).
-    * technical identity: `item.technical_identity or item.name` must
-      correspond to `requirement.name` -- the SAME field
-      app.requirement_preflight already treats as the authoritative
-      identity to check installed/available state against (see
-      RequirementPreflight._resolvable_executable() and its
-      PYTHON_PACKAGE branch). For PYTHON_PACKAGE this reuses
-      app.python_distribution.distribution_names_match() -- the SAME,
-      already-tested PyPI-normalization equality ADC's own README
-      documents ("case, hyphen, underscore and dot are equivalent"),
-      never a second identity-comparison rule. Every other type compares
-      case-insensitive-exact, since no other ecosystem-specific
-      normalization contract exists yet.
-    * version: only enforced when BOTH `requirement.required_version`
-      AND `item.version` are set and non-empty -- an exact-string
-      mismatch is a genuine, mechanically provable incompatibility; no
-      structured constraint-operator/range semantics (">=", "~=", ...)
-      exist anywhere in ADC today (required_version is passed through as
-      a plain optional string everywhere it is read), so inventing range
-      parsing here would be a second, undocumented requirements model.
-      An item that simply does not commit to a version is not thereby
-      proven incompatible.
-
-    Deliberately does NOT re-check environment/platform constraints --
-    `_violates_platform_constraint()` already independently blocks the
-    whole variant for that dimension; duplicating it here would be a
-    second source of truth for the same fact.
-
-    PYTHON_PACKAGE special case (CLAUDE-ARCH-S2-012D precedent, reused
-    unchanged): `ToolchainItem.name` is explicitly documented as a
-    "human/display label ... not guaranteed to be a valid technical
-    identifier" (see the class docstring) -- e.g. "ESPHome CLI" for the
-    real PyPI distribution "esphome". When `technical_identity` is
-    genuinely absent, comparing the unreliable display `name` against
-    `requirement.name` could produce a false-positive MISMATCH for a
-    candidate that is actually the right package with incomplete
-    metadata -- exactly the CLAUDE-ARCH-S2-012D / Real-System-E2E #8
-    incident, whose own regression test expects THAT specific defect to
-    surface as a materializability failure ("cannot be materialized"),
-    not a semantic-coverage one. This function therefore treats a
-    PYTHON_PACKAGE item with no technical_identity as INDETERMINATE for
-    identity (neither proven nor disproven) rather than an invented,
-    competing verdict -- _unmaterializable_binding_requirements() already
-    owns, unchanged, the precise diagnostic for exactly this defect. A
-    non-PYTHON_PACKAGE item has no equivalent "identity may still be
-    resolved later" precedent anywhere in ADC, so its display `name`
-    remains the fallback identity to compare there."""
+    Python identity uses only structured technical_identity on both sides,
+    with central PEP 503 equality. Unknown Requirement identity fails closed.
+    Missing item identity retains the existing materializer-owned diagnostic.
+    Other ecosystems retain their existing exact display/technical comparison.
+    """
     if item.type != requirement.type:
         return False
-    requirement_identity = (requirement.name or "").strip()
-    if not requirement_identity:
-        return False
     if requirement.type == RequirementType.PYTHON_PACKAGE:
+        requirement_identity = requirement.technical_identity
+        if not is_valid_distribution_identifier(requirement_identity):
+            return False
         if not item.technical_identity:
             return True
+        if not is_valid_distribution_identifier(item.technical_identity):
+            return False
         if not distribution_names_match(item.technical_identity, requirement_identity):
             return False
     else:
+        requirement_identity = (requirement.name or "").strip()
+        if not requirement_identity:
+            return False
         item_identity = _toolchain_item_identity(item)
         if not item_identity or item_identity.lower() != requirement_identity.lower():
             return False
@@ -1368,7 +1319,12 @@ def _python_package_verification_capability(
     required_distribution = parse_pip_show_requirement(requirement.verification_method)
     if required_distribution is None:
         return False
-    return distribution_names_match(required_distribution, step.package)
+    return (
+        requirement.type == RequirementType.PYTHON_PACKAGE
+        and is_valid_distribution_identifier(requirement.technical_identity)
+        and distribution_names_match(requirement.technical_identity, required_distribution)
+        and distribution_names_match(required_distribution, step.package)
+    )
 
 
 def _verification_coverage_is_compatible(
