@@ -39,6 +39,7 @@ from tests.local_package_fixture import (
 
 def _requirement(req_id="req-s3"):
     return Requirement(
+        technical_identity=PACKAGE_NAME,
         id=req_id, name=PACKAGE_NAME, type=RequirementType.PYTHON_PACKAGE,
         purpose="test dependency", required=True, confidence=0.9,
     )

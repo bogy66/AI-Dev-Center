@@ -168,6 +168,7 @@ def test_web_http_boundary_executes_approved_target_after_path_drift(tmp_path, m
     monkeypatch.setenv("PATH", f"{os.path.dirname(target_a)}:{prior_path}")
 
     requirement = Requirement(
+        technical_identity=TEST_PACKAGE,
         id="req-web-system", name=TEST_PACKAGE,
         type=RequirementType.PYTHON_PACKAGE, purpose="test dependency",
         required=True, confidence=0.9,

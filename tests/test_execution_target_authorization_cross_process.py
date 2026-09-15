@@ -97,6 +97,7 @@ class TestRealCrossProcessRace:
         project_root = tmp_path / "project"
         project_root.mkdir()
         requirement = Requirement(
+            technical_identity=PACKAGE_NAME,
             id="req-race", name=PACKAGE_NAME, type=RequirementType.PYTHON_PACKAGE,
             purpose="test dependency", required=True, confidence=0.9,
         )
@@ -145,6 +146,7 @@ class TestRealCrossProcessRace:
         project_root = tmp_path / "project"
         project_root.mkdir()
         requirement = Requirement(
+            technical_identity=PACKAGE_NAME,
             id="req-race-done", name=PACKAGE_NAME, type=RequirementType.PYTHON_PACKAGE,
             purpose="test dependency", required=True, confidence=0.9,
         )
@@ -177,6 +179,7 @@ class TestRealCrossProcessRace:
         project_root = tmp_path / "project"
         project_root.mkdir()
         requirement = Requirement(
+            technical_identity=PACKAGE_NAME,
             id="req-race-stale", name=PACKAGE_NAME, type=RequirementType.PYTHON_PACKAGE,
             purpose="test dependency", required=True, confidence=0.9,
         )
@@ -211,6 +214,7 @@ class TestRealCrossProcessRace:
         project_root = tmp_path / "project"
         project_root.mkdir()
         requirement = Requirement(
+            technical_identity=PACKAGE_NAME,
             id="req-race-legacy", name=PACKAGE_NAME, type=RequirementType.PYTHON_PACKAGE,
             purpose="test dependency", required=True, confidence=0.9,
         )

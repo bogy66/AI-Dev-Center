@@ -41,6 +41,9 @@ def _requirement(req_id, req_type=RequirementType.PYTHON_PACKAGE, **kwargs):
     }
     if req_type == RequirementType.PYTHON_PACKAGE:
         base.setdefault("install_method", "pip")
+    if req_type == RequirementType.PYTHON_PACKAGE:
+        # The paired toolchain fixture uses req_id as its synthetic distribution.
+        base["technical_identity"] = req_id
     base.update(kwargs)
     accepted = {f.name for f in Requirement.__dataclass_fields__.values()}
     return Requirement(**{k: v for k, v in base.items() if k in accepted})

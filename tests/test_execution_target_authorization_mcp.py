@@ -170,6 +170,7 @@ def test_mcp_originated_plan_resolves_a_real_target_executable(tmp_path, monkeyp
     monkeypatch.setenv("PATH", f"{os.path.dirname(target_a)}:{prior_path}")
 
     requirement = Requirement(
+        technical_identity=PACKAGE_NAME,
         id="req-mcp", name=PACKAGE_NAME, type=RequirementType.PYTHON_PACKAGE,
         purpose="test dependency", required=True, confidence=0.9,
     )
@@ -199,6 +200,7 @@ class TestMcpFullLifecyclePathDrift:
         monkeypatch.setenv("PATH", f"{os.path.dirname(target_a)}:{prior_path}")
 
         requirement = Requirement(
+            technical_identity=PACKAGE_NAME,
             id="req-mcp-full", name=PACKAGE_NAME, type=RequirementType.PYTHON_PACKAGE,
             purpose="test dependency", required=True, confidence=0.9,
         )

@@ -54,6 +54,7 @@ def _build_isolated_toolchain(tmp_path, name="toolchain"):
 
 def _requirement():
     return Requirement(
+        technical_identity=TEST_PACKAGE,
         id="req-integration", name=TEST_PACKAGE,
         type=RequirementType.PYTHON_PACKAGE, purpose="test dependency",
         required=True, confidence=0.9,

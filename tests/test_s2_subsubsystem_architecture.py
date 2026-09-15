@@ -65,6 +65,7 @@ from app.toolchain_materializer import ToolchainMaterializer
 
 def _requirement(req_id="req-esphome"):
     return Requirement(
+        technical_identity="esphome",
         id=req_id, name="esphome", type=RequirementType.PYTHON_PACKAGE,
         purpose="firmware build", required=True, confidence=0.9,
     )
@@ -1304,6 +1305,7 @@ class TestRealE2E7GeneralizedRegression:
             )
 
         req = Requirement(
+            technical_identity="esphome",
             id="req-1", name="esphome", type=RequirementType.PYTHON_PACKAGE,
             purpose="test", required=True, confidence=0.9,
             evidence=(RequirementEvidence(id="ev-1", source_type="test", description="test"),),

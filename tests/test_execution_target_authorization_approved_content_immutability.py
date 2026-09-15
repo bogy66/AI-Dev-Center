@@ -42,6 +42,7 @@ from tests.local_package_fixture import (
 
 def _requirement(req_id, name=PACKAGE_NAME):
     return Requirement(
+        technical_identity=name,
         id=req_id, name=name, type=RequirementType.PYTHON_PACKAGE,
         purpose="test dependency", required=True, confidence=0.9,
     )

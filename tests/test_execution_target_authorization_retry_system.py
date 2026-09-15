@@ -92,6 +92,7 @@ def test_web_http_boundary_retry_launches_zero_additional_processes(tmp_path, mo
     project_path = tmp_path / "project"
     project_path.mkdir()
     requirement = Requirement(
+        technical_identity=PACKAGE_NAME,
         id="req-web-retry", name=PACKAGE_NAME, type=RequirementType.PYTHON_PACKAGE,
         purpose="test dependency", required=True, confidence=0.9,
     )
@@ -185,6 +186,7 @@ def test_mcp_boundary_retry_launches_zero_additional_processes(tmp_path, monkeyp
     project_path = tmp_path / "project"
     project_path.mkdir()
     requirement = Requirement(
+        technical_identity=PACKAGE_NAME,
         id="req-mcp-retry", name=PACKAGE_NAME, type=RequirementType.PYTHON_PACKAGE,
         purpose="test dependency", required=True, confidence=0.9,
     )
