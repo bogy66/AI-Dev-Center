@@ -218,6 +218,7 @@ class _FakeExecutor:
     def __init__(self):
         self.calls = []
         self._developer_calls = 0
+        self._tester_calls = 0
 
     def run(self, role, content, context, role_again):
         self.calls.append((role, content, context, role_again))
@@ -232,7 +233,15 @@ class _FakeExecutor:
                 "tests": [],
             })
         if role == "tester":
-            return json.dumps({"changes": [], "tests": []})
+            self._tester_calls += 1
+            return json.dumps({
+                "changes": [{
+                    "file": f"generated_test_{self._tester_calls}.py",
+                    "action": "create",
+                    "content": "def test_generated(): pass",
+                }],
+                "tests": [],
+            })
         if role == "reviewer":
             return json.dumps({
                 "decision": "rework_required",

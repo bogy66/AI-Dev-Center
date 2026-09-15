@@ -85,16 +85,50 @@ def _test_result_from_verification(executable_steps) -> TestResult:
 @dataclass(frozen=True)
 class DevelopmentTestingResult:
     development_result: object
-    test_changes: dict
-    apply_result: dict
-    test_result: object
-    testing_stage_result: object
+    test_changes: dict | None
+    apply_result: dict | None
+    test_result: object | None
+    testing_stage_result: object | None
     verification_result: object | None = None
+    # None on the normal path (S5 was reached and testing_stage_result
+    # carries the real decision). Set to "development_apply" or
+    # "test_apply" when the S4 -> S5 gate below rejected this cycle
+    # before verification could start -- in that case there is no
+    # testing_stage_result to report status from, because S5 never ran.
+    failure_stage: str | None = None
 
     @property
     def status(self) -> str:
-        """Expose the testing decision without introducing a second policy."""
+        """Expose the testing decision without introducing a second policy.
+
+        A set `failure_stage` means S5 Quality & Verification was never
+        entered for this cycle -- "apply_failed" is the terminal status
+        itself here, not a stand-in read from `testing_stage_result`
+        (which does not exist in this case).
+        """
+        if self.failure_stage is not None:
+            return "apply_failed"
         return self.testing_stage_result.status
+
+
+def _pre_verification_apply_failure(development_result, test_changes, apply_result, failure_stage) -> "DevelopmentTestingResult":
+    """The one place a rejected S4 mutation becomes the terminal result.
+
+    S5-owned fields (test_result, testing_stage_result, verification_result)
+    are left None -- accurately "not reached" -- rather than fabricated,
+    since S5 Quality & Verification may start only after every required
+    S4 mutation for this cycle applied successfully (see
+    DevelopmentTestingStage.run below).
+    """
+    return DevelopmentTestingResult(
+        development_result=development_result,
+        test_changes=test_changes,
+        apply_result=apply_result,
+        test_result=None,
+        testing_stage_result=None,
+        verification_result=None,
+        failure_stage=failure_stage,
+    )
 
 
 class DevelopmentTestingStage:
@@ -110,12 +144,25 @@ class DevelopmentTestingStage:
 
     def run(self, request):
         development_result = self._development_stage.run(request)
+        if development_result.status != "success":
+            # S4.3's own authoritative classification already says this
+            # cycle's development mutation did not fully apply -- no
+            # test generation, no application, no S5 inspection/plan/
+            # execution/diagnosis may follow a change ADC cannot confirm
+            # actually landed.
+            return _pre_verification_apply_failure(development_result, None, None, "development_apply")
+
         test_changes = self._test_change_generator.generate(request)
         is_rework = bool(getattr(request, "rework_request", None))
         apply_result = self._change_application.apply(
             request.project_path, test_changes, "test", is_rework,
             provenance_recorder=getattr(request, "provenance_recorder", None),
         )
+        if ChangeApplicationService.status_for(apply_result) != "success":
+            # Same invariant, for the test-file mutation: a skipped or
+            # partially applied required test change means verification
+            # would run against stale or incomplete project state.
+            return _pre_verification_apply_failure(development_result, test_changes, apply_result, "test_apply")
 
         verification_result = None
         test_result = None

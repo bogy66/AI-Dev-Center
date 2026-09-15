@@ -171,7 +171,7 @@ def test_development_testing_stage_records_test_phase_with_real_applier(tmp_path
     manager = WorkflowManager(tmp_path / "state.json")
     recorder = RunChangeProvenance(manager, "run-test", tmp_path)
     request = DevelopmentRequest("project", tmp_path, "task", "run-test", recorder)
-    development = Mock(); development.run.return_value = SimpleNamespace()
+    development = Mock(); development.run.return_value = SimpleNamespace(status="success")
     generator = Mock(); generator.generate.return_value = {"changes": [{"file": "test_feature.py", "action": "create", "content": "x"}]}
     applier = DeveloperFileApplier(tmp_path); factory = Mock(return_value=applier)
     runner = Mock(); runner.run.return_value = SimpleNamespace()
@@ -189,7 +189,7 @@ def test_controlled_rework_stage_records_rework_test_in_same_run(tmp_path):
     manager = WorkflowManager(tmp_path / "state.json")
     recorder = RunChangeProvenance(manager, "run-rework", tmp_path)
     request = DevelopmentRequest("project", tmp_path, "task", "run-rework", recorder)
-    development = Mock(); development.run.return_value = SimpleNamespace()
+    development = Mock(); development.run.return_value = SimpleNamespace(status="success")
     generator = Mock(); generator.generate.side_effect = [
         {"changes": [{"file": "test_feature.py", "action": "create", "content": "one"}]},
         {"changes": [{"file": "test_feature.py", "action": "update", "content": "two"}]},

@@ -148,9 +148,9 @@ def _verification_stage(verification_result, project_test_runner=None):
     development_stage = Mock()
     development_stage.run.return_value = SimpleNamespace(status="success")
     generator = Mock()
-    generator.generate.return_value = {"changes": []}
+    generator.generate.return_value = {"changes": [{"file": "test_feature.py", "action": "create", "content": "x"}]}
     applier = Mock()
-    applier.apply.return_value = {"applied": [], "skipped": []}
+    applier.apply.return_value = {"applied": ["test_feature.py"], "skipped": []}
     factory = Mock(return_value=applier)
     runner = project_test_runner if project_test_runner is not None else Mock()
     testing_stage = Mock()
