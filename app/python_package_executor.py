@@ -146,7 +146,21 @@ def is_supported_python_package_install_method(
 
 
 class PythonPackageExecutor:
-    """Executes approved Python-package setup steps using structured pip installs."""
+    """Executes approved Python-package setup steps using structured pip installs.
+
+    This is the CURRENT productive backend adapter for S3.3 Controlled
+    Execution -- not the generic definition of S3.3 itself. That
+    central role (validating approval, enforcing the replay/idempotency
+    guard, dispatching to whichever backend is configured) belongs to
+    app.dev_workflow.DevelopmentWorkflow.execute_approved(); this class
+    is only the concrete thing it currently dispatches to, scoped
+    exclusively to Python package installation. It must never become
+    central policy for other ecosystems (npm, CMake, PlatformIO,
+    ESPHome, ...) -- those remain adapter-level concerns for their own,
+    not-yet-written executors, and a step with no controlled backend
+    surfaces honestly via SetupPlan.unsupported_backend_effects instead
+    of being forced through this one.
+    """
 
     _PACKAGE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
     _INSTALL_TIMEOUT_SECONDS = 300

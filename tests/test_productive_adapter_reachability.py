@@ -24,6 +24,11 @@ FORBIDDEN_MODULES = {
     "app.git_manager",
     "app.workflow_publisher",
     "app.setup_planner",
+    # CLAUDE-ADC-S3-LEGACY-HYGIENE-OWNERSHIP-FIX-001: SetupExecutor is a
+    # permanent, never-implemented placeholder (see its own docstring) --
+    # a productive adapter must reach S3.3 Controlled Execution only
+    # through DevelopmentWorkflow.execute_approved(), never this module.
+    "app.setup_executor",
 }
 
 

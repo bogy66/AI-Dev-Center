@@ -408,7 +408,17 @@ def _new_generation_id() -> str:
 
 @dataclass(frozen=True)
 class SetupPlan:
-    """Ordered, user‑approvable setup plan."""
+    """Ordered, user‑approvable setup plan.
+
+    `steps` is a flat, unrestricted sequence: central S3 planning never
+    assumes one repository == one toolchain, and nothing here requires
+    every step to share the same `setup_effect`/`install_method` -- a
+    single plan may legitimately mix, e.g., a Python package install
+    with a step for an ecosystem ADC has no controlled backend for yet.
+    `unsupported_backend_effects` is exactly how that second case is
+    surfaced: honestly, as an explicit, inspectable list, never by
+    silently treating an uncontrollable effect as executable.
+    """
     id: str
     project_id: str
     steps: tuple[SetupStep, ...] = field(default_factory=tuple)

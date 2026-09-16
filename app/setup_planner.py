@@ -1,3 +1,20 @@
+"""LEGACY / COMPATIBILITY ONLY -- app.setup_planner.SetupPlanner is NOT the
+productive S3.1 Setup Planning owner.
+
+The canonical planning path (S2.5 EngineeringDecision -> S3.1 SetupPlan) is
+app.toolchain_materializer.ToolchainMaterializer.materialize_decision().
+canonical_composition.py wires ToolchainMaterializer, never SetupPlanner --
+grep confirms SetupPlanner( is never constructed anywhere in app/*.py
+outside this module and its own dedicated test file. DevelopmentWorkflow
+retains an optional `planner` constructor parameter typed against this
+class purely for transitional constructor-signature compatibility (see
+its own docstring); that parameter carries no productive planning
+authority and this class is never read back out of it.
+
+Kept, not deleted, because removal has not been proven safe across the
+full repository (CLAUDE-ADC-S3-LEGACY-HYGIENE-OWNERSHIP-FIX-001) -- do
+not reintroduce it into the canonical planning flow.
+"""
 from app.execution import is_controlled_setup_effect
 from app.requirement_model import (
     RequirementType,
@@ -9,6 +26,13 @@ from app.requirement_model import (
 
 
 class SetupPlanner:
+    """LEGACY / COMPATIBILITY ONLY. See module docstring.
+
+    Not the productive S3.1 Setup Planning owner -- use
+    app.toolchain_materializer.ToolchainMaterializer.materialize_decision()
+    instead.
+    """
+
     def plan(
         self,
         requirements,

@@ -125,8 +125,13 @@ class DevelopmentWorkflow:
         self._validator = validator
         self._preflight = preflight
 
-        # Transitional constructor compatibility only.
-        # The canonical planning flow no longer uses SetupPlanner.
+        # Transitional constructor compatibility only. `planner` (if
+        # supplied) carries NO productive planning authority: it is
+        # stored and never read back anywhere in this class. The
+        # canonical S3.1 Setup Planning path is exclusively
+        # materialize_setup_plan() below, via the configured
+        # ToolchainMaterializer -- SetupPlanner never re-enters the
+        # canonical path through this parameter or otherwise.
         self._planner = planner
 
         self._executor = executor
@@ -1026,6 +1031,23 @@ class DevelopmentWorkflow:
         project_root: str | None = None,
     ) -> tuple[ExecutionResult, ...]:
         """Execute an already approved setup plan safely.
+
+        This is the productive S3.3 Controlled Execution central gate:
+        it validates the plan is approved and every executable step is
+        individually approved, enforces the replay/idempotency guard
+        (see _execute_with_state_guard/SetupExecutionStateStore) before
+        any mutation, and only then delegates the concrete mutation to
+        whichever executor was configured (`self._executor`, wired in
+        canonical composition as PythonPackageExecutor). This method
+        does not itself know or care which ecosystem/toolchain a step
+        targets -- that is the configured executor's own concern, never
+        this gate's. PythonPackageExecutor is the CURRENT productive
+        backend adapter (Python package installation only); it is not a
+        generic definition of S3.3 and must not become central policy
+        for other ecosystems (npm, CMake, PlatformIO, ESPHome, ...) --
+        a step for an ecosystem with no controlled backend surfaces
+        honestly via SetupPlan.unsupported_backend_effects instead of
+        being silently treated as executable.
 
         project_root is optional and purely additive: when supplied, it
         lets the configured executor route its actual subprocess work
