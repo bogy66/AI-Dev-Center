@@ -4,6 +4,8 @@ import hashlib
 from pathlib import Path, PurePosixPath
 import subprocess
 
+from app.safe_project_path import resolve_safe_path
+
 
 class RunChangeProvenance:
     def __init__(self, workflow_manager, run_id, project_root):
@@ -47,23 +49,28 @@ class RunChangeProvenance:
         self._manager.capture_working_tree_baseline(self._run_id, state)
 
     def apply(self, applier, changes, phase):
+        # Consume S4.3's own path-safety decision rather than an
+        # independent one: an unsafe requested path is skipped here too
+        # (no baseline capture, no hash/git access on the escaped
+        # target, no event) and left entirely to `applier.apply()`'s own
+        # normal `skipped` classification -- never raised, so provenance
+        # being enabled can never change whether/how an unsafe path is
+        # reported compared to direct application.
         paths = [change.get("file") for change in changes.get("changes", [])]
-        for path in paths:
+        safe_paths = [path for path in paths if resolve_safe_path(self._root, path) is not None]
+        for path in safe_paths:
             self._capture_baseline(path, phase)
         result = applier.apply(changes)
         applied = set(result.get("applied", []))
-        for path in paths:
+        for path in safe_paths:
             self._record_event(path, phase, path in applied)
         return result
 
     def _path(self, relative):
-        path = PurePosixPath(relative or "")
-        if not relative or path.is_absolute() or ".." in path.parts:
+        resolved = resolve_safe_path(self._root, relative)
+        if resolved is None:
             raise ValueError("Invalid provenance path")
-        resolved = (self._root / path).resolve()
-        if self._root not in (resolved, *resolved.parents):
-            raise ValueError("Provenance path escapes project root")
-        return resolved, path.as_posix()
+        return resolved, PurePosixPath(relative).as_posix()
 
     @staticmethod
     def _hash(path):

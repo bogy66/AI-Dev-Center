@@ -133,9 +133,14 @@ def test_non_git_and_traversal_are_fail_safe(tmp_path):
     assert entry["baseline"]["git_repository"] is False
     assert entry["events"][0]["file_exists_after"] is True
     outside = tmp_path.parent / "outside.txt"
-    with __import__("pytest").raises(ValueError, match="Invalid provenance path"):
-        recorder.apply(DeveloperFileApplier(tmp_path), {"changes": [{"file": "../outside.txt", "action": "create", "content": "bad"}]}, "development")
+    # CLAUDE-ADC-S43-S44-PATH-SAFETY-SEMANTICS-FIX-001: an unsafe path
+    # is a normal, fail-closed apply-result classification -- identical
+    # with or without provenance enabled -- never an uncaught exception
+    # specific to the provenance-enabled route.
+    result = recorder.apply(DeveloperFileApplier(tmp_path), {"changes": [{"file": "../outside.txt", "action": "create", "content": "bad"}]}, "development")
+    assert result == {"applied": [], "skipped": [{"file": "../outside.txt", "reason": "unsafe_path"}]}
     assert not outside.exists()
+    assert "../outside.txt" not in manager.load()["change_provenance"].get("run", {})
 
 
 def test_provenance_preserves_setup_and_final_approvals_across_reload(tmp_path):
