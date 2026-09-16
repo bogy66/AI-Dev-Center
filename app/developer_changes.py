@@ -135,10 +135,36 @@ class DeveloperChanges:
                 "content": content,
             })
 
-        return {
+        result: dict[str, object] = {
             "changes": changes,
             "tests": tests,
         }
+
+        # Optional, role-agnostic pass-through fields. Their MEANING (the
+        # S4.2 Test Change Generation no-op contract: is an empty `changes`
+        # a valid, explicit "no test-file mutation required" declaration,
+        # or a malformed/incomplete response) is never decided here -- this
+        # parser only mechanically preserves them, structurally validated,
+        # exactly like `tests` already is. TestChangeGenerator alone
+        # interprets and enforces them; DeveloperAgent never populates or
+        # reads them, so its own behavior is unaffected either way.
+        raw_disposition = parsed.get("disposition")
+        if raw_disposition is not None:
+            if not isinstance(raw_disposition, str):
+                raise ValueError(
+                    "Invalid developer response: 'disposition' must be a string"
+                )
+            result["disposition"] = raw_disposition
+
+        raw_reason = parsed.get("reason")
+        if raw_reason is not None:
+            if not isinstance(raw_reason, str):
+                raise ValueError(
+                    "Invalid developer response: 'reason' must be a string"
+                )
+            result["reason"] = raw_reason
+
+        return result
 
     @staticmethod
     def parse(response):

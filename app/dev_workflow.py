@@ -1274,6 +1274,13 @@ class DevelopmentWorkflow:
             test_generation_details = {"cycle": cycle}
             if isinstance(changes, dict) and isinstance(changes.get("changes"), (list, tuple)):
                 test_generation_details["controlled_path_count"] = len(changes["changes"])
+            if isinstance(changes, dict) and changes.get("disposition") == "no_changes_required":
+                # S4.2's explicit no-op -- kept traceable without
+                # redesigning the trace model or granting `tests` any
+                # authority it does not have.
+                test_generation_details["disposition"] = "no_changes_required"
+                if isinstance(changes.get("reason"), str):
+                    test_generation_details["reason"] = changes["reason"]
             self._trace(run_id, "test_generation", "completed", "completed", f"Test generation completed: {cycle}", details=test_generation_details)
 
             provenance_details = {"cycle": cycle}

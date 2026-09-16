@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from app.change_application import ChangeApplicationService
 from app.project_test_runner import StepFailureEvidence, TestExecutionRequest, TestResult
+from app.test_change_generator import TestChangeDisposition
 
 
 def _step_failure_evidence(step) -> StepFailureEvidence:
@@ -153,16 +154,28 @@ class DevelopmentTestingStage:
             return _pre_verification_apply_failure(development_result, None, None, "development_apply")
 
         test_changes = self._test_change_generator.generate(request)
-        is_rework = bool(getattr(request, "rework_request", None))
-        apply_result = self._change_application.apply(
-            request.project_path, test_changes, "test", is_rework,
-            provenance_recorder=getattr(request, "provenance_recorder", None),
-        )
-        if ChangeApplicationService.status_for(apply_result) != "success":
-            # Same invariant, for the test-file mutation: a skipped or
-            # partially applied required test change means verification
-            # would run against stale or incomplete project state.
-            return _pre_verification_apply_failure(development_result, test_changes, apply_result, "test_apply")
+        if test_changes.get("disposition") == TestChangeDisposition.NO_CHANGES_REQUIRED:
+            # S4.2's own explicit, evidenced no-op (disposition + a
+            # non-empty reason, already enforced by TestChangeGenerator):
+            # there is no test mutation to attempt, so S4.3 is never
+            # invoked and never asked to classify a nonexistent apply --
+            # ChangeApplicationService.status_for() remains exclusively
+            # about real apply attempts. `apply_result` stays None,
+            # truthfully representing "no application attempt occurred",
+            # and the cycle proceeds to S5 exactly as a successful apply
+            # would have.
+            apply_result = None
+        else:
+            is_rework = bool(getattr(request, "rework_request", None))
+            apply_result = self._change_application.apply(
+                request.project_path, test_changes, "test", is_rework,
+                provenance_recorder=getattr(request, "provenance_recorder", None),
+            )
+            if ChangeApplicationService.status_for(apply_result) != "success":
+                # Same invariant, for the test-file mutation: a skipped or
+                # partially applied required test change means verification
+                # would run against stale or incomplete project state.
+                return _pre_verification_apply_failure(development_result, test_changes, apply_result, "test_apply")
 
         verification_result = None
         test_result = None

@@ -186,11 +186,25 @@ class ProviderAgentExecutor(AgentExecutor):
                 self._STRUCTURED_CHANGE_PROMPT
                 + "You are the Tester of AI-Dev-Center.\n"
                 "Your responsibility is to create or update test files "
-                "for the project.\n"
+                "for the project when new or changed test coverage is "
+                "actually needed.\n"
                 "You never execute tests yourself.\n\n"
-                "Create new test files or update existing test files "
-                "to cover the task below.\n"
-                "Use the existing project structure and conventions.\n\n"
+                "You have two valid ways to respond:\n\n"
+                "A. Create new test files or update existing test files "
+                "to cover the task below, respecting the existing "
+                "project structure and conventions.\n\n"
+                "B. If the existing repository's tests or verification "
+                "already sufficiently cover the task, or changing test "
+                "files would be unnecessary or inappropriate, declare "
+                "that explicitly instead of proposing any changes:\n"
+                '{"disposition": "no_changes_required", "reason": '
+                '"<concise, non-empty explanation>", "changes": [], '
+                '"tests": []}\n'
+                "An empty \"changes\" array by itself is NOT a valid way "
+                "to say no test change is needed -- you must set "
+                '"disposition" to "no_changes_required" and give a '
+                "reason. Never fabricate busy-work test-file changes "
+                "merely to produce a non-empty response.\n\n"
                 f"Project context:\n{project_context}\n"
                 f"Task:\n{task}\n"
             )
