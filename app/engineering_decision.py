@@ -103,6 +103,7 @@ from app.engineering_solution_class import (
 )
 from app.python_distribution import (
     distribution_names_match,
+    environment_target_matches,
     is_valid_distribution_identifier,
     parse_pip_show_requirement,
     resolve_environment_python_target,
@@ -266,18 +267,19 @@ class EngineeringReworkRequest:
         CandidateValidation -- never re-derives or guesses evidence that
         validate_variants() already computed.
 
-        CLAUDE-ADC-S23-INSTALL-METHOD-PRODUCER-REPAIR-FIX-001:
-        `identity_conflict_detail`/`install_method_conflict_detail` are
-        built directly from `validation.unmaterializable_items` --
-        already-computed, already-central (_binding_item_rejection_
-        category()) structured evidence -- never by re-parsing or
-        re-classifying `reasons`' own human-readable text. This never
-        replaces `materializability_conflict`/`materializability_
-        conflict_detail`, which keep their exact pre-existing text-based
-        computation, unchanged, below."""
-        missing_ids: tuple[str, ...] = ()
-        materializability_conflict = False
-        materializability_detail: tuple[str, ...] = ()
+        CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (D1): every field below is read
+        directly from validate_variants()'s own already-computed
+        structured CandidateValidation fields -- never by re-parsing or
+        re-classifying `reasons`' own human-readable presentation text
+        (which remains presentation/diagnostic-only). This includes
+        `materializability_conflict`/`materializability_conflict_detail`,
+        which previously re-derived their content with a regex over
+        `reasons` (CLAUDE-ARCH-S2-012D); they now reuse the exact same
+        `unmaterializable_items` structured evidence
+        `identity_conflict_detail`/`install_method_conflict_detail`
+        already relied on (CLAUDE-ADC-S23-INSTALL-METHOD-PRODUCER-
+        REPAIR-FIX-001), since every unmaterializable item is, by
+        construction, either an identity or an install-method defect."""
         identity_detail = tuple(
             f"{req_id} (item name={name!r})"
             for req_id, name, category in validation.unmaterializable_items
@@ -288,71 +290,29 @@ class EngineeringReworkRequest:
             for req_id, name, category in validation.unmaterializable_items
             if category == "install_method_incompatible"
         )
-        verification_feasibility_conflict = False
-        verification_gap_ids: tuple[str, ...] = ()
-        verification_detail: tuple[str, ...] = ()
-        for reason in validation.reasons:
-            if reason.startswith("missing binding requirement coverage: "):
-                raw = reason[len("missing binding requirement coverage: "):]
-                missing_ids = tuple(raw.strip("[]").replace("'", "").split(", ")) if raw.strip("[]") else ()
-            if "cannot be materialized" in reason:
-                materializability_conflict = True
-                # CLAUDE-ARCH-S2-012D: carry the exact per-item detail
-                # (requirement id + offending item name) into the rework
-                # artifact -- a bare boolean flag was root cause of the
-                # Real-System-E2E #8 repair failing to fix the exact
-                # field at fault (see module completion report).
-                materializability_detail = tuple(
-                    f"{match.group(1)} (item name={match.group(3)!r})"
-                    for match in re.finditer(
-                        r"(\S+) \(item name=(['\"])(.*?)\2\)", reason,
-                    )
-                )
-            if reason.startswith("missing required verification coverage for binding Requirement(s): "):
-                # CLAUDE-ARCH-S2-013E: carry the exact gap (which binding
-                # requirement id(s) still lack a recognized, evidenced
-                # verification mechanism) into the rework artifact -- the
-                # same "name the exact field at fault" precedent 012D
-                # established for materializability, applied to
-                # verification feasibility.
-                verification_feasibility_conflict = True
-                raw = reason[len("missing required verification coverage for binding Requirement(s): "):]
-                bracket_end = raw.find("]")
-                ids_part = raw[:bracket_end + 1] if bracket_end != -1 else "[]"
-                verification_gap_ids = (
-                    tuple(ids_part.strip("[]").replace("'", "").split(", "))
-                    if ids_part.strip("[]") else ()
-                )
-                # CLAUDE-ARCH-S2-013F: carry the exact per-entry
-                # compatibility/control diagnostic (candidate identity is
-                # rejected_candidate_id below; requirement, declared
-                # mechanism, referenced evidence, and precise
-                # compatibility/control reason are each named in one
-                # diagnostic line -- see
-                # _verification_feasibility_gap_diagnostics()) into the
-                # rework artifact, the same "name the exact field at
-                # fault" precedent 012D established for materializability.
-                marker = "covers this requirement"
-                marker_end = reason.find(marker)
-                if marker_end != -1:
-                    tail = reason[marker_end + len(marker):].lstrip("; ").strip()
-                    verification_detail = tuple(t for t in tail.split("; ") if t)
+        materializability_detail = tuple(
+            f"{req_id} (item name={name!r})"
+            for req_id, name, _category in validation.unmaterializable_items
+        )
         return cls(
             rejected_candidate_id=validation.variant.id,
-            reason_codes=(categorize_admissibility_reasons(validation.reasons),),
-            missing_requirement_ids=missing_ids,
-            platform_conflict=platform if any(
-                "violates platform constraint" in r for r in validation.reasons
-            ) else None,
-            materializability_conflict=materializability_conflict,
+            # D1: the exact set of simultaneously-applicable structured
+            # failure categories -- never collapsed to the single,
+            # first-match category categorize_admissibility_reasons()
+            # itself still returns for its own, separate Diagnostic
+            # Trace fault-localization contract (unchanged).
+            reason_codes=_admissibility_reason_categories(validation),
+            missing_requirement_ids=validation.missing_binding_requirement_ids,
+            platform_conflict=platform if validation.platform_conflict else None,
+            materializability_conflict=bool(validation.unmaterializable_items),
             materializability_conflict_detail=materializability_detail,
             identity_conflict=bool(identity_detail),
             identity_conflict_detail=identity_detail,
             install_method_conflict=bool(install_method_detail),
             install_method_conflict_detail=install_method_detail,
-            verification_feasibility_conflict=verification_feasibility_conflict,
-            verification_feasibility_gap_ids=verification_gap_ids,
-            verification_feasibility_conflict_detail=verification_detail,
+            verification_feasibility_conflict=bool(validation.verification_feasibility_gap_ids),
+            verification_feasibility_gap_ids=validation.verification_feasibility_gap_ids,
+            verification_feasibility_conflict_detail=validation.verification_feasibility_gap_diagnostics,
             repair_attempt=repair_attempt,
         )
 
@@ -382,6 +342,18 @@ class CandidateValidation:
     admissible: bool
     reasons: tuple[str, ...] = ()
     unmaterializable_items: tuple[tuple[str, str, str | None], ...] = ()
+    # CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (D1): the same per-category
+    # verdicts validate_variants() already computed to build `reasons`'
+    # own human-readable text, kept here too as their own structured,
+    # machine-consumable fields -- never re-derived later by parsing
+    # `reasons` (presentation/diagnostic text only). See
+    # EngineeringReworkRequest.from_validation(), the S2.3 -> S2.2
+    # rework boundary this exists for.
+    duplicate_variant_identity: bool = False
+    missing_binding_requirement_ids: tuple[str, ...] = ()
+    platform_conflict: bool = False
+    verification_feasibility_gap_ids: tuple[str, ...] = ()
+    verification_feasibility_gap_diagnostics: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -413,6 +385,13 @@ class EngineeringVariantSelection:
     validations: tuple[CandidateValidation, ...]
     selected_variant_id: str | None
     selection_authority: str  # "chairman" | "human" | "sole_admissible" | "none"
+    # CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (D2): set only when
+    # selection_authority == "none", to a bounded, machine-readable
+    # status distinguishing WHY selection is unresolved -- never a raw
+    # exception string. One of "no_eligible_candidate",
+    # "recommendation_inadmissible", "selection_required",
+    # "selected_variant_not_found". None whenever selection resolved.
+    unresolved_reason: str | None = None
 
     @property
     def admissible_variants(self) -> tuple[CouncilVariant, ...]:
@@ -447,6 +426,58 @@ def _binding_requirement_ids(preflight: PreflightResult | None) -> frozenset[str
 def _covers_binding_requirements(variant: CouncilVariant, binding_ids: frozenset[str]) -> bool:
     covered = {item.requirement_ref for item in variant.toolchain}
     return binding_ids <= covered
+
+
+def _environment_scoped_binding_requirement_ids(
+    preflight: PreflightResult | None,
+    variant: CouncilVariant,
+    project_root: str | None,
+) -> frozenset[str]:
+    """CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (A5): a required, blocking
+    PYTHON_PACKAGE requirement Preflight already found satisfied is
+    binding candidate coverage too -- UNLESS that satisfaction evidence
+    was proven for the SAME concrete Python target this variant's own
+    `environment` would actually use (the same `environment_target_
+    matches()` authority ToolchainMaterializer.materialize_decision()
+    itself relies on for FIX-004, never a second, competing rule).
+    RequirementPreflight always stamps a single, pre-candidate,
+    host-style target; a "venv" candidate targets an entirely different
+    interpreter, so host-side satisfaction proves nothing about it -- the
+    requirement must still be covered by the candidate's own toolchain
+    in that case, or it is rejected as an omission instead of silently
+    disappearing because it happened to be "not missing" for a different
+    target.
+
+    Gated exactly like materialize_decision() itself: without a real
+    project_root, a "host" candidate cannot be bound to a specific
+    target here either and keeps trusting Preflight's satisfaction
+    unchanged -- this only ever narrows the "host, no project_root"
+    case's existing behavior for "venv" candidates, never for "host"."""
+    if preflight is None or project_root is None and variant.environment != "venv":
+        return frozenset()
+    already_installed = getattr(preflight, "already_installed", ()) or ()
+    if not already_installed:
+        return frozenset()
+    blocking_ids = {
+        activation.requirement_id
+        for activation in preflight.activations
+        if activation.blocks_current_operation
+    }
+    result_by_id = {result.requirement_id: result for result in preflight.results}
+    binding: set[str] = set()
+    for requirement in already_installed:
+        if (
+            requirement.type != RequirementType.PYTHON_PACKAGE
+            or not requirement.required
+            or requirement.id not in blocking_ids
+        ):
+            continue
+        preflight_result = result_by_id.get(requirement.id)
+        evidence_target = preflight_result.target_executable if preflight_result else None
+        if environment_target_matches(variant.environment, evidence_target, project_root):
+            continue
+        binding.add(requirement.id)
+    return frozenset(binding)
 
 
 def _requirement_by_id(preflight: PreflightResult | None, requirement_id: str):
@@ -1796,6 +1827,13 @@ def validate_variants(
     results = []
     for variant in variants:
         reasons: list[str] = []
+        # A5: a requirement satisfied only for a DIFFERENT target than
+        # this exact variant's own environment would use is binding
+        # candidate coverage for THIS variant specifically -- never a
+        # single, environment-blind set shared by every variant.
+        effective_binding_ids = binding_ids | _environment_scoped_binding_requirement_ids(
+            preflight, variant, project_root,
+        )
         if variant.id in duplicate_ids:
             reasons.append(
                 f"ambiguous variant identity: id {variant.id!r} is shared by "
@@ -1803,15 +1841,16 @@ def validate_variants(
                 "never be safely selected"
             )
         unsatisfied_requirements = _semantically_unsatisfied_binding_requirements(
-            variant, binding_ids, preflight,
+            variant, effective_binding_ids, preflight,
         )
         if unsatisfied_requirements:
             reasons.append(
                 f"missing binding requirement coverage: {list(unsatisfied_requirements)}"
             )
-        if _violates_platform_constraint(variant, platform):
+        platform_conflict = _violates_platform_constraint(variant, platform)
+        if platform_conflict:
             reasons.append(f"violates platform constraint for platform={platform!r}")
-        unmaterializable = _unmaterializable_binding_requirements(variant, binding_ids)
+        unmaterializable = _unmaterializable_binding_requirements(variant, effective_binding_ids)
         if unmaterializable:
             detail = ", ".join(
                 f"{req_id} (item name={name!r})"
@@ -1823,14 +1862,15 @@ def validate_variants(
                 f"{detail}"
             )
         verification_gaps = _verification_feasibility_gaps(
-            variant, preflight, binding_ids, trusted_groups, governed_manual_verification_ids,
+            variant, preflight, effective_binding_ids, trusted_groups, governed_manual_verification_ids,
             project_root,
         )
+        verification_gap_diagnostics: tuple[str, ...] = ()
         if verification_gaps:
-            diagnostics = _verification_feasibility_gap_diagnostics(
-                variant, verification_gaps, trusted_groups, governed_manual_verification_ids, binding_ids,
+            verification_gap_diagnostics = tuple(_verification_feasibility_gap_diagnostics(
+                variant, verification_gaps, trusted_groups, governed_manual_verification_ids, effective_binding_ids,
                 preflight, project_root,
-            )
+            ))
             reasons.append(
                 "missing required verification coverage for binding "
                 f"Requirement(s): {sorted(verification_gaps)} (variant={variant.id!r}): "
@@ -1838,7 +1878,7 @@ def validate_variants(
                 "verification mechanism (test_command/build_command/"
                 "static_analysis/probe/smoke_test/config_validation/"
                 "manual_review) covers this requirement"
-                + ("; " + "; ".join(diagnostics) if diagnostics else "")
+                + ("; " + "; ".join(verification_gap_diagnostics) if verification_gap_diagnostics else "")
             )
         results.append(CandidateValidation(
             variant=variant,
@@ -1846,6 +1886,11 @@ def validate_variants(
             admissible=not reasons,
             reasons=tuple(reasons),
             unmaterializable_items=unmaterializable,
+            duplicate_variant_identity=variant.id in duplicate_ids,
+            missing_binding_requirement_ids=tuple(unsatisfied_requirements),
+            platform_conflict=platform_conflict,
+            verification_feasibility_gap_ids=tuple(sorted(verification_gaps)),
+            verification_feasibility_gap_diagnostics=verification_gap_diagnostics,
         ))
     return tuple(results)
 
@@ -1898,6 +1943,32 @@ def categorize_admissibility_reasons(reasons: tuple[str, ...]) -> str:
     if "missing required verification coverage" in joined:
         return "verification_coverage"
     return "admissibility_validation"
+
+
+def _admissibility_reason_categories(validation: "CandidateValidation") -> tuple[str, ...]:
+    """CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (D1): the exact set of
+    S2.3-computed structured failure categories for one candidate --
+    checked directly against validate_variants()'s own structured
+    CandidateValidation fields, never derived by parsing `reasons`'
+    human-readable text. Unlike categorize_admissibility_reasons()
+    (a separate, unchanged, single first-match category kept for its
+    own Diagnostic Trace fault-localization contract), several
+    categories can legitimately apply to the same candidate at once --
+    e.g. a candidate can simultaneously omit a binding requirement AND
+    carry an unmaterializable item -- and the S2.3 -> S2.2 rework
+    contract must see all of them, not just the first."""
+    categories: list[str] = []
+    if validation.duplicate_variant_identity:
+        categories.append("duplicate_variant_identity")
+    if validation.missing_binding_requirement_ids:
+        categories.append("completeness_validation")
+    if validation.platform_conflict:
+        categories.append("platform_constraint")
+    if validation.unmaterializable_items:
+        categories.append("materializability_conflict")
+    if validation.verification_feasibility_gap_ids:
+        categories.append("verification_coverage")
+    return tuple(categories) if categories else ("admissible",)
 
 
 def resolve_human_engineering_selection(
@@ -2075,13 +2146,25 @@ def describe_engineering_variant_selection(
         ChairmanRecommendationInadmissibleError,
         EngineeringSelectionRequiredError,
         EngineeringVariantNotFoundError,
-    ):
+    ) as error:
+        # D2: preserve the non-raising presentation contract (still
+        # selected_variant_id=None, selection_authority="none" -- an
+        # existing, relied-upon contract, unchanged) while additionally
+        # exposing a bounded, machine-readable reason distinguishing
+        # WHY selection is unresolved, never the raw exception string.
+        unresolved_reason = {
+            NoEligibleEngineeringCandidateError: "no_eligible_candidate",
+            ChairmanRecommendationInadmissibleError: "recommendation_inadmissible",
+            EngineeringSelectionRequiredError: "selection_required",
+            EngineeringVariantNotFoundError: "selected_variant_not_found",
+        }[type(error)]
         return EngineeringVariantSelection(
             council_result=council_result,
             chairman_recommendation=chairman_recommendation,
             validations=validations,
             selected_variant_id=None,
             selection_authority="none",
+            unresolved_reason=unresolved_reason,
         )
     return EngineeringVariantSelection(
         council_result=council_result,

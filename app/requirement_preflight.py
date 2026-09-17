@@ -87,6 +87,7 @@ class RequirementPreflight:
         results = []
         missing_requirements = []
         inactive_requirements = []
+        already_installed = []
 
         for requirement in requirements_tuple:
             activation = activation_by_id[requirement.id]
@@ -167,6 +168,18 @@ class RequirementPreflight:
                 )
             ):
                 missing_requirements.append(requirement)
+            elif satisfied:
+                # CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (A5): a requirement
+                # Preflight found satisfied is only evidence for the
+                # exact target this check ran against (PreflightRequirementResult.
+                # target_executable, above) -- never proof that a
+                # candidate targeting a DIFFERENT environment (e.g. a
+                # "venv" candidate, when this check ran against the
+                # host interpreter) is also satisfied. Recording it here
+                # lets S2.3 (app.engineering_decision) decide, per
+                # candidate, whether that evidence is actually target-
+                # bound before treating the requirement as non-binding.
+                already_installed.append(requirement)
 
         blocking_ids = {
             activation.requirement_id
@@ -190,7 +203,7 @@ class RequirementPreflight:
             overall_ready=overall_ready,
             results=tuple(results),
             missing_requirements=tuple(missing_requirements),
-            already_installed=tuple(),
+            already_installed=tuple(already_installed),
             warnings=warnings,
             activations=normalized_activations,
             inactive_requirements=tuple(inactive_requirements),

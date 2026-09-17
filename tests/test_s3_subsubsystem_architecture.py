@@ -277,11 +277,16 @@ class TestS3_2_SetupApproval:
             SetupApproval.reject(approved)
 
     def test_every_step_receives_approval_state_correctly(self):
+        """CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (E1): every concrete
+        executable action (currently "install") receives approval;
+        a "manual_review" step -- not a concrete executable setup
+        action -- must never be falsely marked approved for execution."""
         step_a = SetupStep(id="a", requirement_id="r-a", action="install", setup_effect=SetupEffect.PYTHON_PACKAGE_INSTALL)
         step_b = SetupStep(id="b", requirement_id="r-b", action="manual_review")
         plan = SetupPlan(id="plan-2", project_id="proj", steps=(step_a, step_b))
         approved = SetupApproval.approve(plan)
-        assert approved.steps[0].is_approved and approved.steps[1].is_approved
+        assert approved.steps[0].is_approved is True
+        assert approved.steps[1].is_approved is False
 
     def test_approval_does_not_plan(self):
         import inspect
@@ -698,6 +703,12 @@ class TestS3_5_MissingToolchainRecovery:
         assert field_names == {
             "project_id", "project_root", "toolchain", "operation_type",
             "council_result", "verification_plan", "verification_result", "platform",
+            # CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (A4): the already-selected
+            # S2 EngineeringDecision, optional and additive -- see
+            # app.missing_toolchain_setup.MissingToolchainSetupRequest's
+            # own docstring for why S3.5 recovery must never repeat or
+            # reinterpret S2 selection.
+            "engineering_decision",
         }
 
 
@@ -775,9 +786,19 @@ class TestS3_to_S4_Boundary:
         development_stage = DevelopmentStage(DeveloperAgent(llm))
         test_change_generator = TestChangeGenerator(llm)
         testing_stage = TestingStage(DiagnosisReviewer(llm))
+        # A real, passing TestResult shape -- not a bare, unconfigured
+        # Mock() -- whose `.passed`/`.timed_out` auto-vivified Mock
+        # attributes would otherwise both be truthy, which S5.6's own
+        # deterministic-failure check (app.testing_stage.TestingStage)
+        # would correctly, but here misleadingly, read as a genuine
+        # deterministic test failure this S3->S4 boundary test never
+        # intended to exercise.
+        from app.project_test_runner import TestResult as _TestResult
+        project_test_runner = Mock()
+        project_test_runner.run.return_value = _TestResult(True, 0, "", "", ("pytest",))
         development_testing_stage = DevelopmentTestingStage(
             development_stage, test_change_generator, DeveloperFileApplier,
-            Mock(), testing_stage,
+            project_test_runner, testing_stage,
         )
         controlled_rework_stage = ControlledReworkStage(development_testing_stage)
         workflow = DevelopmentWorkflow(

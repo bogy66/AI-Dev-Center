@@ -218,3 +218,120 @@ def test_apply_create_fails_on_mkdir_permission_error(tmp_path):
     assert len(result["skipped"]) == 1
     assert result["skipped"][0]["file"] == "app/new_file.py"
     assert result["skipped"][0]["reason"].startswith("mkdir_failed:")
+
+
+# ---------------------------------------------------------------------------
+# CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (C1): update/delete filesystem errors
+# must become a normal, classified apply-result entry (never an
+# uncaught exception escaping S4.3), exactly like create's own OSError
+# handling above.
+# ---------------------------------------------------------------------------
+
+def test_apply_update_fails_closed_on_write_os_error(tmp_path):
+    """A real OSError (writing where a directory exists at that path)
+    must be classified as skipped, never propagate out of apply()."""
+    applier = DeveloperFileApplier(tmp_path)
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "example.py").mkdir()  # a directory, not a file
+
+    result = applier.apply({
+        "changes": [
+            {"file": "app/example.py", "action": "update", "content": "new"},
+        ],
+    })
+
+    assert result["applied"] == []
+    assert len(result["skipped"]) == 1
+    assert result["skipped"][0]["file"] == "app/example.py"
+    assert result["skipped"][0]["reason"].startswith("write_failed:")
+
+    from app.change_application import ChangeApplicationService
+    assert ChangeApplicationService.status_for(result) == "apply_failed"
+
+
+def test_apply_delete_fails_closed_on_unlink_os_error(tmp_path):
+    """A real OSError (unlink() on a directory) must be classified as
+    skipped, never propagate out of apply()."""
+    applier = DeveloperFileApplier(tmp_path)
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "example.py").mkdir()  # a directory, not a file
+
+    result = applier.apply({
+        "changes": [
+            {"file": "app/example.py", "action": "delete", "content": ""},
+        ],
+    })
+
+    assert result["applied"] == []
+    assert len(result["skipped"]) == 1
+    assert result["skipped"][0]["file"] == "app/example.py"
+    assert result["skipped"][0]["reason"].startswith("delete_failed:")
+
+    from app.change_application import ChangeApplicationService
+    assert ChangeApplicationService.status_for(result) == "apply_failed"
+
+
+def test_apply_mixed_success_and_os_error_yields_partial_apply_failed_result(tmp_path):
+    """One change applies successfully while a sibling change fails
+    with a real OSError -- both are represented in the normal
+    {"applied": [...], "skipped": [...]} contract, never a crash that
+    leaves earlier-applied changes unaccounted for."""
+    (tmp_path / "app").mkdir()
+    good_path = tmp_path / "app" / "good.py"
+    good_path.write_text("old")
+    (tmp_path / "app" / "bad.py").mkdir()  # a directory, not a file
+
+    applier = DeveloperFileApplier(tmp_path)
+    result = applier.apply({
+        "changes": [
+            {"file": "app/good.py", "action": "update", "content": "new"},
+            {"file": "app/bad.py", "action": "update", "content": "new"},
+        ],
+    })
+
+    assert result["applied"] == ["app/good.py"]
+    assert good_path.read_text() == "new"
+    assert len(result["skipped"]) == 1
+    assert result["skipped"][0]["file"] == "app/bad.py"
+    assert result["skipped"][0]["reason"].startswith("write_failed:")
+
+    from app.change_application import ChangeApplicationService
+    assert ChangeApplicationService.status_for(result) == "apply_failed"
+
+
+def test_apply_update_safe_path_behavior_unchanged(tmp_path):
+    """The existing safe-path update behavior (successful write) is
+    unaffected by the new OSError handling."""
+    path = tmp_path / "app" / "example.py"
+    path.parent.mkdir(parents=True)
+    path.write_text('print("old")')
+
+    applier = DeveloperFileApplier(tmp_path)
+    result = applier.apply({
+        "changes": [
+            {"file": "app/example.py", "action": "update", "content": 'print("new")'},
+        ],
+    })
+
+    assert result["applied"] == ["app/example.py"]
+    assert result["skipped"] == []
+    assert path.read_text() == 'print("new")'
+
+
+def test_apply_delete_safe_path_behavior_unchanged(tmp_path):
+    """The existing safe-path delete behavior (successful unlink) is
+    unaffected by the new OSError handling."""
+    path = tmp_path / "app" / "example.py"
+    path.parent.mkdir(parents=True)
+    path.write_text('print("old")')
+
+    applier = DeveloperFileApplier(tmp_path)
+    result = applier.apply({
+        "changes": [
+            {"file": "app/example.py", "action": "delete", "content": ""},
+        ],
+    })
+
+    assert result["applied"] == ["app/example.py"]
+    assert result["skipped"] == []
+    assert not path.exists()

@@ -64,8 +64,28 @@ class TestingStage:
     __test__ = False
     def __init__(self, reviewer): self._reviewer = reviewer
     def run(self, development_result, test_result):
-        try: review = self._reviewer.review(TestingReviewRequest(development_result, test_result))
-        except Exception: return TestingStageResult("review_failed", test_result, None)
-        if not getattr(test_result, "passed", False) or getattr(test_result, "timed_out", False) or review.decision is ReviewDecision.REWORK_REQUIRED:
+        deterministic_failure = (
+            not getattr(test_result, "passed", False)
+            or getattr(test_result, "timed_out", False)
+        )
+        try:
+            review = self._reviewer.review(TestingReviewRequest(development_result, test_result))
+        except Exception:
+            # S5.6: a real deterministic test failure must force rework
+            # independently of reviewer availability/opinion. Reviewer
+            # infrastructure failure must never erase or downgrade a real
+            # test failure into an unhandled review_failed outcome.
+            if deterministic_failure:
+                return TestingStageResult(
+                    "rework_required", test_result, None,
+                    ReworkRequest(
+                        "tests require rework",
+                        "DiagnosisReviewer unavailable; deterministic test "
+                        "evidence indicates failure",
+                        development_result, test_result,
+                    ),
+                )
+            return TestingStageResult("review_failed", test_result, None)
+        if deterministic_failure or review.decision is ReviewDecision.REWORK_REQUIRED:
             return TestingStageResult("rework_required", test_result, review, ReworkRequest("tests require rework", review.summary, development_result, test_result))
         return TestingStageResult("accepted", test_result, review)

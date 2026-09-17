@@ -325,6 +325,62 @@ class TestHumanEngineeringAuthorityEmulator:
         )
         assert selection.selected_variant_id is None
         assert selection.selection_authority == "none"
+        # CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (D2): the non-raising
+        # presentation contract now also exposes a bounded, machine-
+        # readable reason distinguishing WHY selection is unresolved.
+        assert selection.unresolved_reason == "selection_required"
+
+    def test_unresolved_reason_distinguishes_no_eligible_candidate(self):
+        """D2: zero admissible candidates -- a distinct reason from
+        "selection_required" (multiple admissible, none resolvable)."""
+        req = _requirement()
+        preflight = _binding_preflight(req)
+        # No toolchain item covers the binding requirement at all.
+        inadmissible = CouncilVariant(id="v1", name="v1", toolchain=())
+        result = CouncilResult(id="c1", project_id="proj", variants=(inadmissible,),
+                                recommendation="v1", council_complete=True)
+        selection = describe_engineering_variant_selection(result, preflight)
+        assert selection.selected_variant_id is None
+        assert selection.selection_authority == "none"
+        assert selection.unresolved_reason == "no_eligible_candidate"
+
+    def test_unresolved_reason_distinguishes_recommendation_inadmissible(self):
+        """D2: the Chairman's own recommendation is technically
+        inadmissible, even though other candidates are admissible --
+        a distinct reason from "no_eligible_candidate". Two admissible
+        alternatives (not just one) so this does not instead resolve
+        via the unrelated "sole admissible candidate" auto-selection."""
+        req = _requirement()
+        preflight = _binding_preflight(req)
+        inadmissible = CouncilVariant(id="v1", name="v1", toolchain=())
+        admissible_a = CouncilVariant(id="v2", name="v2", toolchain=(_pip_item(req.id),))
+        admissible_b = CouncilVariant(id="v3", name="v3", toolchain=(_pip_item(req.id),))
+        result = CouncilResult(
+            id="c1", project_id="proj",
+            variants=(inadmissible, admissible_a, admissible_b),
+            recommendation="v1", council_complete=True,
+        )
+        selection = describe_engineering_variant_selection(
+            result, preflight, chairman_recommendation="v1",
+        )
+        assert selection.selected_variant_id is None
+        assert selection.selection_authority == "none"
+        assert selection.unresolved_reason == "recommendation_inadmissible"
+
+    def test_unresolved_reason_distinguishes_selected_variant_not_found(self):
+        """D2: a human_selected_variant_id naming an id the Council never
+        actually proposed -- a distinct reason from every other case."""
+        req = _requirement()
+        preflight = _binding_preflight(req)
+        variant = CouncilVariant(id="v1", name="v1", toolchain=(_pip_item(req.id),))
+        result = CouncilResult(id="c1", project_id="proj", variants=(variant,),
+                                recommendation="v1", council_complete=True)
+        selection = describe_engineering_variant_selection(
+            result, preflight, human_selected_variant_id="does-not-exist",
+        )
+        assert selection.selected_variant_id is None
+        assert selection.selection_authority == "none"
+        assert selection.unresolved_reason == "selected_variant_not_found"
 
 
 # =========================================================================

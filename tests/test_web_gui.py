@@ -12,6 +12,7 @@ from app.dev_workflow import WorkflowBlockedError, WorkflowExecutionError
 from app.web_api import (
     app, sessions, get_directory_selector, get_web_config_path, get_workflow_components,
     get_web_setup_components, TracingMCPServerWrapper,
+    PendingEngineeringSelection, _engineering_decision_payload,
 )
 
 
@@ -667,3 +668,48 @@ def test_start_session_is_observable_while_planning_is_still_running(
         assert "central_trace" in state
     finally:
         release.set()
+
+
+# ---------------------------------------------------------------------------
+# CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (D2): the Web/API engineering-decision
+# presentation must preserve the bounded, machine-readable reason
+# EngineeringVariantSelection now exposes for an unresolved selection.
+# ---------------------------------------------------------------------------
+
+def test_engineering_decision_payload_exposes_unresolved_reason():
+    from app.engineering_decision import EngineeringVariantSelection
+    from app.council_models import CouncilResult
+
+    selection = EngineeringVariantSelection(
+        council_result=CouncilResult(id="c1", project_id="proj", council_complete=True),
+        chairman_recommendation=None,
+        validations=(),
+        selected_variant_id=None,
+        selection_authority="none",
+        unresolved_reason="selection_required",
+    )
+    pending = PendingEngineeringSelection(selection, preflight_result=None, platform=None)
+
+    payload = _engineering_decision_payload(pending)
+
+    assert payload["selection_authority"] == "none"
+    assert payload["unresolved_reason"] == "selection_required"
+
+
+def test_engineering_decision_payload_unresolved_reason_none_when_resolved():
+    from app.engineering_decision import EngineeringVariantSelection
+    from app.council_models import CouncilResult
+
+    selection = EngineeringVariantSelection(
+        council_result=CouncilResult(id="c1", project_id="proj", council_complete=True),
+        chairman_recommendation="v1",
+        validations=(),
+        selected_variant_id="v1",
+        selection_authority="chairman",
+    )
+    pending = PendingEngineeringSelection(selection, preflight_result=None, platform=None)
+
+    payload = _engineering_decision_payload(pending)
+
+    assert payload["selection_authority"] == "chairman"
+    assert payload["unresolved_reason"] is None

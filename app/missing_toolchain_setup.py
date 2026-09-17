@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass
 import shutil
 
 from app.council_models import CouncilResult
+from app.engineering_decision import EngineeringDecision
 from app.requirement_model import SetupPlan, SetupStep
 from app.setup_executor import ExecutionResult
 from app.verification import TOOL_UNAVAILABLE, VerificationPlan, VerificationResult, VerificationStep
@@ -24,6 +25,20 @@ class MissingToolchainSetupRequest:
     verification_plan: VerificationPlan
     verification_result: VerificationResult
     platform: str | None = None
+    # CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (A4): the already-resolved S2
+    # EngineeringDecision the original S2->S3 handoff selected (Chairman
+    # recommendation, explicit human override, or sole admissible
+    # candidate) -- optional and additive so every existing caller that
+    # constructs this request with only `council_result` keeps working
+    # unchanged. When supplied, prepare_missing_toolchain_setup() below
+    # materializes THIS exact already-selected variant
+    # (ToolchainMaterializer.materialize_decision()) instead of
+    # re-running S2 selection from `council_result` alone -- S3.5
+    # recovery must never repeat or reinterpret S2 selection, and a
+    # human's explicit choice of a non-recommended-but-admissible
+    # variant must never be silently replaced by the Chairman's own
+    # recommendation during recovery.
+    engineering_decision: EngineeringDecision | None = None
 
 
 @dataclass(frozen=True)

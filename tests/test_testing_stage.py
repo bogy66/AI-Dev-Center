@@ -254,3 +254,72 @@ def test_invalid_reviewer_returns_review_failed():
     assert result.status == "review_failed"
     assert result.review_result is None
     assert result.rework_request is None
+
+
+def test_real_test_failure_still_requires_rework_when_diagnosis_reviewer_raises():
+    """S5.6: a real deterministic test failure must force rework
+    independently of reviewer availability/opinion -- reviewer
+    infrastructure failure must never erase or downgrade it."""
+    reviewer = Mock()
+    reviewer.review.side_effect = RuntimeError("provider error")
+    test_result = _test(passed=False)
+    result = TestingStage(reviewer).run("development", test_result)
+    assert result.status == "rework_required"
+    assert result.rework_request is not None
+    assert result.rework_request.test_result is test_result
+    reviewer.review.assert_called_once()
+
+
+def test_timed_out_test_still_requires_rework_when_diagnosis_reviewer_raises():
+    reviewer = Mock()
+    reviewer.review.side_effect = RuntimeError("provider error")
+    test_result = _test(passed=True, timed_out=True)
+    result = TestingStage(reviewer).run("development", test_result)
+    assert result.status == "rework_required"
+    assert result.rework_request is not None
+
+
+def test_controlled_rework_stage_executes_rework_when_reviewer_raises_on_real_failure():
+    """Prove ControlledReworkStage actually executes the one allowed
+    rework cycle when a real deterministic test failure coincides with a
+    DiagnosisReviewer exception."""
+    from app.controlled_rework_stage import ControlledReworkStage
+    from app.development_testing_stage import DevelopmentTestingResult
+
+    failing_test_result = _test(passed=False)
+    reviewer = Mock()
+    reviewer.review.side_effect = RuntimeError("provider error")
+    testing_stage = TestingStage(reviewer)
+
+    initial_testing_result = testing_stage.run("development", failing_test_result)
+    assert initial_testing_result.status == "rework_required"
+
+    initial_dt_result = DevelopmentTestingResult(
+        development_result="development",
+        test_changes=None,
+        apply_result=None,
+        test_result=failing_test_result,
+        testing_stage_result=initial_testing_result,
+    )
+
+    passing_test_result = _test(passed=True)
+    reviewer_ok = Mock()
+    reviewer_ok.review.return_value = ReviewResult(ReviewDecision.ACCEPTED, "fixed")
+    rework_testing_result = TestingStage(reviewer_ok).run("development-2", passing_test_result)
+    rework_dt_result = DevelopmentTestingResult(
+        development_result="development-2",
+        test_changes=None,
+        apply_result=None,
+        test_result=passing_test_result,
+        testing_stage_result=rework_testing_result,
+    )
+
+    development_testing_stage = Mock()
+    development_testing_stage.run.side_effect = [initial_dt_result, rework_dt_result]
+
+    stage = ControlledReworkStage(development_testing_stage)
+    result = stage.run(SimpleNamespace(project_id="p", project_path="/tmp"))
+
+    assert result.rework_executed is True
+    assert result.status == "accepted"
+    assert development_testing_stage.run.call_count == 2

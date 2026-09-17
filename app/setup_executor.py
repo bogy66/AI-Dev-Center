@@ -1,7 +1,11 @@
-"""ExecutionResult, StepNotApprovedError and UnsupportedSetupEffectError
-below are shared, productively-consumed contracts (e.g. by
-app.python_package_executor.PythonPackageExecutor). SetupExecutor itself
-is a different matter -- see its own docstring.
+"""ExecutionResult and StepNotApprovedError below are shared,
+productively-consumed contracts (e.g. by
+app.python_package_executor.PythonPackageExecutor). UnsupportedSetupEffectError
+is defined here for the same reason (this module's own SetupExecutor.execute_step()
+raises it) but, unlike the other two, is not currently imported or
+raised by any other productive module -- it is not (yet) an equally
+shared cross-module contract; see ADC_Zielbild §4J.3. SetupExecutor
+itself is a different matter -- see its own docstring.
 """
 from dataclasses import dataclass
 from app.execution import is_controlled_setup_effect

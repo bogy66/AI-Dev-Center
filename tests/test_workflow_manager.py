@@ -1,12 +1,14 @@
 import json
 
-from app.workflow_manager import WorkflowManager
+import pytest
+
+from app.workflow_manager import WorkflowManager, WorkflowStateCorruptedError
 
 
-def test_load_returns_default_state_when_json_is_corrupted(tmp_path):
+def test_load_returns_default_state_when_file_is_missing(tmp_path):
+    """A genuinely missing state file is a legitimate new/default state
+    -- never confused with an existing-but-corrupted one (B2)."""
     storage = tmp_path / "workflow_state.json"
-    storage.write_text("{not valid json", encoding="utf-8")
-
     manager = WorkflowManager(storage=storage)
 
     state = manager.load()
@@ -18,15 +20,58 @@ def test_load_returns_default_state_when_json_is_corrupted(tmp_path):
     assert state["user_approval"]["status"] == "waiting"
 
 
-def test_load_returns_default_state_when_json_is_not_an_object(tmp_path):
+def test_load_fails_closed_when_json_is_corrupted(tmp_path):
+    """CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (B2): an existing but unreadable/
+    invalid workflow state is NOT equivalent to "no workflow state
+    exists" -- it must fail closed and require explicit recovery rather
+    than silently becoming a fresh default state a later save() could
+    then overwrite the real, still-recoverable original with."""
+    storage = tmp_path / "workflow_state.json"
+    storage.write_text("{not valid json", encoding="utf-8")
+
+    manager = WorkflowManager(storage=storage)
+
+    with pytest.raises(WorkflowStateCorruptedError):
+        manager.load()
+
+
+def test_load_fails_closed_when_json_is_not_an_object(tmp_path):
     storage = tmp_path / "workflow_state.json"
     storage.write_text("[1, 2, 3]", encoding="utf-8")
 
     manager = WorkflowManager(storage=storage)
 
-    state = manager.load()
+    with pytest.raises(WorkflowStateCorruptedError):
+        manager.load()
 
-    assert state["status"] == "not_started"
+
+def test_load_fails_closed_when_file_is_unreadable(tmp_path, monkeypatch):
+    storage = tmp_path / "workflow_state.json"
+    storage.write_text(json.dumps({"status": "started"}), encoding="utf-8")
+
+    manager = WorkflowManager(storage=storage)
+
+    def raise_oserror(*args, **kwargs):
+        raise OSError("simulated unreadable file")
+
+    monkeypatch.setattr(type(storage), "read_text", raise_oserror)
+
+    with pytest.raises(WorkflowStateCorruptedError):
+        manager.load()
+
+
+def test_no_mutation_overwrites_corrupted_state(tmp_path):
+    """An ordinary state mutation (e.g. update_agent) must never
+    silently replace a corrupted original with a fresh default --
+    the corruption must be surfaced, not masked by the next write."""
+    storage = tmp_path / "workflow_state.json"
+    storage.write_text("{not valid json", encoding="utf-8")
+    manager = WorkflowManager(storage=storage)
+
+    with pytest.raises(WorkflowStateCorruptedError):
+        manager.update_agent("developer", "done")
+
+    assert storage.read_text(encoding="utf-8") == "{not valid json"
 
 
 def test_load_fills_missing_fields_but_preserves_existing_values(tmp_path):

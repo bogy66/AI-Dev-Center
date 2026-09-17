@@ -179,6 +179,29 @@ class DevelopmentWorkflow:
             project_root=project_root,
         )
 
+    def materialize_setup_plan_from_decision(
+        self, engineering_decision: "EngineeringDecision", project_id: str,
+        preflight: PreflightResult | None = None,
+        project_root: str | None = None,
+    ) -> SetupPlan:
+        """CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (A4): the pure-S3 counterpart
+        to materialize_setup_plan() above, for a caller (Missing-
+        Toolchain recovery) that already holds the exact
+        EngineeringDecision the original S2->S3 handoff selected --
+        never re-running S2.3 admissibility / S2.4 Human Engineering
+        Authority from a bare CouncilResult, which would silently prefer
+        the Chairman's own recommendation over an already-made,
+        possibly-different human selection. Delegates unchanged to
+        ToolchainMaterializer.materialize_decision(), exactly the same
+        S3-only entry point resolve_engineering_selection() itself
+        uses."""
+        if self._materializer is None:
+            raise WorkflowExecutionError("No toolchain materializer has been configured.")
+        return self._materializer.materialize_decision(
+            engineering_decision, project_id, preflight=preflight,
+            project_root=project_root,
+        )
+
     def _trace(self, run_id, phase, event_type, status, summary, **kwargs):
         if self._diagnostic_trace is not None:
             try:

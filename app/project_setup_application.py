@@ -324,18 +324,38 @@ class ProjectSetupApplicationService:
             )
             if not candidates:
                 raise MissingToolchainSetupError("No matching TOOL_UNAVAILABLE verification step")
-            materialized = self._development_workflow.materialize_setup_plan(
-                request.council_result, request.project_id,
-                platform=request.platform,
-                # CLAUDE-ADC-S23-STRICT-IDENTITY-ENVIRONMENT-BINDING-
-                # FIX-004: `root` is already validated above as this
-                # exact project's own project_root -- forwarding it here
-                # is what lets a "venv" candidate's own environment
-                # actually bind to a real target instead of silently
-                # inheriting whatever generic, pre-candidate target
-                # Preflight happened to stamp.
-                project_root=root,
-            )
+            if request.engineering_decision is not None:
+                # A4: reuse the exact already-selected EngineeringDecision
+                # from the original S2->S3 handoff (Chairman
+                # recommendation, explicit human override, or sole
+                # admissible candidate) -- never re-running S2 selection
+                # here, which would silently prefer the Chairman's own
+                # recommendation over an already-made, possibly-different
+                # human selection.
+                materialized = self._development_workflow.materialize_setup_plan_from_decision(
+                    request.engineering_decision, request.project_id,
+                    # CLAUDE-ADC-S23-STRICT-IDENTITY-ENVIRONMENT-BINDING-
+                    # FIX-004: `root` is already validated above as this
+                    # exact project's own project_root -- forwarding it
+                    # here is what lets a "venv" candidate's own
+                    # environment actually bind to a real target instead
+                    # of silently inheriting whatever generic,
+                    # pre-candidate target Preflight happened to stamp.
+                    project_root=root,
+                )
+            else:
+                materialized = self._development_workflow.materialize_setup_plan(
+                    request.council_result, request.project_id,
+                    platform=request.platform,
+                    # CLAUDE-ADC-S23-STRICT-IDENTITY-ENVIRONMENT-BINDING-
+                    # FIX-004: `root` is already validated above as this
+                    # exact project's own project_root -- forwarding it here
+                    # is what lets a "venv" candidate's own environment
+                    # actually bind to a real target instead of silently
+                    # inheriting whatever generic, pre-candidate target
+                    # Preflight happened to stamp.
+                    project_root=root,
+                )
             setup_steps = tuple(
                 step for step in materialized.steps
                 if step.package == request.toolchain and step.action == "install"

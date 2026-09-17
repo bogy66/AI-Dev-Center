@@ -247,7 +247,7 @@ def test_executable_present_requirement(monkeypatch):
     assert res.detected_version is None
     assert res.warning is None
     assert result.missing_requirements == ()
-    assert result.already_installed == ()
+    assert result.already_installed == (req,)
     assert result.warnings == ()
 
 
@@ -342,7 +342,7 @@ def test_executable_required_present_and_optional_missing(monkeypatch):
     assert result_map["req-exe-missing-optional-2"].present is False
     assert result_map["req-exe-missing-optional-2"].satisfied is False
     assert result.missing_requirements == ()
-    assert result.already_installed == ()
+    assert result.already_installed == (req_present_required,)
     assert result.warnings == ()
 
 
@@ -439,7 +439,7 @@ def test_python_package_present_requirement(monkeypatch):
     assert res.detected_version == "2.31.0"
     assert res.warning is None
     assert result.missing_requirements == ()
-    assert result.already_installed == ()
+    assert result.already_installed == (req,)
     assert result.warnings == ()
 
 

@@ -17,6 +17,7 @@ import pytest
 
 from app.council_models import CouncilResult, CouncilVariant, ToolchainItem
 from app.dev_workflow import DevelopmentWorkflow
+from app.execution import register_setup_step_targets
 from app.python_package_executor import PythonPackageExecutor
 from app.requirement_model import Requirement, RequirementType
 from app.requirement_preflight import RequirementPreflight
@@ -56,7 +57,22 @@ def _build_approved_plan(project_root, target, project_id, requirement):
     )
     plan = ToolchainMaterializer().materialize(council, project_id, preflight=preflight)
     assert plan.steps[0].target_executable == target
-    return SetupApproval.approve(plan)
+    approved = SetupApproval.approve(plan)
+    # CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (B1): a mutating "install" now
+    # requires a project-scoped, approval-provenance-backed capability
+    # registration. Registered here, in the parent process, BEFORE
+    # multiprocessing.get_context("fork") ever forks a child below --
+    # fork() copies the parent's memory (including the already-
+    # populated DEFAULT_CAPABILITY_REGISTRY singleton) at that exact
+    # moment, so each race worker inherits this same registration
+    # without any special cross-process plumbing, exactly like the
+    # real, observable launch counter file already does.
+    register_setup_step_targets(
+        approved, project_root,
+        engineering_council_ref="c1", chairman_approval_ref="v1",
+        human_approval_ref=f"setup-approval:{plan.id}:{approved.generation_id}:approved",
+    )
+    return approved
 
 
 def _run_race(storage_path, approved_plan, project_root):

@@ -132,3 +132,28 @@ def test_new_plan_status_correct():
 
     assert result is not plan
     assert result.status == "approved"
+
+
+def make_manual_review_step(idx: int = 1) -> SetupStep:
+    return SetupStep(
+        id=f"step-manual-{idx}",
+        requirement_id=f"req-manual-{idx}",
+        action="manual_review",
+        is_approved=False,
+    )
+
+
+def test_approve_does_not_mark_manual_review_step_as_approved():
+    """CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (E1): Human Approval of the plan
+    must never falsely convert a manual/non-executable item into an
+    approved executable mutation."""
+    manual_step = make_manual_review_step(1)
+    install_step = make_step(2)
+    plan = make_plan(steps=[manual_step, install_step])
+
+    approved = SetupApproval.approve(plan)
+
+    approved_by_id = {step.id: step for step in approved.steps}
+    assert approved_by_id[manual_step.id].is_approved is False
+    assert approved_by_id[install_step.id].is_approved is True
+    assert approved.status == "approved"

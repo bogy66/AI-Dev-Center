@@ -96,17 +96,34 @@ class DevelopmentTestingResult:
     # "test_apply" when the S4 -> S5 gate below rejected this cycle
     # before verification could start -- in that case there is no
     # testing_stage_result to report status from, because S5 never ran.
+    # Set to "tool_unavailable" (CLAUDE-ADC-ZIELBILD-DIFF-FIX-001, A3)
+    # when S5 Quality & Verification DID run and found a recoverable
+    # TOOL_UNAVAILABLE outcome -- an environment/setup issue, never
+    # source-code rework; see _tool_unavailable_result() below.
     failure_stage: str | None = None
+    # A3: the VerificationPlan S5 actually executed, populated
+    # alongside `verification_result` only for the "tool_unavailable"
+    # terminal state -- together they carry everything the existing
+    # app.missing_toolchain_setup.MissingToolchainSetupRequest contract
+    # needs from S5 to reach S3.5 recovery, without S5 itself guessing
+    # the additional S2/S3 context (EngineeringDecision/CouncilResult)
+    # only a caller further up the stack actually has.
+    verification_plan: object | None = None
 
     @property
     def status(self) -> str:
         """Expose the testing decision without introducing a second policy.
 
-        A set `failure_stage` means S5 Quality & Verification was never
-        entered for this cycle -- "apply_failed" is the terminal status
-        itself here, not a stand-in read from `testing_stage_result`
-        (which does not exist in this case).
+        A set `failure_stage` means S5 Quality & Verification's normal
+        pass/fail/rework decision was never reached for this cycle.
+        "tool_unavailable" is its own distinct terminal status (never
+        folded into "apply_failed", which specifically means an S4
+        mutation was rejected before S5 could even start); every other
+        `failure_stage` value keeps reporting "apply_failed", read from
+        `testing_stage_result` only when neither is set.
         """
+        if self.failure_stage == "tool_unavailable":
+            return "tool_unavailable"
         if self.failure_stage is not None:
             return "apply_failed"
         return self.testing_stage_result.status
@@ -129,6 +146,67 @@ def _pre_verification_apply_failure(development_result, test_changes, apply_resu
         testing_stage_result=None,
         verification_result=None,
         failure_stage=failure_stage,
+    )
+
+
+def _tool_unavailable_result(
+    development_result, test_changes, apply_result, verification_plan, verification_result,
+) -> "DevelopmentTestingResult":
+    """A3: S5 found a recoverable TOOL_UNAVAILABLE verification outcome
+    -- a missing executable/toolchain, i.e. an environment/setup issue,
+    never source-code rework. test_result/testing_stage_result stay
+    None (there is no real deterministic pass/fail verdict to report;
+    folding TOOL_UNAVAILABLE into a failing TestResult is exactly the
+    defect this closes), so ControlledReworkStage's own, unmodified
+    `status != "rework_required"` check never starts Developer rework
+    for this cycle. verification_plan/verification_result ARE carried
+    (unlike the S4-apply-failure terminal state above) so a caller with
+    the additional S2/S3 context S5 itself does not have
+    (EngineeringDecision/CouncilResult) can construct the existing
+    app.missing_toolchain_setup.MissingToolchainSetupRequest and reach
+    the existing S3.5 Missing-Toolchain Setup contract unchanged."""
+    return DevelopmentTestingResult(
+        development_result=development_result,
+        test_changes=test_changes,
+        apply_result=apply_result,
+        test_result=None,
+        testing_stage_result=None,
+        verification_result=verification_result,
+        failure_stage="tool_unavailable",
+        verification_plan=verification_plan,
+    )
+
+
+def _test_result_for_unexecuted_verification(steps) -> TestResult:
+    """A2: reached only when generalized verification is configured but
+    yields no genuinely executable evidence -- either Project
+    Intelligence could not be built (`steps` is empty) or every planned
+    VerificationStep is unsupported/not_applicable/deferred. Must never
+    silently become "run pytest" (a guessed, single-stack fallback);
+    instead this fails closed, honestly, using the SAME generalized
+    verification evidence shape `_test_result_from_verification()`
+    already produces for a real failure -- never a second, competing
+    TestResult-construction policy."""
+    if not steps:
+        return TestResult(
+            passed=False, return_code=1, stdout="",
+            stderr=(
+                "No verification steps could be planned for this project "
+                "(Project Intelligence unavailable or no verifiable areas "
+                "found)."
+            ),
+            command=("verification",), timed_out=False,
+        )
+    step_failures = tuple(_step_failure_evidence(s) for s in steps)
+    return TestResult(
+        passed=False, return_code=1,
+        stdout=(
+            f"No executable verification steps available; {len(steps)} "
+            "step(s) unsupported/not applicable/deferred; see "
+            "step_failures for per-step detail."
+        ),
+        stderr="", command=("verification",), timed_out=False,
+        step_failures=step_failures,
     )
 
 
@@ -181,7 +259,7 @@ class DevelopmentTestingStage:
         test_result = None
 
         if self._verification_registry is not None and self._project_inspector is not None:
-            from app.verification import build_verification_plan
+            from app.verification import TOOL_UNAVAILABLE, build_verification_plan
             run_id = getattr(request, "run_id", "") or "unknown"
             try:
                 intelligence = self._project_inspector.build_intelligence(request.project_path)
@@ -192,11 +270,33 @@ class DevelopmentTestingStage:
 
             executable = [s for s in verification_result.steps
                           if s.status not in ("unsupported", "not_applicable", "deferred")]
+            # A3: a recoverable TOOL_UNAVAILABLE outcome is an
+            # environment/setup issue, not source-code rework -- stop
+            # this cycle before it can ever be folded into a failing
+            # TestResult and reach Developer rework.
+            if any(s.status == TOOL_UNAVAILABLE.value for s in executable):
+                return _tool_unavailable_result(
+                    development_result, test_changes, apply_result, plan, verification_result,
+                )
             if executable:
                 test_result = _test_result_from_verification(executable)
             else:
-                test_result = self._project_test_runner.run(TestExecutionRequest(request.project_path))
+                # A2: no valid executable VerificationStep exists
+                # (Project Intelligence unavailable, or every step is
+                # unsupported/not_applicable/deferred) -- must never
+                # silently become "run pytest" (a guessed,
+                # stack-specific fallback that could run pytest in a
+                # non-Python repository). Fail closed, honestly, using
+                # the real generalized verification evidence instead.
+                test_result = _test_result_for_unexecuted_verification(verification_result.steps)
         else:
+            # Legacy/unit-test compatibility only: the productive
+            # canonical composition (see app.canonical_composition)
+            # always supplies both verification_registry and
+            # project_inspector, so this branch is not reachable from
+            # productive S4/S5 orchestration -- it exists solely for
+            # callers/tests that construct this stage without
+            # generalized verification configured at all.
             test_result = self._project_test_runner.run(TestExecutionRequest(request.project_path))
 
         stage_result = self._testing_stage.run(development_result, test_result)

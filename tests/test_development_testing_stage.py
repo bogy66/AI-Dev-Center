@@ -261,19 +261,201 @@ def test_verification_all_steps_passing_yields_a_passed_test_result(tmp_path):
     assert result.test_result.return_code == 0
 
 
-def test_verification_no_executable_steps_falls_back_to_project_test_runner(tmp_path):
+def test_verification_no_executable_steps_never_falls_back_to_project_test_runner(tmp_path):
+    """A2: absence of a valid executable VerificationStep must never
+    silently become "run pytest" -- even for a non-Python repository
+    where the generalized plan has no executable step at all."""
     step = VerificationStepResult(
         step_id="unit", area="root", status="not_applicable", verification_kind="test",
         runner_type="none", passed=True, return_code=None,
         stdout="", stderr="", command=(), timed_out=False,
     )
     verification_result = VerificationResult(run_id="r", steps=(step,), aggregate_status="not_applicable")
-    fallback_result = SimpleNamespace(passed=True, timed_out=False)
     runner = Mock()
-    runner.run.return_value = fallback_result
     stage, runner, registry = _verification_stage(verification_result, project_test_runner=runner)
 
     result = stage.run(_request(tmp_path))
 
-    runner.run.assert_called_once()
-    assert result.test_result is fallback_result
+    runner.run.assert_not_called()
+    assert result.test_result.passed is False
+    assert len(result.test_result.step_failures) == 1
+    assert result.test_result.step_failures[0].step_id == "unit"
+
+
+def test_verification_all_unsupported_steps_never_falls_back_to_project_test_runner(tmp_path):
+    """A2: a genuinely unsupported stack (e.g. a repo ADC has no
+    controlled runner for at all) must be represented honestly, never
+    routed to pytest."""
+    step = VerificationStepResult(
+        step_id="build", area="root", status="unsupported", verification_kind="build",
+        runner_type="some_unrecognized_build_tool", passed=False, return_code=None,
+        stdout="", stderr="", command=(), timed_out=False,
+        diagnostics="Verification runner not supported: some_unrecognized_build_tool",
+    )
+    verification_result = VerificationResult(run_id="r", steps=(step,), aggregate_status=FAIL.value)
+    runner = Mock()
+    stage, runner, registry = _verification_stage(verification_result, project_test_runner=runner)
+
+    result = stage.run(_request(tmp_path))
+
+    runner.run.assert_not_called()
+    assert result.test_result.passed is False
+    assert result.test_result.step_failures[0].diagnostics == (
+        "Verification runner not supported: some_unrecognized_build_tool"
+    )
+
+
+def test_project_intelligence_exception_never_falls_back_to_project_test_runner(tmp_path):
+    """A2: a Project Intelligence build failure must fail closed the
+    same, honest way -- never silently substitute pytest."""
+    development_stage = Mock()
+    development_stage.run.return_value = SimpleNamespace(status="success")
+    generator = Mock()
+    generator.generate.return_value = {"changes": [{"file": "test_feature.py", "action": "create", "content": "x"}]}
+    applier = Mock()
+    applier.apply.return_value = {"applied": ["test_feature.py"], "skipped": []}
+    factory = Mock(return_value=applier)
+    runner = Mock()
+    testing_stage = Mock()
+    testing_stage.run.side_effect = lambda development, test: SimpleNamespace(
+        status="accepted" if test.passed else "rework_required", rework_request=None,
+    )
+    registry = Mock()
+    registry.execute_plan.return_value = VerificationResult(run_id="r", steps=(), aggregate_status="not_applicable")
+    inspector = Mock()
+    inspector.build_intelligence.side_effect = RuntimeError("cannot inspect project")
+
+    stage = DevelopmentTestingStage(
+        development_stage, generator, factory, runner, testing_stage,
+        verification_registry=registry, project_inspector=inspector,
+    )
+
+    result = stage.run(_request(tmp_path))
+
+    runner.run.assert_not_called()
+    assert result.test_result.passed is False
+
+
+def test_normal_generalized_pytest_verification_still_works(tmp_path):
+    """A2's fix must not disturb the ordinary case: a real executable
+    pytest VerificationStep still drives a real pass/fail TestResult."""
+    step = VerificationStepResult(
+        step_id="unit", area="root", status=PASS.value, verification_kind="test",
+        runner_type="pytest", passed=True, return_code=0,
+        stdout="3 passed", stderr="", command=("pytest",), timed_out=False,
+    )
+    verification_result = VerificationResult(run_id="r", steps=(step,), aggregate_status=PASS.value)
+    runner = Mock()
+    stage, runner, registry = _verification_stage(verification_result, project_test_runner=runner)
+
+    result = stage.run(_request(tmp_path))
+
+    runner.run.assert_not_called()
+    assert result.test_result.passed is True
+    assert result.status == "accepted"
+
+
+def test_normal_generalized_cmake_firmware_verification_remains_unchanged(tmp_path):
+    """A2's fix must not disturb a firmware/CMake stack's own normal
+    executable verification either -- genericity proof."""
+    step = VerificationStepResult(
+        step_id="build", area="firmware", status=FAIL.value, verification_kind="build",
+        runner_type="cmake_build", passed=False, return_code=1,
+        stdout="", stderr="CMake Error", command=("cmake", "--build", "."), timed_out=False,
+    )
+    verification_result = VerificationResult(run_id="r", steps=(step,), aggregate_status=FAIL.value)
+    runner = Mock()
+    stage, runner, registry = _verification_stage(verification_result, project_test_runner=runner)
+
+    result = stage.run(_request(tmp_path))
+
+    runner.run.assert_not_called()
+    assert result.test_result.passed is False
+    assert result.test_result.stderr == "CMake Error"
+
+
+# ---------------------------------------------------------------------
+# CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (A3): a recoverable TOOL_UNAVAILABLE
+# verification outcome is an environment/setup issue, not source-code
+# rework -- it must never enter Developer rework, and it must never
+# silently trigger arbitrary installation.
+# ---------------------------------------------------------------------
+
+def test_tool_unavailable_does_not_enter_developer_rework(tmp_path):
+    from app.verification import TOOL_UNAVAILABLE, VerificationPlan, VerificationStep
+
+    plan_step = VerificationStep(
+        "build", "firmware", ".", "build", "esphome", "esphome_check", "controlled_execution",
+    )
+    plan = VerificationPlan("r", str(tmp_path), "firmware", 1, (plan_step,))
+    step_result = VerificationStepResult(
+        step_id="build", area="firmware", status=TOOL_UNAVAILABLE.value,
+        verification_kind="build", runner_type="esphome_check", passed=False,
+        diagnostics="Executable not found: esphome",
+    )
+    verification_result = VerificationResult(run_id="r", steps=(step_result,), aggregate_status=FAIL.value)
+    registry = Mock()
+    registry.execute_plan.return_value = verification_result
+    testing_stage = Mock()
+    stage, runner, registry = _verification_stage(verification_result)
+    stage._testing_stage = testing_stage  # would drive rework if ever reached
+
+    result = stage.run(_request(tmp_path))
+
+    testing_stage.run.assert_not_called()
+    assert result.status == "tool_unavailable"
+    assert result.test_result is None
+    assert result.testing_stage_result is None
+    assert result.verification_result is verification_result
+
+
+def test_tool_unavailable_carries_verification_plan_for_s3_5_recovery(tmp_path):
+    """The existing S3.5 Missing-Toolchain Setup contract
+    (app.missing_toolchain_setup.MissingToolchainSetupRequest) needs
+    both the VerificationPlan and VerificationResult -- prove both
+    survive onto the terminal "tool_unavailable" result untouched."""
+    from app.verification import TOOL_UNAVAILABLE, VerificationStepResult as VSR
+
+    step_result = VSR(
+        step_id="build", area="firmware", status=TOOL_UNAVAILABLE.value,
+        verification_kind="build", runner_type="esphome_check", passed=False,
+    )
+    verification_result = VerificationResult(run_id="r", steps=(step_result,), aggregate_status=FAIL.value)
+    stage, runner, registry = _verification_stage(verification_result)
+
+    result = stage.run(_request(tmp_path))
+
+    assert result.verification_plan is not None
+    assert result.verification_result is verification_result
+
+
+def test_actual_build_failure_still_reaches_rework(tmp_path):
+    """A3 must not weaken S5.7: a genuine FAIL (not TOOL_UNAVAILABLE)
+    still drives the normal rework-required path."""
+    step = VerificationStepResult(
+        step_id="build", area="firmware", status=FAIL.value, verification_kind="build",
+        runner_type="cmake_build", passed=False, return_code=1,
+        stdout="", stderr="compile error", command=("cmake", "--build", "."), timed_out=False,
+    )
+    verification_result = VerificationResult(run_id="r", steps=(step,), aggregate_status=FAIL.value)
+    stage, runner, registry = _verification_stage(verification_result)
+
+    result = stage.run(_request(tmp_path))
+
+    assert result.status == "rework_required"
+
+
+def test_unsupported_verification_does_not_trigger_installation(tmp_path):
+    """A3: an UNSUPPORTED (not TOOL_UNAVAILABLE) outcome must not be
+    treated as a recoverable missing-toolchain case either."""
+    step = VerificationStepResult(
+        step_id="build", area="root", status="unsupported", verification_kind="build",
+        runner_type="some_unrecognized_build_tool", passed=False,
+        diagnostics="Verification runner not supported: some_unrecognized_build_tool",
+    )
+    verification_result = VerificationResult(run_id="r", steps=(step,), aggregate_status=FAIL.value)
+    stage, runner, registry = _verification_stage(verification_result)
+
+    result = stage.run(_request(tmp_path))
+
+    assert result.status != "tool_unavailable"

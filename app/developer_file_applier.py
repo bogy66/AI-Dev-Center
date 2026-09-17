@@ -76,10 +76,17 @@ class DeveloperFileApplier:
                     })
                     continue
 
-                file_path.write_text(
-                    content,
-                    encoding="utf-8"
-                )
+                try:
+                    file_path.write_text(
+                        content,
+                        encoding="utf-8"
+                    )
+                except OSError as error:
+                    skipped.append({
+                        "file": requested,
+                        "reason": f"write_failed: {error}"
+                    })
+                    continue
                 applied.append(requested)
 
             elif action == "delete":
@@ -90,7 +97,14 @@ class DeveloperFileApplier:
                     })
                     continue
 
-                file_path.unlink()
+                try:
+                    file_path.unlink()
+                except OSError as error:
+                    skipped.append({
+                        "file": requested,
+                        "reason": f"delete_failed: {error}"
+                    })
+                    continue
                 applied.append(requested)
 
         return {

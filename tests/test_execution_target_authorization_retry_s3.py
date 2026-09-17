@@ -21,6 +21,7 @@ import pytest
 
 from app.council_models import CouncilResult, CouncilVariant, ToolchainItem
 from app.dev_workflow import DevelopmentWorkflow, WorkflowExecutionError
+from app.execution import register_setup_step_targets
 from app.python_package_executor import PythonPackageExecutor
 from app.requirement_model import Requirement, RequirementType, SetupEffect, SetupStep
 from app.requirement_preflight import RequirementPreflight
@@ -63,7 +64,20 @@ def _build_approved_plan(tmp_path, project_root, target_a, project_id, requireme
         _council_result(requirement.id, project_id), project_id, preflight=preflight,
     )
     assert plan.steps[0].target_executable == target_a
-    return SetupApproval.approve(plan)
+    approved = SetupApproval.approve(plan)
+    # CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (B1): a mutating "install" now
+    # requires a project-scoped, approval-provenance-backed capability
+    # registration -- exactly what the real productive
+    # execute_approved_setup_and_development() -> authorize_setup_
+    # plan_targets() -> register_setup_step_targets() chain performs,
+    # reused here so this file's own retry/restart-safety proofs stay
+    # focused on what they actually test.
+    register_setup_step_targets(
+        approved, project_root,
+        engineering_council_ref="council-1", chairman_approval_ref="variant-1",
+        human_approval_ref=f"setup-approval:{plan.id}:{approved.generation_id}:approved",
+    )
+    return approved
 
 
 @pytest.fixture()
@@ -309,6 +323,11 @@ class TestKnownFailedIsNotAutomaticallyReplayed:
         council = CouncilResult(id="c1", project_id="proj-failed", variants=(variant,), recommendation="v1", council_complete=True)
         plan = ToolchainMaterializer().materialize(council, "proj-failed", preflight=preflight)
         approved = SetupApproval.approve(plan)
+        register_setup_step_targets(
+            approved, project_root,
+            engineering_council_ref="c1", chairman_approval_ref="v1",
+            human_approval_ref=f"setup-approval:{plan.id}:{approved.generation_id}:approved",
+        )
 
         workflow = DevelopmentWorkflow(
             discovery=None, validator=None, preflight=None,
@@ -380,6 +399,18 @@ class TestIsolation:
         workflow.execute_approved(approved_a, str(project_root_a))
         count_after_a = read_launch_count(counter)
 
+        # B1: the artificial reuse below targets a DIFFERENT project
+        # scope (project_root_b) than _build_approved_plan() registered
+        # (project_root_a) -- register that scope too, so this test
+        # still proves project-scoped state isolation specifically,
+        # not incidentally the (already separately proven) capability
+        # authorization boundary.
+        register_setup_step_targets(
+            approved_a, project_root_b,
+            engineering_council_ref="council-1", chairman_approval_ref="variant-1",
+            human_approval_ref=f"setup-approval:{approved_a.id}:{approved_a.generation_id}:approved-b",
+        )
+
         # Same plan.id/step.id (deterministic from project_id="proj-a"
         # is different per project, but force an artificial collision
         # by reusing the SAME plan object against a DIFFERENT project
@@ -414,6 +445,12 @@ class TestIsolation:
         )
         approved_1 = SetupApproval.approve(plan_1)
         approved_2 = SetupApproval.approve(plan_2)
+        for approved in (approved_1, approved_2):
+            register_setup_step_targets(
+                approved, project_root,
+                engineering_council_ref="c1", chairman_approval_ref="v1",
+                human_approval_ref=f"setup-approval:{approved.id}:{approved.generation_id}:approved",
+            )
 
         workflow = DevelopmentWorkflow(
             discovery=None, validator=None, preflight=None,
@@ -442,6 +479,11 @@ class TestIsolation:
         council = CouncilResult(id="c1", project_id="proj-stepiso", variants=(variant,), recommendation="v1", council_complete=True)
         plan = ToolchainMaterializer().materialize(council, "proj-stepiso", preflight=preflight)
         approved = SetupApproval.approve(plan)
+        register_setup_step_targets(
+            approved, project_root,
+            engineering_council_ref="c1", chairman_approval_ref="v1",
+            human_approval_ref=f"setup-approval:{plan.id}:{approved.generation_id}:approved",
+        )
         workflow = DevelopmentWorkflow(
             discovery=None, validator=None, preflight=None,
             executor=PythonPackageExecutor(), execution_state_store=store,

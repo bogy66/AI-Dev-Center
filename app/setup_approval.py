@@ -16,7 +16,13 @@ class SetupApproval:
                 f"Cannot approve plan with status {plan.status!r}; expected 'pending_approval'."
             )
         new_steps = tuple(
-            replace(step, is_approved=True) for step in plan.steps
+            # CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (E1): a "manual_review"
+            # step is not a concrete executable setup action -- Human
+            # Approval of the plan must never itself claim to have
+            # approved such a step for execution. Every other action
+            # (currently only "install") keeps the exact prior behavior.
+            replace(step, is_approved=step.action != "manual_review")
+            for step in plan.steps
         )
         return replace(plan, status="approved", steps=new_steps)
 

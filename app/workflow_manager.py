@@ -15,6 +15,20 @@ logger = get_logger("workflow_manager")
 _UNSET = object()
 
 
+class WorkflowStateCorruptedError(Exception):
+    """Raised by WorkflowManager.load() when persisted workflow state
+    exists but cannot be trusted -- malformed JSON, an unreadable file,
+    or a non-object root. An existing-but-invalid state file is never
+    equivalent to "no workflow state exists yet": treating it the same
+    (the prior behavior) let an ordinary later mutation/save silently
+    overwrite the damaged file with a fresh default state, losing
+    whatever persisted approvals, provenance, Git results, publish
+    state, or recovery state it held. load() now fails closed instead,
+    so the corruption must be explicitly recovered/repaired before any
+    further state mutation can proceed; only a genuinely missing file
+    still yields a legitimate fresh default state."""
+
+
 class WorkflowManager:
 
     def __init__(self, storage="workflow_state.json"):
@@ -102,16 +116,20 @@ class WorkflowManager:
         except (json.JSONDecodeError, OSError, UnicodeDecodeError) as error:
             logger.error(
                 f"Failed to load workflow state from {self.storage}: "
-                f"{error}. Falling back to default state."
+                f"{error}. Failing closed -- this requires explicit recovery."
             )
-            return self._default_state(status="not_started")
+            raise WorkflowStateCorruptedError(
+                f"Workflow state at {self.storage} could not be read: {error}"
+            ) from error
 
         if not isinstance(state, dict):
             logger.error(
                 f"Workflow state in {self.storage} is not a JSON "
-                "object. Falling back to default state."
+                "object. Failing closed -- this requires explicit recovery."
             )
-            return self._default_state(status="not_started")
+            raise WorkflowStateCorruptedError(
+                f"Workflow state at {self.storage} is not a JSON object"
+            )
 
         return self._merge_with_defaults(
             self._default_state(),

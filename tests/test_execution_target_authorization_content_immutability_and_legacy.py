@@ -27,6 +27,7 @@ import pytest
 from app.canonical_execution import project_key as resolve_project_key
 from app.council_models import CouncilResult, CouncilVariant, ToolchainItem
 from app.dev_workflow import DevelopmentWorkflow
+from app.execution import register_setup_step_targets
 from app.python_package_executor import PythonPackageExecutor
 from app.requirement_model import Requirement, RequirementType
 from app.requirement_preflight import RequirementPreflight
@@ -64,6 +65,21 @@ def _materialize_and_approve(project_id, project_root, requirement, council_id):
     )
     plan = ToolchainMaterializer().materialize(council, project_id, preflight=preflight)
     approved = SetupApproval.approve(plan)
+    # CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (B1): a mutating "install" now
+    # requires a project-scoped, approval-provenance-backed capability
+    # registration -- exactly what the real productive
+    # execute_approved_setup_and_development() -> authorize_setup_
+    # plan_targets() -> register_setup_step_targets() chain performs
+    # for an approved plan with real Council/Chairman references,
+    # reused here so this file's own content-immutability/generation/
+    # retry proofs (about execute_approved() itself) stay focused on
+    # what they actually test, not on B1's separate, already-proven
+    # authorization gate.
+    register_setup_step_targets(
+        approved, project_root,
+        engineering_council_ref=council_id, chairman_approval_ref="variant-1",
+        human_approval_ref=f"setup-approval:{plan.id}:{approved.generation_id}:approved",
+    )
     return approved, council
 
 

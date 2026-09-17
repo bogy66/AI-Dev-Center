@@ -10,16 +10,19 @@ operation again -- harmless for an idempotent pip install, but not a
 safe generic ADC execution model for arbitrary controlled mutations.
 
 Deliberately NOT stored in WorkflowManager's own workflow_state.json:
-WorkflowManager.load() intentionally treats a corrupt/unparseable state
-file as "not_started" for its own, already broadly-relied-upon
-purposes (run-level development/git/publish lifecycle) -- exactly the
-opposite of the fail-closed guarantee this narrower, safety-relevant
-state requires ("a corrupt execution-state record must not be
-interpreted as NOT_STARTED"). This is not a second, competing source
-of truth for anything WorkflowManager already owns; it is a genuinely
-new responsibility with stricter safety needs, using the same safe
-atomic-write pattern (temp file + fsync + os.replace) WorkflowManager
-already established.
+even though WorkflowManager.load() itself now also fails closed on a
+corrupt/unparseable state file (WorkflowStateCorruptedError, never
+silently treated as "not_started"), that is a whole-file, whole-run
+recovery signal for run-level development/git/publish lifecycle -- not
+the narrower, per-(project, generation, step) safety guarantee this
+module provides ("a corrupt execution-state record must not be
+interpreted as NOT_STARTED" for THIS ONE step specifically, without
+requiring every other already-persisted state in the same file to be
+thrown away too). This is not a second, competing source of truth for
+anything WorkflowManager already owns; it is a genuinely new
+responsibility with its own, narrower-scoped recovery unit, using the
+same safe atomic-write pattern (temp file + fsync + os.replace)
+WorkflowManager already established.
 
 No claim of generic "exactly once" execution across arbitrary process
 crashes is made or implied anywhere in this module: if ADC crashes

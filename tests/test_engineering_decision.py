@@ -1935,3 +1935,133 @@ class TestRequirementByIdAmbiguity:
     def test_none_preflight_is_unresolved(self):
         from app.engineering_decision import _requirement_by_id
         assert _requirement_by_id(None, "req-a") is None
+
+
+# ---------------------------------------------------------------------------
+# CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (A5): a requirement Preflight found
+# already satisfied is only evidence for the exact environment/target
+# that check ran against -- never proof that a candidate targeting a
+# DIFFERENT environment (e.g. "venv", when Preflight checked the host
+# interpreter) is also satisfied.
+# ---------------------------------------------------------------------------
+
+class TestEnvironmentScopedBindingRequirements:
+    def _preflight_host_satisfied(self, requirement, host_target="/usr/bin/python3"):
+        return PreflightResult(
+            id="pre-a5", project_id="proj", overall_ready=True,
+            results=(
+                PreflightRequirementResult(
+                    requirement_id=requirement.id, present=True, satisfied=True,
+                    active=True, blocks_current_operation=True,
+                    target_executable=host_target,
+                ),
+            ),
+            missing_requirements=(),
+            already_installed=(requirement,),
+            activations=(RequirementActivation(requirement.id, True, True),),
+        )
+
+    def test_venv_candidate_cannot_drop_required_package_only_satisfied_on_host(self, tmp_path):
+        """Concrete acceptance case: a required Python distribution
+        exists in the host interpreter (Preflight reports it satisfied);
+        a candidate selects environment="venv" and its own toolchain
+        omits the item entirely, relying on that host-side satisfaction.
+        The isolated venv this candidate would materialize into has no
+        such package -- S2.3 must reject the omission, never silently
+        trust host-satisfaction evidence for a different target."""
+        requirement = _requirement("req-esphome")
+        preflight = self._preflight_host_satisfied(requirement)
+        # No .venv exists under tmp_path -- exactly the "this venv does
+        # not even have the package (or the venv itself) yet" case the
+        # omission would otherwise silently paper over.
+        venv_variant = CouncilVariant(
+            id="venv-v", name="venv-v", environment="venv", toolchain=(),
+        )
+
+        validations = validate_variants(
+            (venv_variant,), preflight, project_root=str(tmp_path),
+        )
+
+        assert validations[0].admissible is False
+        assert requirement.id in validations[0].missing_binding_requirement_ids
+        assert "missing binding requirement coverage" in " ".join(validations[0].reasons)
+
+    def test_host_candidate_does_not_unnecessarily_reinstall_host_satisfied_requirement(self):
+        """The mirror case: a "host" candidate that likewise omits the
+        item from its own toolchain must NOT be forced to carry a
+        genuinely host-satisfied requirement -- Preflight's own
+        satisfaction evidence IS valid for a host candidate (no
+        project_root supplied -- host resolution needs none), exactly
+        the prior, unchanged behavior this fix must not disturb."""
+        requirement = _requirement("req-esphome")
+        preflight = self._preflight_host_satisfied(requirement)
+        host_variant = CouncilVariant(
+            id="host-v", name="host-v", environment="host", toolchain=(),
+        )
+
+        validations = validate_variants((host_variant,), preflight)
+
+        assert validations[0].admissible is True
+        assert validations[0].missing_binding_requirement_ids == ()
+
+
+class TestStructuredReworkEvidenceSurvivesHostileIds:
+    """CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (D1): EngineeringReworkRequest
+    .from_validation() must build every field from validate_variants()'s
+    own structured CandidateValidation fields, never by reverse-parsing
+    `reasons`' human-readable text -- proven here with ids/names
+    deliberately shaped to defeat the OLD split/bracket/regex-based
+    extraction (embedded ", ", brackets, quotes) while the structured
+    contract remains exact. Admissibility itself is unchanged."""
+
+    def test_hostile_requirement_id_survives_missing_binding_extraction(self):
+        hostile_id = "req, ['weird'], id"
+        requirement = Requirement(
+            technical_identity="esphome",
+            id=hostile_id, name="esphome", type=RequirementType.PYTHON_PACKAGE,
+            purpose="firmware build", required=True, confidence=0.9,
+        )
+        preflight = _binding_preflight(requirement)
+        # Omits the item entirely -> "missing binding requirement
+        # coverage" is the ONLY failure category, isolating this case.
+        variant = CouncilVariant(
+            id="v1", name="v1", environment="host", toolchain=(),
+        )
+        validation = validate_variants((variant,), preflight=preflight)[0]
+        assert validation.admissible is False
+        assert validation.missing_binding_requirement_ids == (hostile_id,)
+
+        rework = EngineeringReworkRequest.from_validation(validation)
+        assert rework.missing_requirement_ids == (hostile_id,)
+        assert rework.reason_codes == ("completeness_validation",)
+
+    def test_hostile_item_name_survives_materializability_detail_extraction(self):
+        hostile_name = "ESPHome CLI (item name='broken'); [nested]"
+        requirement = Requirement(
+            technical_identity="esphome",
+            id="req-esphome", name="esphome", type=RequirementType.PYTHON_PACKAGE,
+            purpose="firmware build", required=True, confidence=0.9,
+        )
+        preflight = _binding_preflight(requirement)
+        broken = CouncilVariant(
+            id="v1", name="v1", environment="host",
+            toolchain=(ToolchainItem(
+                requirement_ref="req-esphome", name=hostile_name,
+                type=RequirementType.PYTHON_PACKAGE, technical_identity=None,
+                install_method="pip install esphome",
+            ),),
+        )
+        validation = validate_variants((broken,), preflight=preflight)[0]
+        assert validation.admissible is False
+
+        rework = EngineeringReworkRequest.from_validation(validation)
+        assert rework.materializability_conflict is True
+        assert any(
+            "req-esphome" in detail and hostile_name in detail
+            for detail in rework.materializability_conflict_detail
+        )
+        assert rework.identity_conflict is True
+        assert any(
+            "req-esphome" in detail and hostile_name in detail
+            for detail in rework.identity_conflict_detail
+        )

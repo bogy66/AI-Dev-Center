@@ -858,6 +858,11 @@ def _engineering_decision_payload(pending: PendingEngineeringSelection) -> Dict[
         "admissible_alternatives": alternatives,
         "rejected_candidates": rejected,
         "actions": ["accept", "select", "reject", "defer", "rework"],
+        # D2: a bounded, machine-readable status distinguishing WHY
+        # selection is still unresolved (never a raw exception string)
+        # -- see app.engineering_decision.EngineeringVariantSelection.
+        "selection_authority": selection.selection_authority,
+        "unresolved_reason": selection.unresolved_reason,
     }
 
 

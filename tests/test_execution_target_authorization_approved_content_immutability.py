@@ -140,14 +140,19 @@ class TestTC2NewGenerationWithNewApprovalPermutation:
             executor=PythonPackageExecutor(), execution_state_store=exec_store,
         )
         count_before = read_launch_count(counter)
-        registry = CapabilityRegistry()
+        # CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (B1): workflow.execute_approved()
+        # below routes through PythonPackageExecutor's default runner,
+        # which always consults DEFAULT_CAPABILITY_REGISTRY (never an
+        # injected registry) -- authorization must be registered there
+        # for the mutating "install" it performs to be authorized at all.
+        from app.execution import DEFAULT_CAPABILITY_REGISTRY
 
         authorize_setup_plan_targets(
             approved_g2, project_root,
             engineering_council_ref=council.id, chairman_approval_ref=council.recommendation,
-            capability_registry=registry, approved_content_store=content_store,
+            capability_registry=DEFAULT_CAPABILITY_REGISTRY, approved_content_store=content_store,
         )
-        assert registry.get("python", project_root) is not None
+        assert DEFAULT_CAPABILITY_REGISTRY.get("python", project_root) is not None
 
         result = workflow.execute_approved(approved_g2, str(project_root))
         assert result[0].success is True
@@ -174,13 +179,17 @@ class TestPart7RestartContract:
 
         # --- simulated restart: a fresh store instance, same file ---
         content_store_b = ApprovedPlanContentStore(storage_path)
-        registry = CapabilityRegistry()
+        # B1: see the sibling TC2 test above for why this must register
+        # into DEFAULT_CAPABILITY_REGISTRY, the one execute_approved()
+        # below actually consults.
+        from app.execution import DEFAULT_CAPABILITY_REGISTRY
+
         authorize_setup_plan_targets(
             approved, project_root,
             engineering_council_ref=council.id, chairman_approval_ref=council.recommendation,
-            capability_registry=registry, approved_content_store=content_store_b,
+            capability_registry=DEFAULT_CAPABILITY_REGISTRY, approved_content_store=content_store_b,
         )
-        assert registry.get("python", project_root) is not None
+        assert DEFAULT_CAPABILITY_REGISTRY.get("python", project_root) is not None
 
         exec_store = SetupExecutionStateStore(tmp_path / "exec-state.json")
         workflow = DevelopmentWorkflow(

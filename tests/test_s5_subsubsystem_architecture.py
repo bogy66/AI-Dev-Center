@@ -258,7 +258,11 @@ class TestS5_2_ControlledVerificationExecution:
         assert cmake_result.runner_type == "cmake"
         assert cmake_result.status == TOOL_UNAVAILABLE.value  # deterministic: cmake forced absent
 
-    def test_project_test_runner_fallback_only_when_no_executable_verification_step_exists(self, tmp_path):
+    def test_no_executable_verification_step_never_falls_back_to_project_test_runner(self, tmp_path):
+        """CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (A2): absence of a valid
+        executable VerificationStep must never silently become "run
+        pytest" -- the generalized verification evidence is used
+        honestly instead, even when it is only "unsupported"."""
         executor = Mock()
         executor.run.return_value = json.dumps({"changes": [{"file": "x.py", "action": "create", "content": "x"}], "tests": []})
         development_stage = DevelopmentStage(DeveloperAgent(executor))
@@ -286,9 +290,10 @@ class TestS5_2_ControlledVerificationExecution:
             json.dumps({"changes": [{"file": "test_x.py", "action": "create", "content": "def test(): pass"}], "tests": []}),
         ]
 
-        stage.run(DevelopmentRequest("p", tmp_path, "task"))
+        result = stage.run(DevelopmentRequest("p", tmp_path, "task"))
 
-        project_test_runner.run.assert_called_once()
+        project_test_runner.run.assert_not_called()
+        assert result.test_result.passed is False
 
 
 # =========================================================================

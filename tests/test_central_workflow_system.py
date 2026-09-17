@@ -14,6 +14,7 @@ nondeterministic boundaries are replaced with controlled deterministic
 fixtures.
 """
 
+from dataclasses import replace
 from unittest.mock import MagicMock
 
 import pytest
@@ -313,7 +314,12 @@ def test_active_manual_review_blocker_blocks_execution():
 
     approved = _approve(plan)
     workflow = _workflow_with_executor(_exec_failure("never-called"))
-    with pytest.raises(WorkflowExecutionError, match="project_tool_install"):
+    # CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (E1): SetupApproval.approve() no
+    # longer falsely marks a "manual_review" step approved for
+    # execution, so this now fails closed even earlier -- for the more
+    # fundamental "not approved" reason -- rather than reaching the
+    # unsupported-backend check downstream.
+    with pytest.raises(WorkflowExecutionError, match="is not approved"):
         workflow.execute_approved(approved)
 
 
@@ -457,9 +463,11 @@ def test_self_reference_fails_closed_in_workflow():
 
     # Approval still works
     approved = _approve(plan)
-    # Execution must block because manual_review is active blocking
+    # Execution must block because a "manual_review" step is never
+    # marked approved for execution (E1) -- fails closed for that
+    # reason before ever reaching the unsupported-backend check.
     workflow = _workflow_with_executor(_exec_failure("never"))
-    with pytest.raises(WorkflowExecutionError, match="project_tool_install"):
+    with pytest.raises(WorkflowExecutionError, match="is not approved"):
         workflow.execute_approved(approved)
 
 
@@ -756,8 +764,21 @@ def test_unsupported_backend_error_identifies_setup_effect():
     plan = _materialize(variant, preflight, project_id="proj-sdk-block")
     assert plan.steps[0].setup_effect == SetupEffect.PROJECT_TOOL_INSTALL
     assert SetupEffect.PROJECT_TOOL_INSTALL in plan.unsupported_backend_effects
+    assert plan.steps[0].action == "manual_review"
 
-    approved = _approve(plan)
+    # CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (E1): a real, materializer-produced
+    # "manual_review" step is never marked approved by SetupApproval any
+    # more, so a genuine plan now fails closed even earlier, for the
+    # "not approved" reason, before ever reaching this unsupported-
+    # backend check. That earlier check is proven by the three sibling
+    # S03/S7a tests above. This test's own purpose is the unsupported-
+    # backend boundary specifically -- proven here as defense-in-depth
+    # against a forged/legacy plan whose step is somehow already marked
+    # approved despite being "manual_review" (never producible by the
+    # real SetupApproval/ToolchainMaterializer pair).
+    approved = replace(plan, status="approved", steps=(
+        replace(plan.steps[0], is_approved=True),
+    ))
     workflow = _workflow_with_executor(_exec_failure("never"))
     with pytest.raises(WorkflowExecutionError) as exc_info:
         workflow.execute_approved(approved)
@@ -804,8 +825,12 @@ def test_arbitrary_install_method_text_does_not_grant_execution():
     assert plan.steps[0].action == "manual_review"
 
     approved = _approve(plan)
+    # E1: arbitrary install_method text never even reaches the deeper
+    # unsupported-backend check any more -- a "manual_review" step is
+    # never marked approved for execution, so capability is denied at
+    # the earliest, most fundamental gate.
     workflow = _workflow_with_executor(_exec_failure("never"))
-    with pytest.raises(WorkflowExecutionError, match="project_tool_install"):
+    with pytest.raises(WorkflowExecutionError, match="is not approved"):
         workflow.execute_approved(approved)
 
 

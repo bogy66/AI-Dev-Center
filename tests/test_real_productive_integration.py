@@ -38,6 +38,7 @@ import venv
 import pytest
 
 from app.council_models import CouncilResult, CouncilVariant, ToolchainItem
+from app.execution import register_setup_step_targets
 from app.python_package_executor import PythonPackageExecutor
 from app.requirement_model import Requirement, RequirementType
 from app.requirement_preflight import RequirementPreflight
@@ -127,6 +128,20 @@ class TestRealProductiveIntegrationStablePath:
         approved_plan = SetupApproval.approve(loaded_plan)
         assert approved_plan.status == "approved"
         assert approved_plan.steps[0].is_approved is True
+
+        # --- REAL register_setup_step_targets: CLAUDE-ADC-ZIELBILD-
+        # DIFF-FIX-001 (B1) means a mutating "install" now requires a
+        # project-scoped, approval-provenance-backed capability
+        # registration -- exactly what the real productive
+        # execute_approved_setup_and_development() -> authorize_setup_
+        # plan_targets() -> register_setup_step_targets() chain performs
+        # for an approved plan with real Council/Chairman references,
+        # reused here unmocked, never a test-only shortcut.
+        register_setup_step_targets(
+            approved_plan, project_root,
+            engineering_council_ref="council-1", chairman_approval_ref="variant-1",
+            human_approval_ref="setup-approval:plan-1:approved",
+        )
 
         # --- REAL PythonPackageExecutor: default construction, no runner injected ---
         executor = PythonPackageExecutor()
@@ -220,17 +235,26 @@ class TestRealProductiveIntegrationPathMutation:
             raised = exc
 
         # --- Observed, not predicted, outcome: PART 3's "B" case ---
+        # CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (B1): this bootstrap-only
+        # capability (no project-scoped, approval-provenance-backed
+        # registration was ever made for Target A in this test) now
+        # rejects the mutating "install" operation on that more
+        # fundamental ground, before PATH-based executable-identity
+        # resolution is even reached -- an even stronger property than
+        # the PATH-mismatch rejection this test originally observed:
+        # no subprocess is attempted regardless of PATH state at all.
         assert raised is not None, (
             "expected the real controlled execution boundary to reject "
-            "Target A once it is no longer PATH-authorized; if this "
-            "assertion fails, the architecture has changed and PART 3's "
-            "acceptance conclusion must be re-evaluated, not assumed"
+            "an unauthorized mutating install; if this assertion fails, "
+            "the architecture has changed and PART 3's acceptance "
+            "conclusion must be re-evaluated, not assumed"
         )
         assert isinstance(raised, ValueError)
         assert "capability" in str(raised).lower()
-        assert target_a in str(raised)
-        # Target B's path must never appear anywhere in the rejection —
-        # it was never substituted, never considered, never launched.
+        # Neither Target A's nor Target B's path appears anywhere in
+        # the rejection -- it never reached PATH-based identity
+        # resolution at all, so neither was ever considered or launched.
+        assert target_a not in str(raised)
         assert target_b not in str(raised)
 
         # No install happened anywhere: not on Target A (rejected before

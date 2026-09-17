@@ -216,3 +216,74 @@ def test_failed_installation_does_not_retry_verification(tmp_path):
     assert service.execute_missing_toolchain_setup(plan_id).status == "failed"
     assert service.retry_missing_toolchain_verification(plan_id).status == "retry_blocked"
     verification.execute_plan.assert_not_called()
+
+
+def test_missing_toolchain_recovery_preserves_human_selected_engineering_decision(tmp_path):
+    """CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (A4): S3.5 recovery must never
+    repeat or reinterpret S2 selection. Concrete acceptance case: the
+    Chairman recommends variant-a; a human explicitly selects the other
+    admissible variant-b; variant-b reaches verification and encounters
+    TOOL_UNAVAILABLE; recovery must materialize variant-b's own
+    toolchain requirement -- variant-a must never replace it."""
+    from app.council_models import CouncilResult, CouncilVariant, ToolchainItem
+    from app.dev_workflow import DevelopmentWorkflow
+    from app.engineering_decision import select_engineering_variant
+    from app.requirement_model import RequirementType
+    from app.toolchain_materializer import ToolchainMaterializer
+
+    variant_a = CouncilVariant(
+        id="variant-a", name="variant-a",
+        toolchain=(ToolchainItem(
+            requirement_ref="req-tool", name="tool-a",
+            type=RequirementType.PYTHON_PACKAGE, technical_identity="tool-a",
+            install_method="pip",
+        ),),
+    )
+    variant_b = CouncilVariant(
+        id="variant-b", name="variant-b",
+        toolchain=(ToolchainItem(
+            requirement_ref="req-tool", name="tool-b",
+            type=RequirementType.PYTHON_PACKAGE, technical_identity="tool-b",
+            install_method="pip",
+        ),),
+    )
+    council_result = CouncilResult(
+        id="council-1", project_id="project", variants=(variant_a, variant_b),
+        recommendation="variant-a", council_complete=True,
+    )
+
+    # S2.4: human explicitly selects variant-b, the non-recommended but
+    # admissible alternative.
+    engineering_decision = select_engineering_variant(
+        council_result, chairman_recommendation="variant-a",
+        human_selected_variant_id="variant-b",
+    )
+    assert engineering_decision.variant.id == "variant-b"
+    assert engineering_decision.selection_authority == "human"
+
+    workflow = DevelopmentWorkflow(
+        discovery=None, validator=None, preflight=None,
+        materializer=ToolchainMaterializer(),
+    )
+    manager = WorkflowManager(tmp_path / "state.json")
+    service = ProjectSetupApplicationService(
+        workflow, workflow_manager=manager, diagnostic_trace=Mock(),
+    )
+
+    plan_step = VerificationStep("verify", ".", ".", "build", "tool-b", "tool-b", "controlled_execution")
+    plan = VerificationPlan("run", str(tmp_path), "existing", 1, (plan_step,))
+    result = VerificationResult("run", (
+        VerificationStepResult("verify", ".", TOOL_UNAVAILABLE.value, "build", "tool-b", False),
+    ), "fail")
+    request = MissingToolchainSetupRequest(
+        "project", str(tmp_path), "tool-b", "build", council_result, plan, result,
+        engineering_decision=engineering_decision,
+    )
+
+    pending = service.prepare_missing_toolchain_setup(request)
+
+    assert pending.status == "pending_approval"
+    record = manager.get_missing_toolchain_setup(pending.plan_id)
+    steps = record["setup_plan"]["steps"]
+    assert len(steps) == 1
+    assert steps[0]["package"] == "tool-b"

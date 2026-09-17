@@ -96,6 +96,25 @@ def test_real_build_execution_in_isolated_venv(tmp_path):
             f"{python_bin.parent}:{old_path}"
         )
 
+        # CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (B1): a mutating "install" now
+        # requires a project-scoped, approval-provenance-backed
+        # capability registration -- register one for the exact,
+        # PATH-resolved executable the executor below will itself use.
+        from app.execution import ApprovalProvenance, CapabilityRegistration, DEFAULT_CAPABILITY_REGISTRY
+        from app.python_distribution import resolve_target_python_executable
+
+        resolved_root = str(tmp_path.resolve())
+        DEFAULT_CAPABILITY_REGISTRY.register_approved(CapabilityRegistration(
+            capability="python", executable_names=(resolve_target_python_executable(),),
+            allowed_operations=("install", "verification"),
+            approval_provenance=ApprovalProvenance(
+                project_intelligence_ref=resolved_root,
+                engineering_council_ref="council-1", chairman_approval_ref="variant-1",
+                human_approval_ref="setup-approval:plan-build-live:approved",
+            ),
+            project_scope=resolved_root,
+        ))
+
         executor = PythonPackageExecutor()
 
         # Der Executor ruft pip über den aktiven Python-Interpreter auf.

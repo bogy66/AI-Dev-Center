@@ -305,12 +305,13 @@ def register_setup_step_targets(
     does, however, defensively re-check each individual step's own
     is_approved flag before registering that step's target — today's
     only production path to a plan.status == "approved" plan
-    (SetupApproval.approve()) always sets is_approved=True uniformly
-    across every step, so this can never diverge from plan-level
-    approval in practice, but it means a step that is not itself
-    approved is never authorized for execution even if a future
-    partial-approval model, or a hand-built/forged plan, ever produced
-    a mismatch between plan-level and step-level approval. It builds
+    (SetupApproval.approve()) sets is_approved=True for every step whose
+    action is a concrete executable action (currently "install"), never
+    for a "manual_review" step, so a step that is not itself approved
+    is never authorized for execution, whether because it is a
+    "manual_review" step or because a future partial-approval model, or
+    a hand-built/forged plan, ever produced some other mismatch between
+    plan-level and step-level approval. It builds
     one project-scoped CapabilityRegistration per distinct (capability,
     target_executable) pair present in the plan's steps and registers
     each through the existing, unmodified, approval-provenance-gated
@@ -386,6 +387,18 @@ def register_setup_step_targets(
     return tuple(registered.values())
 
 
+# CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (B1): operation types that mutate
+# project/host state. A bootstrap registration (approval_provenance=None,
+# see _bootstrap() above) may still authorize non-mutating operations
+# (verification/test/build/...) exactly as it always has -- the outer
+# setup workflow's own plan/step approval + ApprovedPlanContent checks
+# are unaffected either way -- but Controlled Execution itself must
+# never let a mutating operation such as "install" run from a
+# capability registration that carries no ApprovalProvenance, per the
+# target architecture's Section 16 boundary.
+_MUTATING_OPERATION_TYPES = frozenset({"install"})
+
+
 _DENIED_ARGS = frozenset({
     "shell=True", "shell = True", "rm -rf", "shutdown", "reboot",
     "--device", "--privileged", "/var/run/docker.sock",
@@ -438,6 +451,14 @@ def validate_request(
         return _error(UNSUPPORTED, f"Capability registration is {registration.status}: {request.tool_name}")
     if request.operation_type not in registration.allowed_operations:
         return _error(INVALID_PLAN, f"Operation {request.operation_type} is not approved for capability {request.tool_name}")
+    if request.operation_type in _MUTATING_OPERATION_TYPES:
+        provenance = registration.approval_provenance
+        if provenance is None or not provenance.is_complete():
+            return _error(
+                INVALID_PLAN,
+                f"Mutating operation {request.operation_type} requires an "
+                f"approval-provenance-backed capability registration: {request.tool_name}",
+            )
     if registration.project_scope is not None and root != Path(registration.project_scope):
         return _error(INVALID_PLAN, f"Capability is not registered for project scope: {root}")
     if not request.args:

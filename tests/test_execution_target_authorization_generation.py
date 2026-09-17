@@ -18,7 +18,9 @@ import pytest
 from app.approved_plan_content import ApprovedPlanContentStore
 from app.council_models import CouncilResult, CouncilVariant, ToolchainItem
 from app.dev_workflow import DevelopmentWorkflow
-from app.execution import ApprovalProvenance, CapabilityRegistration, CapabilityRegistry
+from app.execution import (
+    ApprovalProvenance, CapabilityRegistration, CapabilityRegistry, DEFAULT_CAPABILITY_REGISTRY,
+)
 from app.project_setup_application import authorize_setup_plan_targets
 from app.python_package_executor import PythonPackageExecutor
 from app.requirement_model import Requirement, RequirementType
@@ -76,7 +78,11 @@ class TestEnvironmentRepairScenario:
         project_root.mkdir()
         project_id = "proj-repair"
         requirement = _requirement("req-repair")
-        registry = CapabilityRegistry()
+        # CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (B1): workflow.execute_approved()
+        # below routes through PythonPackageExecutor's default runner,
+        # which always consults DEFAULT_CAPABILITY_REGISTRY (never an
+        # injected registry) -- authorization must be registered there.
+        registry = DEFAULT_CAPABILITY_REGISTRY
         store = SetupExecutionStateStore(tmp_path / "exec-state.json")
         content_store = ApprovedPlanContentStore(tmp_path / "approved-content.json")
         workflow = DevelopmentWorkflow(

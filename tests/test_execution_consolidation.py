@@ -22,10 +22,37 @@ from pathlib import Path
 
 import pytest
 
-from app.execution import CONTROLLED_SETUP_EFFECTS, DEFAULT_CAPABILITY_REGISTRY
+from app.execution import (
+    ApprovalProvenance, CONTROLLED_SETUP_EFFECTS, CapabilityRegistration,
+    DEFAULT_CAPABILITY_REGISTRY,
+)
+from app.python_distribution import resolve_target_python_executable
 from app.python_package_executor import PythonPackageExecutor
 from app.project_test_runner import ProjectTestRunner, TestExecutionRequest
 from app.requirement_model import SetupEffect, SetupStep
+
+
+def _register_approved_python_install(project_root):
+    """CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (B1): a mutating "install"
+    operation now requires a project-scoped, approval-provenance-backed
+    capability registration -- the bootstrap Python capability alone
+    (approval_provenance=None) is no longer sufficient. Registers one
+    for the given project_root, targeting the exact executable
+    PythonPackageExecutor's default runner itself resolves, so these
+    tests keep proving execute_controlled's real cwd-confinement/env-
+    allowlist/command behavior through a genuinely authorized call."""
+    resolved_root = str(Path(project_root).resolve())
+    provenance = ApprovalProvenance(
+        project_intelligence_ref=resolved_root,
+        engineering_council_ref="council-1",
+        chairman_approval_ref="variant-1",
+        human_approval_ref="setup-approval:plan-1:approved",
+    )
+    DEFAULT_CAPABILITY_REGISTRY.register_approved(CapabilityRegistration(
+        capability="python", executable_names=(resolve_target_python_executable(),),
+        allowed_operations=("install", "verification"),
+        approval_provenance=provenance, project_scope=resolved_root,
+    ))
 
 
 # ---------------------------------------------------------------------------
@@ -54,6 +81,7 @@ def test_install_with_project_root_routes_through_execute_controlled_and_confine
     executor = PythonPackageExecutor()
     project_root = tmp_path / "project"
     project_root.mkdir()
+    _register_approved_python_install(project_root)
 
     calls = []
     import app.execution as execution_module
@@ -87,6 +115,7 @@ def test_install_environment_is_allowlisted_not_fully_inherited(tmp_path, monkey
     monkeypatch.setenv("ADC_TEST_SECRET_TOKEN", "should-not-leak")
     project_root = tmp_path / "project"
     project_root.mkdir()
+    _register_approved_python_install(project_root)
 
     captured_env = {}
     import app.execution as execution_module
@@ -138,6 +167,76 @@ def test_install_operation_type_is_permitted_for_the_python_capability():
     assert SetupEffect.PYTHON_PACKAGE_INSTALL in CONTROLLED_SETUP_EFFECTS
 
 
+# ---------------------------------------------------------------------------
+# CLAUDE-ADC-ZIELBILD-DIFF-FIX-001 (B1): Controlled Execution itself must
+# never authorize a mutating "install" from a bootstrap capability that
+# carries no ApprovalProvenance.
+# ---------------------------------------------------------------------------
+
+def test_bootstrap_only_python_install_is_rejected(tmp_path):
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    # Deliberately NOT registering any project-scoped approved capability
+    # -- only the bootstrap "python" registration is available.
+    executor = PythonPackageExecutor()
+    step = SetupStep(
+        id="s1", requirement_id="r1", action="install",
+        install_method="pip", package="whatever-package",
+        setup_effect=SetupEffect.PYTHON_PACKAGE_INSTALL, is_approved=True,
+    )
+    with pytest.raises(ValueError, match="approval-provenance"):
+        executor.execute(step, str(project_root))
+
+
+def test_bootstrap_python_verification_and_test_still_behave_as_intended(tmp_path):
+    """Non-mutating operations from the bootstrap capability are unaffected."""
+    from app.execution import DEFAULT_CAPABILITY_REGISTRY, ExecutionRequest, validate_request
+
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    request = ExecutionRequest(
+        (sys.executable, "--version"), str(project_root), 10, "python", "verification",
+    )
+    assert validate_request(request, project_root, DEFAULT_CAPABILITY_REGISTRY) is None
+
+
+def test_project_scoped_approved_python_install_succeeds(tmp_path):
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _register_approved_python_install(project_root)
+
+    from app.execution import DEFAULT_CAPABILITY_REGISTRY, ExecutionRequest, validate_request
+
+    request = ExecutionRequest(
+        (resolve_target_python_executable(), "-m", "pip", "install", "whatever"),
+        str(project_root), 10, "python", "install",
+    )
+    assert validate_request(request, project_root, DEFAULT_CAPABILITY_REGISTRY) is None
+
+
+def test_stale_or_wrong_generation_provenance_remains_rejected(tmp_path):
+    """B1's new check is additive: it never weakens the existing,
+    unmodified provenance-completeness/scope validation
+    CapabilityRegistration/CapabilityRegistry already enforce."""
+    from app.execution import ApprovalProvenance, CapabilityRegistration, CapabilityRegistry
+
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    resolved_root = str(project_root.resolve())
+    registry = CapabilityRegistry()
+    incomplete_provenance = ApprovalProvenance(
+        project_intelligence_ref=resolved_root,
+        engineering_council_ref="", chairman_approval_ref="variant-1",
+        human_approval_ref="setup-approval:plan-1:approved",
+    )
+    with pytest.raises(ValueError, match="Complete approval provenance is required"):
+        registry.register_approved(CapabilityRegistration(
+            capability="python", executable_names=(resolve_target_python_executable(),),
+            allowed_operations=("install",), approval_provenance=incomplete_provenance,
+            project_scope=resolved_root,
+        ))
+
+
 @pytest.mark.real_system
 @pytest.mark.skipif(
     subprocess.run(
@@ -158,6 +257,18 @@ def test_real_local_package_install_and_uninstall_via_central_boundary(tmp_path)
     pkg_dir = _local_probe_package(tmp_path, pkg_name)
     project_root = tmp_path / "project"
     project_root.mkdir()
+    resolved_root = str(project_root.resolve())
+    from app.execution import ApprovalProvenance as _AP, CapabilityRegistration as _CR
+    DEFAULT_CAPABILITY_REGISTRY.register_approved(_CR(
+        capability="python", executable_names=(sys.executable,),
+        allowed_operations=("install", "verification"),
+        approval_provenance=_AP(
+            project_intelligence_ref=resolved_root,
+            engineering_council_ref="council-1", chairman_approval_ref="variant-1",
+            human_approval_ref="setup-approval:plan-1:approved",
+        ),
+        project_scope=resolved_root,
+    ))
 
     executor = PythonPackageExecutor()
     step = SetupStep(
@@ -399,6 +510,7 @@ def test_mcp_execute_setup_plan_routes_through_execute_controlled_with_correct_c
     plan = SetupPlan(id="plan-1", project_id="proj-mcp", steps=(step,), status="approved")
     plan_store.save(plan)
     plan_store.save_project_root("proj-mcp", str(project_root))
+    _register_approved_python_install(project_root)
 
     from app.setup_execution_state import SetupExecutionStateStore
 
