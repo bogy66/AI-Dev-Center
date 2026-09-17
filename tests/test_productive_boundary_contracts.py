@@ -149,10 +149,20 @@ def _workflow_with_executor(executor_result):
 # ---------------------------------------------------------------------------
 
 class TestS32_S33_ProductiveLifecycle:
-    """Prove the full productive S3.2->S3.3 chain that the RSE bypassed."""
+    """Persist/approve/execute through shared central helpers.
+
+    Coverage: PARTIAL — the authorization GATE is tested for real
+    (see TestS32_S33_AuthorizationGate above), but the full productive
+    lifecycle through execute_approved_plan_from_store proves only the
+    plan_store round-trip and council-ref forwarding contract. The
+    downstream service.execute_approved_setup_and_development call is
+    mocked (adapter-specific Web/MCP gate), which is sufficient for
+    the handoff proof but not complete lifecycle evidence."""
 
     def test_persist_then_approve_then_execute_via_central_helpers(self, tmp_path):
-        """The full central lifecycle: persist -> approve -> execute."""
+        """The central lifecycle handoff: persist -> approve -> execute.
+        Coverage: PARTIAL — proves plan_store round-trip + council
+        ref forwarding. The downstream service gate is mocked."""
         plan_store = WorkflowPlanStore(tmp_path / "plans")
 
         r_pkg = _requirement("req-s32-33-pkg", RequirementType.PYTHON_PACKAGE)
