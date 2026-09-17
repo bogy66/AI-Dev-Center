@@ -152,7 +152,8 @@ class TestS32_S33_ProductiveLifecycle:
     """Persist/approve/execute through shared central helpers.
 
     Coverage: PARTIAL — the authorization GATE is tested for real
-    (see TestS32_S33_AuthorizationGate above), but the full productive
+    (see test_authorize_setup_plan_targets_creates_registration_on...
+    within this class), but the full productive
     lifecycle through execute_approved_plan_from_store proves only the
     plan_store round-trip and council-ref forwarding contract. The
     downstream service.execute_approved_setup_and_development call is

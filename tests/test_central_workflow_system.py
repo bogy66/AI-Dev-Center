@@ -14,14 +14,20 @@ setup-execution gate in isolation -- each boundary component tested
 with real ToolchainMaterializer, SetupApproval, and execute_approved
 but with deterministic preflight fixtures and mock executors.
 
-NOTE (OC-ADC-BOUNDARY-COVERAGE-AUDIT-FIX-001):
+NOTE (OC-ADC-BOUNDARY-COVERAGE-AUDIT-FIX-004):
 This file tests the S3.2->S3.3 approval/execution GATE (approved status
 required, reject blocks, manual_review blocks, ...) but deliberately
 does NOT exercise the full productive lifecycle
 (persist_setup_plan -> approve_setup_plan -> execute_approved_plan_from_store).
-That productive S3.2->S3.3 chain is tested in
-tests/test_productive_boundary_contracts.py::TestS32_S33_ProductiveLifecycle
-and the authorization-target test suites (test_execution_target_authorization_*.py).
+
+The productive S3.2->S3.3 boundary is currently classified as PARTIAL:
+- tests/test_productive_boundary_contracts.py provides plan_store
+  round-trip and council-ref forwarding evidence (PARTIAL, with mock
+  downstream service), plus isolated authorization-gate evidence;
+- test_execution_target_authorization_*.py suites cover narrower
+  authorization/persistence contracts.
+No single test class currently provides FULL_PRODUCTIVE lifecycle
+evidence for the complete S3.2->S3.3 chain.
 
 Only genuinely external or nondeterministic boundaries are replaced
 with controlled deterministic fixtures (mock executors, synthetic
