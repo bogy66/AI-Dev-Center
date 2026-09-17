@@ -1,9 +1,19 @@
-"""Productive boundary-contract tests (OC-ADC-BOUNDARY-COVERAGE-AUDIT-FIX-001).
+"""Productive boundary-contract tests (OC-ADC-BOUNDARY-COVERAGE-AUDIT-FIX-002).
 
-Deterministic offline tests for real Producer->Artifact->Consumer boundaries
-that the current suite does not yet prove through the actual productive call
-path. All tests are hermetic / do not touch PyPI, the network, or any paid
-LLM provider.
+Deterministic offline tests for real Producer->Artifact->Consumer boundaries.
+All tests are hermetic (isolated stores in tmp_path, no CWD side-effects).
+
+Coverage levels reported honestly, never overclaimed:
+  TC-B-S3.2-S3.3 auth-gate: FULLY_PRODUCTIVE (real authorize_setup_plan_targets)
+  TC-B-S3.2-S3.3 lifecycle: PARTIAL (mock downstream service; real
+    plan_store round-trip and council ref forwarding proven)
+  TC-B-S3-S4 handoff: PARTIAL (odiates execute_approved() in isolation;
+    the real orchestration is covered by test_s3_subsubsystem_architecture)
+  TC-B-S5-S6 gate: PARTIAL (string-fed gate; real S5->S6 adapter not yet
+    exercised through a single isolated productive-chain test)
+  TC-B-BYPASS: isolated fail-closed guards (not full end-to-end bypasses)
+  TC-B-S1-S2: SEPARATED_UNITS (both artifacts manually constructed;
+    no real S1->S2 transformer exercised)
 """
 
 from __future__ import annotations
@@ -220,9 +230,8 @@ class TestS32_S33_ProductiveLifecycle:
     ):
         """When Council/Chairman refs are supplied for an approved plan,
         authorize_setup_plan_targets() creates a CapabilityRegistration
-        with complete ApprovalProvenance on DEFAULT_CAPABILITY_REGISTRY."""
+        with complete ApprovalProvenance on an isolated registry."""
         from app.approved_plan_content import ApprovedPlanContentStore
-        from app.execution import DEFAULT_CAPABILITY_REGISTRY
 
         r_pkg = _requirement("req-s32-auth-pkg", RequirementType.PYTHON_PACKAGE)
         step = SetupStep(
@@ -242,20 +251,26 @@ class TestS32_S33_ProductiveLifecycle:
         project_root = str(tmp_path / "project")
         Path(project_root).mkdir()
 
-        # Real productive chain: record_approved() is called by
+# Real productive chain: record_approved() is called by
         # approve_setup_plan() before any authorization gate runs.
         # authorize_setup_plan_targets() then verifies that the content
         # it is about to authorize is the exact same content that was
         # the subject of a genuine Human Approval event.
-        ApprovedPlanContentStore().record_approved(plan)
+        # USING ISOLATED STORE (no CWD side-effect).
+        content_store = ApprovedPlanContentStore(tmp_path / "ac.json")
+        content_store.record_approved(plan)
+
+        cap_registry = CapabilityRegistry()
 
         authorize_setup_plan_targets(
             plan, project_root,
             engineering_council_ref="council-s32-auth",
             chairman_approval_ref="variant-s32-auth",
+            approved_content_store=content_store,
+            capability_registry=cap_registry,
         )
 
-        reg = DEFAULT_CAPABILITY_REGISTRY.get("python", project_root)
+        reg = cap_registry.get("python", project_root)
         assert reg is not None, (
             "authorize_setup_plan_targets must create a "
             "CapabilityRegistration when Council/Chairman refs are supplied"
