@@ -1,5 +1,5 @@
 AI-DEV-CENTER (ADC) – AUSFÜHRLICHE ZIELBILD-BESCHREIBUNG
-Stand: 2026-09-06
+Stand: 2026-09-17
 
 1. ZIEL UND GRUNDIDEE
 
@@ -292,6 +292,237 @@ Registrierung) — S3 interpretiert weder Chairman-Empfehlung noch
 menschliche Auswahl und wählt keinen Engineering-Kandidaten selbst.
 
 CURRENT/TARGET-Hinweis: ToolchainMaterializer.materialize(council_result, …) bleibt als Kompatibilitätspfad bestehen (löst intern select_engineering_variant() auf und delegiert an materialize_decision()) — für Aufrufer, die weiterhin nur ein rohes CouncilResult besitzen. Der EINE reale produktive Aufrufpfad (app/dev_workflow.py::run()) nutzt bereits den Zielzustand (S2 löst auf, S3 konsumiert EngineeringDecision).
+
+
+4B. SUBSUBSYSTEM-ARCHITEKTUR — S3 ENVIRONMENT & SETUP (CLAUDE-ADC-S3-S4-S5-ARCHITECTURE-PERSIST-001)
+
+S3 Environment & Setup wird intern in fünf Subsubsystem-Verantwortungen zerlegt, analog zum S2-Piloten aus Abschnitt 4A. Es werden KEINE neuen Sx.y-Einheiten und KEINE Sx.y.z-Ebene eingeführt. Diese Zerlegung beschreibt die aktuelle produktive Implementierung, nicht historische Klassennamen.
+
+S3.1 Setup Planning
+  Zweck: bestimmen, WELCHE Setup-Aktionen erforderlich sind, und die bereits durch S2.5 freigegebene Engineering Decision kontrolliert materialisieren.
+  Primary Owner: ToolchainMaterializer.materialize_decision() (app/toolchain_materializer.py) — siehe Abschnitt 4A für die S2.5→S3-Handoff-Grenze.
+  Unterstützende Konzepte/Komponenten: RequirementPreflight (app/requirement_preflight.py), SetupPlan, SetupStep, SetupEffect (app/requirement_model.py), python_distribution-Primitiven (app/python_distribution.py) wo erforderlich.
+  Input: EngineeringDecision (von S2.5).
+  Output-Artifact: SetupPlan (strukturierte SetupSteps, klassifiziert nach SetupEffect).
+  Nächster Consumer: S3.2 Setup Approval.
+  Authority: bestimmt WELCHE Setup-Aktionen erforderlich sind; materialisiert die bereits freigegebene S2-Entscheidung; klassifiziert Requirements/Effects; erzeugt einen strukturierten SetupPlan.
+  Verbotene Authority: keine Ausführung; keine menschliche Freigabe; kein Wiederaufgreifen der S2-Kandidatenauswahl/-Zulässigkeit.
+  Legacy-Hinweis: app/setup_planner.py:SetupPlanner ist LEGACY / KOMPATIBILITÄT AUSSCHLIESSLICH und darf NICHT als produktiver S3.1-Owner dokumentiert werden. Laut eigenem Moduldocstring konstruiert kein produktiver Aufrufpfad SetupPlanner(); DevelopmentWorkflow hält den Konstruktorparameter nur aus Signatur-Kompatibilitätsgründen und liest ihn nie produktiv zurück.
+  Tests: tests/test_s3_legacy_hygiene_wiring.py.
+
+S3.2 Setup Approval
+  Zweck: die alleinige menschliche Freigabeautorität über geplante mutierende Setup-Aktionen.
+  Primary Owner: SetupApproval (app/setup_approval.py).
+  Persistenz-/Anwendungsunterstützung: ProjectSetupApplicationService-Freigabemethoden / WorkflowPlanStore / Diagnostic Trace, soweit zutreffend.
+  Input: SetupPlan (von S3.1).
+  Output-Artifact: freigegebener bzw. abgelehnter SetupPlan-Zustand (Approval-Provenienz).
+  Nächster Consumer: S3.3 Controlled Execution.
+  Authority: alleinige menschliche Autorität darüber, ob geplante Setup-Mutationen ausgeführt werden dürfen.
+  Verbotene Authority: keine Planung; keine Ausführung; kein Ersetzen der menschlichen Autorität durch LLM oder deterministische Policy.
+
+S3.3 Controlled Execution
+  Zweck: freigegebene Setup-Mutation kontrolliert und deterministisch ausführen.
+  Central Owner: DevelopmentWorkflow.execute_approved() (app/dev_workflow.py).
+  Verantwortlichkeiten: erfordert einen freigegebenen SetupPlan; erfordert einen freigegebenen ausführbaren SetupStep; erzwingt die Setup-Ausführungsgrenze; integriert Replay-/Idempotenz-Zustandsschutz (S3.4); delegiert die konkrete Setup-Mutation an das konfigurierte Backend.
+  Aktuelles produktives Backend: PythonPackageExecutor (app/python_package_executor.py).
+  Kritische Unterscheidung: PythonPackageExecutor ist ein konkreter Adapter, NICHT die generische architektonische Definition von S3.3. Die generische S3.3-Grenze bleibt technologieoffen; die Backend-Auswahl erfolgt über die in S3.1 klassifizierten SetupEffects.
+  Aktuelle automatisierte Backend-Abdeckung: CONTROLLED_SETUP_EFFECTS (app/execution.py) unterstützt aktuell ausschließlich PYTHON_PACKAGE_INSTALL. Es wird KEINE vollständige automatische npm-/CMake-/PlatformIO-/ESPHome-Setup-Unterstützung behauptet. Nicht unterstützte Setup-Effects müssen ehrlich sichtbar gemacht werden (vgl. die Zustände in Abschnitt 8, z. B. manual_review/unsupported).
+  Legacy-Hinweis: app/setup_executor.py:SetupExecutor ist LEGACY / PLATZHALTER und darf NICHT als produktiver S3.3-Owner dokumentiert werden.
+  Geteilte Verträge (bleiben gültig): ExecutionResult und StepNotApprovedError (definiert in app/setup_executor.py) werden produktiv modulübergreifend konsumiert, z. B. durch PythonPackageExecutor. UnsupportedSetupEffectError ist dagegen aktuell KEIN produktiv modulübergreifend konsumierter Vertrag wie die beiden vorgenannten — er wird ausschließlich innerhalb von app/setup_executor.py selbst geworfen; diese Unterscheidung darf nicht verwischt werden.
+  Tests: tests/test_s3_legacy_hygiene_wiring.py.
+
+S3.4 Execution State & Idempotency
+  Zweck: persistierte Ausführungsidentität und -zustand pro Setup-Schritt.
+  Primary Owner: SetupExecutionStateStore (app/setup_execution_state.py).
+  Authority: persistierte SetupStep-Ausführungsidentität/-zustand; Claim/Check; prozessübergreifender Schutz; Bindung an Content-Fingerprint; Wiederverwendung bei bekanntem Erfolg (known-success reuse); fail-closed bei unbekanntem/Recovery-Zustand; geänderter Inhalt erzwingt neue Generierung/Freigabe statt stiller Wiederverwendung.
+  Abgrenzung: bleibt getrennt von WorkflowManagers breiterem Stage-Level-Zustandsschutz — S3.4 betrifft ausschließlich die Setup-Schritt-Ausführungsidentität, nicht die generische Workflow-Stage-Synchronisation (siehe Abschnitt 4E, Shared Infrastructure).
+
+S3.5 Missing-Toolchain Recovery
+  (Name exakt: Missing-Toolchain Recovery — nicht bloß „Retry".)
+  Zweck: generische TOOL_UNAVAILABLE-Evidenz in eine begrenzte, freigabegebundene Recovery überführen.
+  Primary Owner: die produktiven Missing-Toolchain-Methoden von ProjectSetupApplicationService (app/project_setup_application.py):
+    - prepare_missing_toolchain_setup
+    - decide_missing_toolchain_setup
+    - execute_missing_toolchain_setup
+    - retry_missing_toolchain_verification
+  Unterstützender Vertrag: MissingToolchainSetupRequest, MissingToolchainSetupResult, StructuredInstallerRegistry / StructuredInstallerRegistration (app/missing_toolchain_setup.py).
+  Authority: wandelt generische TOOL_UNAVAILABLE-Evidenz in eine begrenzte, freigabegebundene Recovery um; nutzt die Autoritäten von S3.1/S3.2/S3.3 erneut; exakt begrenzte Recovery; führt den persistierten VerificationPlan nach dem Setup erneut aus.
+  Verbotene Authority: keine ungenehmigte Installation; keine unbegrenzte Schleife; kein Wiederaufgreifen der S2-Engineering-Auswahl; keine stack-spezifische zentrale Policy.
+  Umkehrgrenze (S5→S3, siehe auch Abschnitt 4F):
+    S5 TOOL_UNAVAILABLE → S3.5 Recovery → persistierter Verification-Retry in S5.
+
+
+4C. SUBSUBSYSTEM-ARCHITEKTUR — S4 DEVELOPMENT & CHANGE (CLAUDE-ADC-S3-S4-S5-ARCHITECTURE-PERSIST-001)
+
+S4 Development & Change wird intern in vier Subsubsystem-Verantwortungen zerlegt. Es werden KEINE neuen Sx.y-Einheiten und KEINE Sx.y.z-Ebene eingeführt.
+
+S4.1 Development Change Generation
+  Zweck: strukturierte Entwicklungsänderungen erzeugen.
+  Primary Owner: DeveloperAgent (app/development_stage.py).
+  Authority: erzeugt strukturierte DeveloperChanges. Keine Dateisystem-Mutation.
+  Kritische Invariante: ein leeres Development-Change-Set MUSS FEHLSCHLAGEN (MUST_FAIL). S4.1 besitzt KEINE No-op-Autorität — der explizite No-op-Vertrag existiert ausschließlich in S4.2 (Test Change Generation).
+  Tests: tests/test_s4_s5_apply_gate.py.
+
+S4.2 Test Change Generation
+  Zweck: strukturierte Teständerungen erzeugen, mit explizitem No-op-Vertrag.
+  Primary Owner: TestChangeGenerator (app/test_change_generator.py).
+  Expliziter Disposition-Vertrag: disposition = "changes" oder "no_changes_required" (TestChangeDisposition, app/test_change_generator.py).
+  Default bei fehlender disposition: "changes" — jede bisherige gültige Tester-Antwort bleibt gültig.
+  Gültiger No-op: disposition="no_changes_required", changes=[], reason=<nicht-leer>.
+  Ein bloß leeres changes-Array ist KEIN No-op. S4.2 besitzt exklusiv die Semantik dieser Deklaration.
+  DeveloperChanges (app/developer_changes.py) darf disposition/reason strukturell mitführen, besitzt aber keine eigene S4.2-Semantik dafür.
+  Tests: tests/test_s4_s5_apply_gate.py.
+
+S4.3 Change Application
+  Zweck: die eine Dateisystem-Mutationsimplementierung.
+  Primary Owner: ChangeApplicationService (app/change_application.py).
+  Dateisystem-Mutationsimplementierung: DeveloperFileApplier (app/developer_file_applier.py).
+  Verantwortlichkeiten: ein einziger Pfad von generiertem Inhalt zur Disk; klassifiziert tatsächliche Apply-Versuche; fail-closed bei übersprungener/partieller Mutation; zentrale Projekt-Root-Pfadsicherheit.
+  Pfadsicherheit: resolve_safe_path() (app/safe_project_path.py) ist die EINE autoritative Dateisystem-/Projekt-Root-Sicherheitspolicy.
+  Unsichere Pfade: mutieren niemals außerhalb des Projekts; liefern skipped-Reason unsafe_path; erzeugen apply_failed über die normale status_for-Semantik.
+  Tests: tests/test_s4_s5_apply_gate.py.
+
+S4.4 Change Provenance & Attribution
+  Zweck: nachvollziehbare Änderungsherkunft.
+  Primary Owner: RunChangeProvenance (app/change_provenance.py).
+  Verantwortlichkeiten: Baseline-before; Event-after; Run-/Phase-Attribution; kontrollierte Änderungsevidenz.
+  Abgrenzung: konsumiert die Pfadsicherheitspolicy von S4.3 (resolve_safe_path()) und definiert KEINE konkurrierende eigene Pfadsicherheitspolicy.
+
+
+4D. SUBSUBSYSTEM-ARCHITEKTUR — S5 QUALITY & VERIFICATION (CLAUDE-ADC-S3-S4-S5-ARCHITECTURE-PERSIST-001)
+
+S5 Quality & Verification wird intern in sieben Subsubsystem-Verantwortungen zerlegt. Es werden KEINE neuen Sx.y-Einheiten und KEINE Sx.y.z-Ebene eingeführt.
+
+S5.1 Verification Planning
+  Primary Owner / zentraler Mechanismus: build_verification_plan (app/verification.py).
+  Artifacts: VerificationPlan, VerificationStep (app/verification.py).
+
+S5.2 Controlled Verification Execution
+  Primary Owner: ControlledRunnerRegistry (app/verification.py).
+  Unterstützend: registrierte Verification Runner (z. B. PytestRunner, PythonUnittestRunner, ESPHomeCheckRunner, PlatformIORunner, CMakeRunner — app/verification.py); ProjectTestRunner (app/project_test_runner.py) als Fallback, soweit zutreffend.
+  Artifacts: VerificationResult, VerificationStepResult (app/verification.py).
+  Invariante: toolchain-spezifische Logik gehört ausschließlich in Runner/Adapter, niemals in die zentrale S5-Orchestrierung.
+
+S5.3 Verification Evidence Aggregation
+  Primary Mechanismen: _test_result_from_verification, _step_failure_evidence (app/development_testing_stage.py).
+  Artifacts: TestResult, StepFailureEvidence (app/project_test_runner.py).
+
+S5.4 Diagnostic Evidence Formatting
+  Primary Owner: format_test_result_evidence (app/diagnostic_evidence.py).
+  Verantwortlichkeit: deterministische Formatierung bereits erzeugter Verification-Evidenz. Keine Diagnoseautorität.
+
+S5.5 LLM Diagnosis Interpretation
+  Primary Owner: DiagnosisReviewer (app/testing_stage.py).
+  Artifacts: ReviewResult, ReviewDecision, TestingReviewRequest (app/testing_stage.py).
+  Authority: interpretiert diagnostische Evidenz.
+  Verbotene Authority: darf einen realen deterministischen Testfehler NIEMALS in Erfolg umdeuten.
+
+S5.6 Deterministic Test Outcome Policy
+  Primary Owner: TestingStage.run (app/testing_stage.py).
+  Artifacts: TestingStageResult, ReworkRequest (app/testing_stage.py).
+  Kritische Invariante: ein realer Verification-/Testfehler erzwingt Rework, unabhängig von der Reviewer-Interpretation.
+
+S5.7 Controlled Rework Orchestration
+  Primary Owner: ControlledReworkStage (app/controlled_rework_stage.py).
+  Artifacts: ReworkDevelopmentRequest, ControlledReworkResult (app/controlled_rework_stage.py).
+  Authority: genau EIN begrenzter kontrollierter Rework-Zyklus.
+  Begründung der S5-Ownership: Retry/Rework wird durch das S5-Verification-Verdikt ausgelöst; die Ownership liegt daher korrekt bei S5, nicht bei S4.
+
+
+4E. COMPOSITION ROOTS UND SHARED INFRASTRUCTURE
+
+Folgende Komponenten sind Composition Roots und werden bewusst UNNUMMERIERT dokumentiert: sie sequenzieren mehrere nummerierte Sx.y-Einheiten, erhalten aber keine eigene Sx.y-Nummer allein durch Orchestrierung.
+
+- DevelopmentWorkflow (app/dev_workflow.py) — sequenziert S3.1–S3.5 sowie den Übergang zu S4/S5.
+- ProjectSetupApplicationService (app/project_setup_application.py) — sequenziert S3.2- und S3.5-Anwendungsfälle.
+- DevelopmentStage (app/development_stage.py) — sequenziert S4.1.
+- DevelopmentTestingStage (app/development_testing_stage.py) — sequenziert S5.2/S5.3.
+
+Geteilte Infrastruktur (Shared Infrastructure), die NICHT exklusiv einer einzelnen S3.x/S4.x/S5.x-Einheit als alleinige Ownership zugeschrieben werden darf:
+
+- execute_controlled (app/execution.py) — zentrale kontrollierte Ausführungsgrenze, von mehreren Executoren genutzt.
+- CapabilityRegistry (app/execution.py) — zentrale Capability-Registrierung.
+- WorkflowManager (app/workflow_manager.py) — Lifecycle-weiter Stage-Level-Zustandsschutz, zu unterscheiden von der schmaleren, setup-schritt-spezifischen S3.4-Ausführungsidentität (SetupExecutionStateStore).
+
+
+4F. GRENZEN (BOUNDARIES) S2 → S3 → S4 → S5 → S6
+
+S2.5 → S3.1
+  Input: EngineeringDecision.
+  S3 muss die bereits ausgewählte Engineering Decision konsumieren.
+  S3 darf die S2-Auswahl-/Zulässigkeitsautorität NICHT wiederaufgreifen.
+
+S3 → S4
+  S4.1 darf erst starten, wenn alle ERFORDERLICHEN S3-Setup-Verantwortungen für den gewählten Plan erfüllt sind. Dazu gehören: freigegebenes Setup; abgeschlossene erforderliche ausführbare Setup-Schritte; kein ungelöster Setup-Blocker; persistierter Ausführungs-/Recovery-Zustand ist sicher für den Fortschritt.
+
+S4 → S5
+  S5 darf erst beginnen, wenn alle ERFORDERLICHEN S4-Mutationen erfolgreich waren.
+  Development-Mutation: immer erforderlich.
+  Test-Mutation: erforderlich bei disposition=changes.
+  Test-Mutation: nicht erforderlich nur bei explizitem gültigem S4.2 no_changes_required.
+
+S5 → S4
+  ReworkRequest / ReworkDevelopmentRequest.
+  Genau EIN kontrollierter begrenzter Rework-Zyklus.
+
+S5 → S3
+  Nur für generische Missing-Toolchain-/Capability-Recovery:
+  TOOL_UNAVAILABLE → begrenzte freigabegebundene S3.5-Recovery → persistierter VerificationPlan-Retry.
+
+S5 → S6
+  Terminale Verification-/Outcome-Evidenz erst nachdem die deterministische S5-Policy erfüllt ist.
+
+
+4G. ADC GENERICITY / NON-SPECIALIZATION INVARIANT
+
+Die zentrale ADC-Architektur darf nicht von einer bestimmten Sprache, einem Framework, einer Toolchain, einem Build-System oder einer bestimmten Repository-Struktur abhängen.
+
+Zentrale S3/S4/S5-Orchestrierung muss bestehende heterogene Repositories unterstützen. Beispiele sind unter anderem:
+
+- Python
+- JavaScript/Web
+- C/C++
+- CMake
+- PlatformIO
+- ESPHome
+- gemischte Repositories
+
+Dies sind Beispiele, keine zentralen Sonderfälle. Stack-spezifische Logik gehört in Adapter, Inspektoren, Executoren, Runner und Provider — niemals in die zentrale Orchestrierung.
+
+Wichtige Unterscheidung:
+
+Generische Architektur ≠ vollständige Adapter-Abdeckung.
+
+Aktuelle Realität: die automatische kontrollierte Setup-Backend-Abdeckung von S3 ist aktuell schmaler als ihre Architektur. Produktiv unterstützt wird derzeit Python-Package-Installation (CONTROLLED_SETUP_EFFECTS = {PYTHON_PACKAGE_INSTALL}, app/execution.py). Es wird nichts Weitergehendes behauptet.
+
+Bestehende fremde Repositories behalten ihre eigenen Konventionen. ADC erzwingt keine ADC-eigene Verzeichnis-/Build-/Test-Struktur auf sie. Ein Repository kann mehrere unabhängige Toolchain-Bereiche gleichzeitig enthalten.
+
+
+4H. BEKANNTE EINSCHRÄNKUNGEN (KNOWN LIMITATIONS)
+
+Diese Einschränkungen sind keine architektonischen Fehler; sie werden ehrlich dokumentiert und in dieser Aufgabe NICHT gelöst:
+
+1. Die aktuelle automatische S3-Setup-Backend-Abdeckung besteht primär aus Python-Package-Installation.
+
+2. Andere Setup-Effects werden ehrlich repräsentiert, benötigen aber unter Umständen manuelle Behandlung bzw. ein noch nicht existierendes Backend, bis entsprechende Adapter existieren.
+
+3. SetupStep besitzt aktuell keine explizite ProjectArea-Zuordnung; eine mehrbereichs-Attribution (Multi-Area) ist dadurch weniger explizit, als sie später werden könnte.
+
+
+4I. LEGACY / NON-PRODUKTIVE KLARHEIT (ZUSAMMENFASSUNG)
+
+SetupPlanner (app/setup_planner.py): Legacy/Kompatibilität ausschließlich. Kein aktueller S3.1-Primary-Owner (siehe S3.1 oben).
+
+SetupExecutor (app/setup_executor.py): Legacy-Platzhalter ausschließlich. Kein aktueller S3.3-Primary-Owner (siehe S3.3 oben). Die in diesem Modul definierten Verträge ExecutionResult und StepNotApprovedError bleiben davon unabhängig produktiv gültig.
+
+
+4J. REVIEW-FINDINGS FÜR ZUKÜNFTIGE ARCHITEKTUR-SUITES (in dieser Aufgabe NICHT behoben)
+
+1. AST-Wiring-Tests schränken aktuell exakte lokale Variablen-/Import-Namen stärker ein, als für die architektonische Aussage nötig wäre.
+
+2. Die Genericity-Regression prüft aktuell ast.Compare-Konstrukte und kann Dict-Key-Dispatch, match/case-Dispatch sowie dynamischen Ecosystem-Namen-Dispatch übersehen. Künftige Architektur-Suiten sollen dies verbessern.
+
+3. Dokumentations-Nuance: UnsupportedSetupEffectError (app/setup_executor.py) ist aktuell KEIN modulübergreifend produktiv geteilter Vertrag wie ExecutionResult/StepNotApprovedError (siehe S3.3 oben). Die anderslautende Behauptung, alle drei seien gleichermaßen produktiv außerhalb von setup_executor.py geteilt, ist nicht zutreffend und darf nicht wiederholt werden.
 
 
 5. PRODUCER → ARTIFACT → CONSUMER
