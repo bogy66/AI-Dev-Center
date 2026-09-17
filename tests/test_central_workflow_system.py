@@ -2,16 +2,31 @@
 
 Boundary under test:
 
-    Requirement/activation state → RequirementPreflight
-    → Engineering Decision → Selected Toolchain
-    → ToolchainMaterializer → SetupPlan
-    → Human Approval → Controlled Setup Execution
-    → resulting environment/setup state
+    Requirement/activation state -> RequirementPreflight
+    -> Engineering Decision -> Selected Toolchain
+    -> ToolchainMaterializer -> SetupPlan
+    -> SetupApproval.approve() / reject() (direct, for unit-level
+       approval-state-transition and execution-gate testing)
+    -> DevelopmentWorkflow.execute_approved() (setup-execution gate)
 
-Exercises real production workflow components across the full planning,
-approval and execution lifecycle.  Only genuinely external or
-nondeterministic boundaries are replaced with controlled deterministic
-fixtures.
+Covers the S3.1 materialization, approval state-transition, and
+setup-execution gate in isolation -- each boundary component tested
+with real ToolchainMaterializer, SetupApproval, and execute_approved
+but with deterministic preflight fixtures and mock executors.
+
+NOTE (OC-ADC-BOUNDARY-COVERAGE-AUDIT-FIX-001):
+This file tests the S3.2->S3.3 approval/execution GATE (approved status
+required, reject blocks, manual_review blocks, ...) but deliberately
+does NOT exercise the full productive lifecycle
+(persist_setup_plan -> approve_setup_plan -> execute_approved_plan_from_store).
+That productive S3.2->S3.3 chain is tested in
+tests/test_productive_boundary_contracts.py::TestS32_S33_ProductiveLifecycle
+and the authorization-target test suites (test_execution_target_authorization_*.py).
+
+Only genuinely external or nondeterministic boundaries are replaced
+with controlled deterministic fixtures (mock executors, synthetic
+PreflightResult objects -- never mock approval stores, never a
+second notion of plan approval).
 """
 
 from dataclasses import replace

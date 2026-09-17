@@ -779,14 +779,32 @@ def test_real_esphome_esp32_hello_world_acceptance(monkeypatch, diagnostic_level
         )
         progress.milestone(50, "Human engineering selection resolved; Setup Plan materialized")
 
-        # --- Setup Approval ---
-        approved_plan = SetupApproval.approve(plan)
-        assert approved_plan.status == "approved"
+        # --- Setup Approval through the REAL central lifecycle helpers ---
+        # CLAUDE-ADC-RSE-CENTRAL-LIFECYCLE-001: the RSE previously called
+        # SetupApproval.approve(plan) + service.execute_approved_setup_and_development(...)
+        # directly, bypassing persist_setup_plan/approve_setup_plan/
+        # execute_approved_plan_from_store. That shortcut skipped the entire
+        # authorize_setup_plan_targets() -> register_setup_step_targets()
+        # -> CapabilityRegistration -> ApprovalProvenance chain, so
+        # Controlled Execution's B1 mutating-operations gate rejected the
+        # install with "requires approval-provenance-backed capability".
+        # Using the same central helpers Web/API adapters use closes that gap.
+        from app.project_setup_application import (
+            approve_setup_plan, execute_approved_plan_from_store, persist_setup_plan,
+        )
+
+        persist_setup_plan(components.plan_store, plan, plan_result.council_result)
+        approve_setup_plan(
+            components.service, components.plan_store,
+            "real-esphome", plan.id, run_id,
+        )
         progress.info("setup/toolchain handling")
 
-        # --- Execute approved setup and development ---
-        dev_result = components.service.execute_approved_setup_and_development(
-            approved_plan, "real-esphome", project, REAL_TASK, run_id,
+        # --- Execute approved setup and development through central helper ---
+        dev_result = execute_approved_plan_from_store(
+            components.service, components.plan_store,
+            "real-esphome", plan.id,
+            project, REAL_TASK, run_id,
         )
 
         # --- ESPHome verification ---
