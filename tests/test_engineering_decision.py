@@ -2065,3 +2065,321 @@ class TestStructuredReworkEvidenceSurvivesHostileIds:
             "req-esphome" in detail and hostile_name in detail
             for detail in rework.identity_conflict_detail
         )
+
+
+# ---------------------------------------------------------------------------
+# CLAUDE-ADC-S23-RSE-PREFLIGHT-TEST-HARDENING-001, Part C: a productive
+# Council-candidate -> S2.3 test.
+#
+# Real-System-E2E task ADC-REAL-SYSTEM-E2E-RETRY-001 failed because every
+# proposed candidate lacked binding coverage for a platform requirement
+# (req-c2efb7b8, "ESP32 Platform") and two of the three also lacked
+# ESPHome/configuration-file verification evidence. The scenario below is
+# analogous (a generic HARDWARE_COMPONENT "platform" requirement plus a
+# PYTHON_PACKAGE toolchain requirement needing pip_show verification) but
+# is not itself ESPHome/ESP32-special-cased anywhere in the assertions or
+# in app.engineering_decision -- it exercises the exact same generic S2.3
+# rules every other candidate in this module goes through.
+#
+# The positive case calls validate_candidates() (never a hand-rolled
+# admissibility check) and shows every one of the documented dimensions
+# passing AT ONCE on one realistic multi-requirement candidate. Each
+# negative case then isolates exactly ONE of those dimensions and proves
+# validate_candidates() rejects for that reason alone, with the other
+# structured fields staying clean -- i.e. the four rejection paths are
+# independent of one another, not one over-broad check.
+# ---------------------------------------------------------------------------
+
+
+def _platform_requirement(req_id="req-platform", name="ESP32 Platform"):
+    return Requirement(
+        id=req_id, name=name, type=RequirementType.HARDWARE_COMPONENT,
+        purpose="target hardware platform for the firmware build",
+        required=True, confidence=0.9,
+    )
+
+
+def _toolchain_package_requirement(req_id="req-toolchain", name="esphome"):
+    return Requirement(
+        technical_identity=name,
+        id=req_id, name=name, type=RequirementType.PYTHON_PACKAGE,
+        purpose="firmware build toolchain", required=True, confidence=0.9,
+        verification_method=f"pip show {name}",
+    )
+
+
+def _platform_item(req_id, name="ESP32 Platform", environment_constraint=None):
+    return ToolchainItem(
+        requirement_ref=req_id, name=name, type=RequirementType.HARDWARE_COMPONENT,
+        state="already_installed", environment_constraint=environment_constraint,
+    )
+
+
+def _pip_show_package_item(req_id, name="esphome", technical_identity="esphome",
+                            install_method="pip", state="needs_install"):
+    from app.verification import PACKAGE_PRESENCE_MECHANISM
+    return ToolchainItem(
+        requirement_ref=req_id, name=name, type=RequirementType.PYTHON_PACKAGE,
+        technical_identity=technical_identity, install_method=install_method,
+        state=state, provides_verification=(PACKAGE_PRESENCE_MECHANISM,),
+    )
+
+
+def _pip_show_coverage(req_id, evidence="esphome"):
+    from app.verification import PACKAGE_PRESENCE_MECHANISM
+    return VerificationCoverage(
+        requirement_refs=(req_id,), kind="smoke_test",
+        mechanism=PACKAGE_PRESENCE_MECHANISM, evidence=evidence,
+    )
+
+
+class TestProductiveCouncilCandidatePipeline:
+    """A realistic CouncilResult, fed through the actual S2.3 validation
+    path (validate_candidates -> CandidateValidation -> admissible_variants),
+    never a re-implementation of admissibility."""
+
+    def test_fully_covered_candidate_is_admissible_on_every_dimension(self):
+        platform_req = _platform_requirement()
+        toolchain_req = _toolchain_package_requirement()
+        preflight = _multi_requirement_preflight(platform_req, toolchain_req)
+
+        candidate = CouncilVariant(
+            id="esp32-host-1", name="Host ESPHome build", environment="host",
+            toolchain=(
+                _platform_item(platform_req.id),
+                _pip_show_package_item(toolchain_req.id),
+            ),
+            verification_coverage=(_pip_show_coverage(toolchain_req.id),),
+        )
+        result = CouncilResult(
+            id="c1", project_id="proj", variants=(candidate,),
+            recommendation="esp32-host-1", council_complete=True,
+        )
+
+        validations = validate_candidates(result, preflight=preflight, platform="linux")
+        assert len(validations) == 1
+        [validation] = validations
+
+        # Every binding requirement is covered, requirement_refs preserved.
+        assert validation.missing_binding_requirement_ids == ()
+        # Verification feasibility accepted.
+        assert validation.verification_feasibility_gap_ids == ()
+        # Materializability passes.
+        assert validation.unmaterializable_items == ()
+        # Platform constraints pass.
+        assert validation.platform_conflict is False
+        # Candidate becomes admissible.
+        assert validation.admissible is True, validation.reasons
+        assert admissible_variants(validations) == (candidate,)
+
+    def test_missing_binding_requirement_coverage_is_rejected_independently(self):
+        platform_req = _platform_requirement()
+        toolchain_req = _toolchain_package_requirement()
+        preflight = _multi_requirement_preflight(platform_req, toolchain_req)
+
+        # The platform requirement's toolchain item is simply absent --
+        # exactly the RSE #1 failure shape (no binding coverage for the
+        # platform requirement at all).
+        candidate = CouncilVariant(
+            id="esp32-host-2", name="Host ESPHome build (no platform item)",
+            environment="host",
+            toolchain=(_pip_show_package_item(toolchain_req.id),),
+            verification_coverage=(_pip_show_coverage(toolchain_req.id),),
+        )
+        result = CouncilResult(
+            id="c1", project_id="proj", variants=(candidate,),
+            recommendation="esp32-host-2", council_complete=True,
+        )
+
+        [validation] = validate_candidates(result, preflight=preflight, platform="linux")
+        assert validation.missing_binding_requirement_ids == (platform_req.id,)
+        assert validation.unmaterializable_items == ()
+        assert validation.platform_conflict is False
+        assert validation.admissible is False
+
+    def test_missing_verification_evidence_is_rejected_independently(self):
+        platform_req = _platform_requirement()
+        toolchain_req = _toolchain_package_requirement()
+        preflight = _multi_requirement_preflight(platform_req, toolchain_req)
+
+        # Binding coverage for BOTH requirements is present, but no
+        # verification_coverage entry exists for the toolchain
+        # requirement's own verification_method at all -- exactly the
+        # "ESPHome verification missing" gap from the RSE failure.
+        candidate = CouncilVariant(
+            id="esp32-host-3", name="Host ESPHome build (no verification)",
+            environment="host",
+            toolchain=(
+                _platform_item(platform_req.id),
+                _pip_show_package_item(toolchain_req.id),
+            ),
+            verification_coverage=(),
+        )
+        result = CouncilResult(
+            id="c1", project_id="proj", variants=(candidate,),
+            recommendation="esp32-host-3", council_complete=True,
+        )
+
+        [validation] = validate_candidates(result, preflight=preflight, platform="linux")
+        assert validation.missing_binding_requirement_ids == ()
+        assert validation.verification_feasibility_gap_ids == (toolchain_req.id,)
+        assert validation.platform_conflict is False
+        assert validation.admissible is False
+
+    def test_unmaterializable_setup_item_is_rejected_independently(self):
+        platform_req = _platform_requirement()
+        # No verification_method here: isolates the materializability
+        # dimension from verification feasibility.
+        toolchain_req = Requirement(
+            id="req-toolchain", name="esphome", type=RequirementType.PYTHON_PACKAGE,
+            purpose="firmware build toolchain", required=True, confidence=0.9,
+            technical_identity="esphome",
+        )
+        preflight = _multi_requirement_preflight(platform_req, toolchain_req)
+
+        # CLAUDE-ARCH-S2-012D / Real-System-E2E #8 shape: a python_package
+        # item whose display name is not itself a valid distribution
+        # identifier and whose technical_identity was left unset. Binding
+        # COVERAGE still holds (the Requirement's own technical_identity
+        # is valid, and _toolchain_item_matches_requirement_semantics()
+        # tolerates an item with no technical_identity of its own) -- this
+        # isolates the materializability defect from a coverage defect.
+        broken_item = ToolchainItem(
+            requirement_ref=toolchain_req.id, name="ESPHome CLI",
+            type=RequirementType.PYTHON_PACKAGE, technical_identity=None,
+            install_method="pip install esphome", state="needs_install",
+        )
+        candidate = CouncilVariant(
+            id="esp32-host-4", name="Host ESPHome build (broken identity)",
+            environment="host",
+            toolchain=(_platform_item(platform_req.id), broken_item),
+        )
+        result = CouncilResult(
+            id="c1", project_id="proj", variants=(candidate,),
+            recommendation="esp32-host-4", council_complete=True,
+        )
+
+        [validation] = validate_candidates(result, preflight=preflight, platform="linux")
+        assert validation.missing_binding_requirement_ids == ()
+        assert validation.verification_feasibility_gap_ids == ()
+        assert validation.platform_conflict is False
+        assert validation.unmaterializable_items != ()
+        assert validation.unmaterializable_items[0][0] == toolchain_req.id
+        assert validation.admissible is False
+
+    def test_platform_conflict_is_rejected_independently(self):
+        platform_req = _platform_requirement()
+        # No verification_method here: isolates the platform-constraint
+        # dimension from verification feasibility.
+        toolchain_req = Requirement(
+            id="req-toolchain", name="esphome", type=RequirementType.PYTHON_PACKAGE,
+            purpose="firmware build toolchain", required=True, confidence=0.9,
+            technical_identity="esphome",
+        )
+        preflight = _multi_requirement_preflight(platform_req, toolchain_req)
+
+        candidate = CouncilVariant(
+            id="esp32-host-5", name="Host ESPHome build (platform conflict)",
+            environment="host",
+            toolchain=(
+                _platform_item(platform_req.id),
+                _pip_show_package_item(
+                    toolchain_req.id,
+                ),
+            ),
+        )
+        # Override the package item's environment_constraint to conflict
+        # with the input platform ("linux").
+        from dataclasses import replace
+        conflicting_toolchain = tuple(
+            replace(item, environment_constraint="windows") if item.type == RequirementType.PYTHON_PACKAGE
+            else item
+            for item in candidate.toolchain
+        )
+        candidate = replace(candidate, toolchain=conflicting_toolchain)
+        result = CouncilResult(
+            id="c1", project_id="proj", variants=(candidate,),
+            recommendation="esp32-host-5", council_complete=True,
+        )
+
+        [validation] = validate_candidates(result, preflight=preflight, platform="linux")
+        assert validation.missing_binding_requirement_ids == ()
+        assert validation.unmaterializable_items == ()
+        assert validation.platform_conflict is True
+        assert validation.admissible is False
+
+
+# ---------------------------------------------------------------------------
+# CLAUDE-ADC-S23-RSE-PREFLIGHT-TEST-HARDENING-001, Part G: structured S2.3
+# failure diagnostics. NoEligibleEngineeringCandidateError.validations
+# already carries full CandidateValidation objects (see
+# TestPerCandidateFailureEvidence above) -- these tests additionally
+# assert directly on the STRUCTURED per-candidate fields the task
+# requires (candidate_id via validation.variant.id,
+# missing_binding_requirement_ids, verification_feasibility_gap_ids,
+# unmaterializable_items, platform_conflict, admissible), never by
+# parsing validation.reasons human-readable text.
+# ---------------------------------------------------------------------------
+
+
+class TestStructuredFailureDiagnosticsOnZeroAdmissibleCandidates:
+    def test_each_structured_field_is_directly_inspectable_per_candidate(self):
+        platform_req = _platform_requirement()
+        toolchain_req = _toolchain_package_requirement()
+        preflight = _multi_requirement_preflight(platform_req, toolchain_req)
+
+        # Three independently-broken candidates, one per RSE-observed
+        # failure shape, so structured evidence must distinguish them.
+        missing_platform_coverage = CouncilVariant(
+            id="merged-host-venv", name="merged-host-venv", environment="host",
+            toolchain=(_pip_show_package_item(toolchain_req.id),),
+            verification_coverage=(_pip_show_coverage(toolchain_req.id),),
+        )
+        missing_verification = CouncilVariant(
+            id="merged-container", name="merged-container", environment="host",
+            toolchain=(
+                _platform_item(platform_req.id),
+                _pip_show_package_item(toolchain_req.id),
+            ),
+            verification_coverage=(),
+        )
+        platform_conflicted = CouncilVariant(
+            id="A3-var-1", name="A3-var-1", environment="host",
+            toolchain=(
+                _platform_item(platform_req.id, environment_constraint="windows"),
+                _pip_show_package_item(toolchain_req.id),
+            ),
+            verification_coverage=(_pip_show_coverage(toolchain_req.id),),
+        )
+        result = CouncilResult(
+            id="c1", project_id="proj",
+            variants=(missing_platform_coverage, missing_verification, platform_conflicted),
+            recommendation="merged-host-venv", council_complete=True, council_degraded=True,
+        )
+
+        with pytest.raises(NoEligibleEngineeringCandidateError) as excinfo:
+            select_engineering_variant(
+                result, preflight=preflight, platform="linux",
+                chairman_recommendation="merged-host-venv",
+            )
+
+        by_id = {v.variant.id: v for v in excinfo.value.validations}
+        assert set(by_id) == {"merged-host-venv", "merged-container", "A3-var-1"}
+
+        assert by_id["merged-host-venv"].admissible is False
+        assert by_id["merged-host-venv"].missing_binding_requirement_ids == (platform_req.id,)
+        assert by_id["merged-host-venv"].verification_feasibility_gap_ids == ()
+        assert by_id["merged-host-venv"].unmaterializable_items == ()
+        assert by_id["merged-host-venv"].platform_conflict is False
+
+        assert by_id["merged-container"].admissible is False
+        assert by_id["merged-container"].missing_binding_requirement_ids == ()
+        assert by_id["merged-container"].verification_feasibility_gap_ids == (toolchain_req.id,)
+        assert by_id["merged-container"].unmaterializable_items == ()
+        assert by_id["merged-container"].platform_conflict is False
+
+        assert by_id["A3-var-1"].admissible is False
+        assert by_id["A3-var-1"].missing_binding_requirement_ids == ()
+        assert by_id["A3-var-1"].verification_feasibility_gap_ids == ()
+        assert by_id["A3-var-1"].unmaterializable_items == ()
+        assert by_id["A3-var-1"].platform_conflict is True

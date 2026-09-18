@@ -1,0 +1,115 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ADC Evidence Event",
+  "description": "One factual observation of one executed test, published by an ADC testbed/bench to the central Evidence ingest. Technology-neutral: carries no Sphinx-Needs or Requirement-ID concept.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "producer",
+    "test_selector",
+    "result",
+    "timestamp_start",
+    "timestamp_end",
+    "command_or_procedure",
+    "repository_identity",
+    "environment"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^ADC-RUN-[0-9]{8}T[0-9]{6}Z-[a-f0-9]{8}$",
+      "description": "Shared by every event published by one formal run invocation."
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique within the run; assigned by the publisher if omitted."
+    },
+    "producer": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable producer identity, e.g. 'ADC'. Structurally extensible for future project producers (e.g. 'project:<id>') but no such workflow is implemented yet."
+    },
+    "test_selector": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable executable selector, e.g. 'tests/test_x.py::test_y' or a whole file/class. The producer does not need to know which Requirement(s) this maps to."
+    },
+    "mapped_test_id": {
+      "type": ["string", "null"],
+      "description": "Never set by the producer. Central ingest resolves test_selector to a TEST_* id and records it in the ingest report, never by mutating a published event."
+    },
+    "result": {
+      "type": "string",
+      "enum": ["IO", "NIO", "NOT_RUN"],
+      "description": "Aligned with the existing verification model: IO (in Ordnung/pass), NIO (nicht in Ordnung/fail or error), NOT_RUN (skipped or never executed). Unknown outcomes must never be coerced to IO."
+    },
+    "timestamp_start": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "timestamp_end": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "duration": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "command_or_procedure": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The exact invoked command or procedure that produced this result."
+    },
+    "exit_code": {
+      "type": ["integer", "null"]
+    },
+    "repository_identity": {
+      "type": "object",
+      "required": ["commit", "dirty"],
+      "additionalProperties": false,
+      "properties": {
+        "commit": {"type": "string", "minLength": 1},
+        "dirty": {"type": "boolean"},
+        "worktree": {"type": ["string", "null"]}
+      }
+    },
+    "artifact_identity": {
+      "type": ["string", "null"],
+      "description": "Tested artifact hash/version where meaningful. Null when not applicable (e.g. ordinary in-repo unit tests)."
+    },
+    "environment": {
+      "type": "object",
+      "description": "Compact provenance: OS/platform, testbed/bench identity, selected configuration/profile. No secrets.",
+      "required": ["os", "platform", "testbed"],
+      "additionalProperties": false,
+      "properties": {
+        "os": {"type": "string"},
+        "platform": {"type": "string"},
+        "testbed": {
+          "type": "string",
+          "description": "Stable name of the ADC test environment that produced this event, e.g. 'pytest', 'real_system_e2e'."
+        },
+        "profile": {"type": ["string", "null"]}
+      }
+    },
+    "tool_versions": {
+      "type": ["object", "null"],
+      "description": "e.g. {\"python\": \"3.11.6\", \"pytest\": \"8.3.2\"}."
+    },
+    "evidence_payload": {
+      "type": ["object", "null"],
+      "description": "Compact structured summary. Never a full log dump."
+    },
+    "raw_output_reference": {
+      "type": ["string", "null"],
+      "description": "Reference to raw output stored elsewhere, never embedded here."
+    }
+  }
+}

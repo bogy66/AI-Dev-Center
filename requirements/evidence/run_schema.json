@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "adc-evidence-run-1.0",
+  "title": "ADC Evidence Contract - Run Record",
+  "description": "One formal ADC test invocation. Companion to schema.json (the per-event contract): every event under this run_id shares this record's identity and provenance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "producer",
+    "started_at",
+    "completed_at",
+    "run_status",
+    "repository_identity",
+    "environment",
+    "tool_versions",
+    "command_or_procedure",
+    "event_count"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0"},
+    "run_id": {"type": "string", "pattern": "^ADC-RUN-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6,}$"},
+    "producer": {"type": "string", "minLength": 1},
+    "started_at": {"type": "string", "format": "date-time"},
+    "completed_at": {"type": ["string", "null"], "format": "date-time"},
+    "run_status": {
+      "type": "string",
+      "enum": ["running", "completed", "aborted"]
+    },
+    "repository_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "dirty"],
+      "properties": {
+        "commit": {"type": ["string", "null"]},
+        "dirty": {"type": "boolean"},
+        "worktree": {"type": "string"}
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "platform", "testbed"],
+      "properties": {
+        "os": {"type": "string"},
+        "platform": {"type": "string"},
+        "testbed": {"type": "string"},
+        "profile": {"type": ["string", "null"]}
+      }
+    },
+    "tool_versions": {"type": "object"},
+    "command_or_procedure": {"type": "string", "minLength": 1},
+    "event_count": {"type": "integer", "minimum": 0},
+    "event_ids": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Ids of every event published so far under this run, in publish order."
+    }
+  }
+}

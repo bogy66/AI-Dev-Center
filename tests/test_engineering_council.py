@@ -395,8 +395,20 @@ def _wire_diagnostic_trace(council, diagnostic_trace, run_id="test-run"):
 def _run_council_with_fakes(council_config, fake_providers, tmp_path,
                              trace_dir=None, capture_configs=None,
                              capture_results=None, diagnostic_trace=None,
-                             diagnostic_trace_run_id="test-run"):
-    """Run council with fake providers patched in. Returns result."""
+                             diagnostic_trace_run_id="test-run",
+                             council_input=None):
+    """Run council with fake providers patched in. Returns result.
+
+    `council_input` (CLAUDE-ADC-S23-RSE-PREFLIGHT-TEST-HARDENING-001,
+    Part F): optional, additive -- defaults to the existing
+    `_make_council_input()` for every pre-existing caller, unchanged.
+    Lets a caller drive the real EngineeringCouncil against a CouncilInput
+    with genuinely binding, activated Preflight requirements (the default
+    `_make_council_input()`'s own PreflightResult carries no
+    RequirementActivation objects at all, so nothing it produces is ever
+    binding for S2.3 -- fine for council-mechanics-only tests, not for a
+    test that pipes the resulting CouncilResult into
+    validate_candidates())."""
     factory = None
     if capture_configs is not None:
         if isinstance(capture_configs, list):
@@ -426,7 +438,7 @@ def _run_council_with_fakes(council_config, fake_providers, tmp_path,
             )
         elif diagnostic_trace is not None:
             _wire_diagnostic_trace(council, diagnostic_trace, diagnostic_trace_run_id)
-        return council.evaluate(_make_council_input())
+        return council.evaluate(council_input if council_input is not None else _make_council_input())
 
 
 # =========================================================================
@@ -4748,3 +4760,217 @@ class TestChairmanEnvironmentConstraintContradictionCorrection:
         assert '"environment"' in bullet_window
         assert "purpose" in bullet_window
         assert "description" in bullet_window
+
+
+# =========================================================================
+# CLAUDE-ADC-S23-RSE-PREFLIGHT-TEST-HARDENING-001, Part F: a degraded-
+# Council contract test.
+#
+# Real-System-E2E task ADC-REAL-SYSTEM-E2E-RETRY-001 completed with
+# council_complete=true, council_degraded=true (two provider timeouts,
+# causal role unproven) immediately before the S2.3 rejection. These
+# tests simulate a real provider failure (FailingLLMProvider, no live
+# providers) through the REAL EngineeringCouncil, then pipe the
+# resulting degraded CouncilResult into the REAL validate_candidates()
+# -- proving three things the task requires kept independently
+# observable:
+#
+#   1. degraded completion alone never dooms admissibility -- a
+#      genuinely well-formed surviving candidate is still admissible;
+#   2. every candidate the degraded Council actually produced is still
+#      subjected to the SAME S2.3 completeness/verification validation
+#      as a normal run (no special-cased leniency for "degraded");
+#   3. when degraded synthesis genuinely leaves every surviving
+#      candidate incomplete, the result remains fail-closed
+#      (NoEligibleEngineeringCandidateError) with the missing coverage
+#      visible in structured per-candidate evidence -- never silently
+#      passed through.
+# =========================================================================
+
+
+def _degraded_pipeline_council_input():
+    """A CouncilInput with two GENUINELY binding requirements (unlike
+    _make_council_input()'s own PreflightResult, which carries no
+    RequirementActivation objects at all) -- a generic platform/toolchain
+    requirement pair analogous to the RSE's own ESP32 Platform +
+    ESPHome CLI, flavor only."""
+    platform_req = _make_requirement(
+        "req-platform", "ESP32 Platform", "hardware_component", True,
+    )
+    package_req = Requirement(
+        id="req-toolchain", name="esphome", type="python_package",
+        technical_identity="esphome", purpose="firmware build toolchain",
+        required=True, confidence=0.9,
+        verification_method="pip show esphome",
+    )
+    preflight = PreflightResult(
+        id="pre-1", project_id="esphome-degraded-p1", overall_ready=False,
+        results=(
+            PreflightRequirementResult(
+                requirement_id=platform_req.id, present=False, satisfied=False,
+                active=True, blocks_current_operation=True,
+            ),
+            PreflightRequirementResult(
+                requirement_id=package_req.id, present=False, satisfied=False,
+                active=True, blocks_current_operation=True,
+            ),
+        ),
+        missing_requirements=(platform_req, package_req),
+        activations=(
+            RequirementActivation(platform_req.id, True, True),
+            RequirementActivation(package_req.id, True, True),
+        ),
+    )
+    return CouncilInput(
+        requirements=(platform_req, package_req),
+        preflight=preflight,
+        detected_stack="esphome",
+        project_id="esphome-degraded-p1",
+        platform="linux",
+        requirement_activations=preflight.activations,
+    ), platform_req, package_req
+
+
+def _degraded_pipeline_phase1_response(agent_id, platform_req, package_req):
+    return json.dumps({"variants": [{
+        "variant_id": f"{agent_id}-var-1", "name": f"{agent_id} candidate",
+        "description": "", "environment": "host",
+        "toolchain": [
+            {"requirement_ref": platform_req.id, "name": platform_req.name,
+             "type": platform_req.type, "state": "already_installed"},
+            {"requirement_ref": package_req.id, "name": package_req.name,
+             "type": package_req.type, "technical_identity": package_req.technical_identity,
+             "install_method": "pip", "state": "needs_install"},
+        ],
+        "advantages": [], "disadvantages": [], "risks": [],
+        "confidence": 0.8, "feasibility": "high", "verification": "",
+        "agent_reasoning": "",
+    }]})
+
+
+def _degraded_pipeline_chairman_response(variant_id, toolchain_items, recommendation=None):
+    """Builds the Chairman's own final JSON directly (never derived from
+    the Phase-1 responses above) so the test controls the EXACT
+    admissibility-relevant shape of the one candidate that matters,
+    independent of Phase-1/Phase-2 mechanics."""
+    return json.dumps({
+        "merge_decisions": [],
+        "variants": [{
+            "id": variant_id, "name": variant_id, "description": "",
+            "origin_agents": ["A1"], "merged_from": [variant_id],
+            "rank": 1, "total_score": 5.0, "consensus_level": "strong_consensus",
+            "minority_opinions": [], "environment": "host",
+            "hardware_target": None, "connection": None, "capabilities": ["build"],
+            "toolchain": toolchain_items,
+            "advantages": [], "disadvantages": [], "risks": [],
+            "confidence": 0.9, "feasibility": "high", "verification": "",
+            "verification_coverage": [{
+                "requirement_refs": ["req-toolchain"], "kind": "smoke_test",
+                "mechanism": "pip_show", "evidence": "esphome",
+            }],
+        }],
+        "rejected_variants": [],
+        "recommendation": recommendation or variant_id,
+        "reasoning": "Only surviving well-formed candidate",
+    })
+
+
+class TestDegradedCouncilFeedsIntoS23Admissibility:
+    def test_degraded_completion_with_a_well_formed_candidate_stays_admissible(self, tmp_path):
+        """A3 fails (provider timeout/error, no live provider) -- Council
+        still completes in degraded mode per the existing quorum
+        contract (2/3 Phase-1 agents), and the surviving, genuinely
+        well-formed candidate is still admissible. Degraded mode is NOT,
+        by itself, treated as a product defect."""
+        council_input, platform_req, package_req = _degraded_pipeline_council_input()
+        a1_resp = _degraded_pipeline_phase1_response("A1", platform_req, package_req)
+        a2_resp = _degraded_pipeline_phase1_response("A2", platform_req, package_req)
+        ph2_resp = _make_phase2_response("x", ["A1-var-1", "A2-var-1"])
+        toolchain_items = [
+            {"requirement_ref": platform_req.id, "name": platform_req.name,
+             "type": platform_req.type, "state": "already_installed"},
+            {"requirement_ref": package_req.id, "name": package_req.name,
+             "type": package_req.type, "technical_identity": package_req.technical_identity,
+             "install_method": "pip", "state": "needs_install",
+             "provides_verification": ["pip_show"]},
+        ]
+        ch_resp = _degraded_pipeline_chairman_response("merged-degraded-1", toolchain_items)
+
+        fake_providers = {
+            "model-ea": FakeLLMProvider([a1_resp, ph2_resp]),
+            "model-ti": FakeLLMProvider([a2_resp, ph2_resp]),
+            "model-ra": FailingLLMProvider("A3 provider timeout"),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+
+        result = _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path, council_input=council_input,
+        )
+        assert result.council_complete
+        assert result.council_degraded
+
+        # Degraded synthesis did not silently erase either binding
+        # requirement from the surviving candidate's own toolchain.
+        [variant] = result.variants
+        covered_refs = {item.requirement_ref for item in variant.toolchain}
+        assert platform_req.id in covered_refs
+        assert package_req.id in covered_refs
+
+        from app.engineering_decision import admissible_variants, validate_candidates
+        validations = validate_candidates(result, preflight=council_input.preflight, platform="linux")
+        # Every produced candidate went through the SAME S2.3 validation
+        # a normal (non-degraded) run would use.
+        assert len(validations) == len(result.variants) == 1
+        assert validations[0].missing_binding_requirement_ids == ()
+        assert validations[0].admissible is True, validations[0].reasons
+        assert admissible_variants(validations) == (variant,)
+
+    def test_degraded_completion_with_an_incomplete_candidate_stays_fail_closed(self, tmp_path):
+        """Same A3 failure, but this time the ONLY surviving candidate's
+        toolchain omits the platform requirement entirely -- exactly the
+        RSE's own observed failure shape, now reproduced under a
+        provably degraded Council. S2.3 must still reject it, and the
+        missing coverage must still be visible in structured evidence --
+        degraded mode must never become a silent bypass."""
+        council_input, platform_req, package_req = _degraded_pipeline_council_input()
+        a1_resp = _degraded_pipeline_phase1_response("A1", platform_req, package_req)
+        a2_resp = _degraded_pipeline_phase1_response("A2", platform_req, package_req)
+        ph2_resp = _make_phase2_response("x", ["A1-var-1", "A2-var-1"])
+        # Platform item omitted -- only the package item survives.
+        incomplete_toolchain_items = [
+            {"requirement_ref": package_req.id, "name": package_req.name,
+             "type": package_req.type, "technical_identity": package_req.technical_identity,
+             "install_method": "pip", "state": "needs_install",
+             "provides_verification": ["pip_show"]},
+        ]
+        ch_resp = _degraded_pipeline_chairman_response("merged-degraded-2", incomplete_toolchain_items)
+
+        fake_providers = {
+            "model-ea": FakeLLMProvider([a1_resp, ph2_resp]),
+            "model-ti": FakeLLMProvider([a2_resp, ph2_resp]),
+            "model-ra": FailingLLMProvider("A3 provider timeout"),
+            "model-ch": FakeLLMProvider([ch_resp]),
+        }
+
+        result = _run_council_with_fakes(
+            _make_council_config(), fake_providers, tmp_path, council_input=council_input,
+        )
+        assert result.council_complete
+        assert result.council_degraded
+
+        from app.engineering_decision import (
+            NoEligibleEngineeringCandidateError,
+            admissible_variants,
+            resolve_human_engineering_selection,
+            validate_candidates,
+        )
+        validations = validate_candidates(result, preflight=council_input.preflight, platform="linux")
+        assert len(validations) == len(result.variants) == 1
+        assert admissible_variants(validations) == ()
+        assert validations[0].missing_binding_requirement_ids == (platform_req.id,)
+
+        with pytest.raises(NoEligibleEngineeringCandidateError) as excinfo:
+            resolve_human_engineering_selection(validations)
+        [only_validation] = excinfo.value.validations
+        assert only_validation.missing_binding_requirement_ids == (platform_req.id,)
+        assert only_validation.admissible is False

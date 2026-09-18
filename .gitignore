@@ -8,3 +8,5 @@ venv/
 .env
 workflow_state.json
 .diagnostic-traces/
+.requirements-venv/
+requirements/_build/

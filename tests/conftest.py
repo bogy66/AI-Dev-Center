@@ -2,6 +2,14 @@ import pytest
 import subprocess
 from pathlib import Path
 
+# CLAUDE-ADC-TESTBED-EVIDENCE-INFRASTRUCTURE-001: registers the --adc-evidence
+# option (and its hooks) for every pytest invocation. Fully inert unless a
+# formal run explicitly passes --adc-evidence: without it, every hook in
+# requirements/evidence/pytest_plugin.py returns immediately -- no Evidence
+# Contract import cost beyond hook registration, no filesystem writes, no
+# Sphinx dependency. See that module's own docstring for the opt-in contract.
+pytest_plugins = ["requirements.evidence.pytest_plugin"]
+
 
 @pytest.fixture(autouse=True)
 def _isolated_project_registry(tmp_path_factory, monkeypatch):

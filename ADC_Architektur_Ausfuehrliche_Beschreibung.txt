@@ -1,0 +1,842 @@
+AI-DEV-CENTER (ADC) – AUSFÜHRLICHE ARCHITEKTUR-BESCHREIBUNG
+Stand: 2026-09-18
+
+STATUS DIESES DOKUMENTS
+
+Dieses Dokument beschreibt die aktuell gewählte ADC-Architektur.
+
+Diese Architektur ist eine gewählte Lösung zur Erfüllung des ADC-Zielbilds
+(ADC_Zielbild_Ausfuehrliche_Beschreibung.txt). Sie ist nicht selbst das
+Zielbild. Sie darf überprüft, verbessert oder ersetzt werden, solange die
+resultierende Architektur weiterhin alle relevanten Zielbild-Anforderungen
+erfüllt. Die Architektur definiert das Zielbild nicht neu.
+
+Wo eine architektonische Entscheidung eine Zielbild-Anforderung konkret
+umsetzt, wird dies knapp als "Zielbild-Bezug" referenziert — als
+konzeptioneller Verweis, nicht als Implementierungsverweis.
+
+Dieses Dokument beschreibt Architektur, keinen Implementierungsstatus. Es
+enthält bewusst keine konkreten Klassen-, Modul- oder Testdateinamen, keine
+Codepfade und keine aktuellen Test-/Coverage-/RSE-Ergebnisse. Solche
+Informationen gehören in ein künftiges Implementierungs-/Status-Dokument.
+
+Diese Architektur ist die aktuell gewählte Dekomposition — nicht die einzig
+mögliche oder dauerhaft fixierte. Sx.y-Grenzen, Artefaktnamen und interne
+Autoritätsverteilung können sich ändern, solange die Zielbild-Anforderungen
+weiterhin erfüllt bleiben.
+
+======================================================================
+1. ARCHITEKTUR-ÜBERSICHT
+======================================================================
+
+ADC realisiert die im Zielbild geforderten Fähigkeiten aktuell über sechs
+Subsysteme:
+
+S1 Requirement Intelligence
+S2 Engineering Decision
+S3 Environment & Setup
+S4 Development & Change
+S5 Quality & Verification
+S6 Delivery & Outcome
+
+Diese Sequenz ist die aktuell gewählte Dekomposition der im Zielbild
+geforderten End-to-End-Fähigkeit (Verstehen → Entscheiden → Vorbereiten →
+Ändern → Verifizieren → Liefern → Lernen), nicht die einzig mögliche
+Struktur.
+
+S2 (Engineering Decision) und S3–S5 (Environment & Setup, Development &
+Change, Quality & Verification) sind zusätzlich intern in benannte
+Subsubsystem-Verantwortungen (Sx.y) zerlegt — siehe Abschnitt 3. S1 und S6
+sind aktuell NICHT in Sx.y zerlegt; es werden keine S1.x- oder S6.x-Einheiten
+eingeführt, außer dies wird in einer künftigen separaten Architektur-Aufgabe
+entschieden.
+
+S2.1–S5.7 (fünf, fünf, vier, sieben Subsubsystem-Verantwortungen) sind die
+tiefste NUMMERIERTE Architekturebene. Unterhalb von Sx.y stehen ausschließlich
+benannte architektonische Rollen/Verantwortungen — niemals eine weitere
+nummerierte Ebene Sx.y.z.
+
+----------------------------------------------------------------------
+S1 – Requirement Intelligence
+----------------------------------------------------------------------
+
+Verantwortung:
+Verstehen, was das Projekt und der Benutzer tatsächlich benötigen.
+
+Aufgaben:
+- Benutzerauftrag analysieren
+- vorhandenes Projekt read-only untersuchen
+- Anforderungen identifizieren und strukturieren
+- Pflicht- und optionale Anforderungen unterscheiden
+- Konflikte, Unsicherheiten und fehlende Informationen erkennen
+- Requirements mit Evidence verbinden
+- Anforderungen für spätere Verification testbar formulieren
+
+Verbotene Authority: S1 erzeugt keine technische Lösung und führt keine
+Setup-Aktion aus.
+
+Zielbild-Bezug: Requirement-Fidelity; Authority-Trennung zwischen
+Verstehen und Entscheiden.
+
+----------------------------------------------------------------------
+S2 – Engineering Decision
+----------------------------------------------------------------------
+
+Verantwortung:
+Entscheiden, WAS technisch gebaut werden soll und MIT WELCHER
+Engineering-Lösung dies sinnvoll umgesetzt werden kann.
+
+Aufgaben:
+- mehrere Lösungsvarianten erzeugen
+- vorhandene Umgebung und Projektkonventionen berücksichtigen
+- technische Machbarkeit bewerten
+- Risiken vergleichen
+- Toolchain- und Umgebungsoptionen vergleichen
+- Verification-Konzept berücksichtigen
+- Reviews auswerten
+- eine begründete Empfehlung erzeugen
+- Alternativen transparent erhalten
+
+Verbotene Authority: S2 führt keine Installation aus und mutiert keine
+Umgebung. S2 erzeugt Engineering Decisions, keine Setup-Ausführung.
+
+Zielbild-Bezug: technisch fundierte Engineering-Entscheidungen; Erhalt
+mehrerer gültiger Lösungswege; keine erzwungene Lösungsuniformität.
+
+----------------------------------------------------------------------
+S3 – Environment & Setup
+----------------------------------------------------------------------
+
+Verantwortung:
+Die durch S2 empfohlene oder vom Benutzer gewählte Engineering-Lösung
+kontrolliert in eine reale, nutzbare Entwicklungs- und Testumgebung
+überführen.
+
+Aufgaben:
+- Soll-Zustand aus Engineering Decision ableiten
+- Ist-Zustand beobachten
+- Soll/Ist vergleichen
+- unnötige Änderungen vermeiden
+- SetupPlan erzeugen
+- Setup-Schritte klassifizieren
+- prüfen, ob jeder ausführbare Schritt einen passenden kontrollierten
+  Executor besitzt
+- Human Approval einholen
+- Setup kontrolliert ausführen
+- Ergebnis erneut verifizieren
+- EnvironmentState aktualisieren
+
+Zentrale Invariante:
+Kein ausführbarer SetupStep darf freigegeben werden, wenn ADC ihn mit seinem
+vorgesehenen kontrollierten Executor nicht tatsächlich ausführen kann.
+Producer und Consumer müssen denselben strukturierten Vertrag verstehen.
+
+Nicht zulässig ist die Sequenz: Council erzeugt frei formulierte
+Installationsmethode → Materializer akzeptiert sie → Human Approval
+genehmigt sie → Executor lehnt sie erst später als nicht unterstützbar ab.
+Der Fehler muss vor Approval beziehungsweise spätestens an der
+Materialisierungsgrenze erkannt werden.
+
+Zielbild-Bezug: bewiesene Ausführbarkeit vor Mutation (fail-closed);
+Human Approval an mutierenden Grenzen.
+
+----------------------------------------------------------------------
+S4 – Development & Change
+----------------------------------------------------------------------
+
+Verantwortung:
+Die eigentliche technische Änderung am Projekt kontrolliert durchführen.
+
+Aufgaben:
+- Anforderungen in strukturierte Entwicklungsarbeit umsetzen
+- bestehende Projektkonventionen respektieren
+- strukturierte Engineering-Changes erzeugen
+- Änderungen durch kontrollierte ChangeApplication anwenden
+- autorisiertes ChangeTarget / TargetScope respektieren
+- keine unstrukturierten, LLM-generierten Operationsrepräsentationen
+  direkt zur Mutationsausführung bringen
+- Change Provenance führen
+- Änderungen vollständig nachverfolgbar machen
+- Schutz des bestehenden Zielzustands (Pre-existing Target State)
+
+Langfristig umfasst S4 Software-, Firmware- und Hardware-nahe
+Engineering-Artefakte.
+
+Zielbild-Bezug: kontrollierte Änderung; Provenance; Schutz vorbestehenden
+Zustands.
+
+----------------------------------------------------------------------
+S5 – Quality & Verification
+----------------------------------------------------------------------
+
+Verantwortung:
+Mechanisch und real prüfen, ob die technische Lösung und die Änderungen
+tatsächlich funktionieren.
+
+Aufgaben:
+- VerificationPlan erzeugen
+- projektspezifische Build- und Testsysteme nutzen
+- Unit-, Subsystem-, System- und Real-System-Evidence trennen
+- Ergebnisse nicht durch KI-Selbstaussagen ersetzen
+- Toolchain-Verfügbarkeit erkennen
+- Verifikationsabhängigkeiten abbilden
+- reale Testergebnisse als autoritative Evidence behandeln
+- Failure Modes mit Testabdeckung verbinden
+
+Verbotene Authority: Ein LLM darf nicht behaupten, dass etwas funktioniert,
+wenn die reale Verification das Gegenteil zeigt.
+
+Zielbild-Bezug: reale, deterministische Verifikation als autoritative
+Evidence; keine KI-Selbstaussage ersetzt reale Tests.
+
+----------------------------------------------------------------------
+S6 – Delivery & Outcome
+----------------------------------------------------------------------
+
+Verantwortung:
+Nur technisch verifizierte und menschlich freigegebene Ergebnisse
+kontrolliert in einen finalen Zustand überführen.
+
+Aufgaben:
+- Final Approval
+- kontrollierte Delivery-Operation
+- Delivery Target respektieren
+- kontrolliertes Publish (wo anwendbar)
+- Delivery Evidence führen
+- Change Provenance bewahren
+- keine fremden, nicht dem aktuellen Run zugehörigen
+  Zielzustandsänderungen übernehmen
+- keine stillen destruktiven Reparaturen des Delivery-Zustands
+- keine automatische Veröffentlichung außerhalb definierter Grenzen
+
+Delivery ist ein eigener Engineering-Schritt und nicht Nebenwirkung der
+Entwicklung.
+
+Versionskontrolle ist optional / projektspezifisch. Die S6-Architektur muss
+gültig bleiben, auch wenn ein anderer Delivery-Mechanismus oder gar kein
+Versionskontrollsystem zum Einsatz kommt. Wo Versionskontrolle existiert,
+ist sie eine projektspezifische / aktuelle Capability.
+
+Zielbild-Bezug: kontrollierte Auslieferung; Schutz vorbestehenden
+Ziel-Zustands; getrennte Publish-Freigabe.
+
+======================================================================
+2. ADC-ARCHITEKTUR-VOKABULAR (TECHNOLOGIE-NEUTRAL)
+======================================================================
+
+Die folgenden Begriffe bilden das strukturelle, technologie-neutrale
+Vokabular, mit dem die aktuelle Architektur die Zielbild-Anforderungen
+umsetzt. Sie sind architektonische Artefakt-/Rollennamen — keine
+Implementierungsklassen und kein Python-, Git- oder sonst
+technologiespezifisches Vokabular:
+
+Requirement
+EngineeringDecision
+SetupEffect
+SetupPlan
+Capability
+Executor
+VerificationPlan
+VerificationResult
+EnvironmentState
+Outcome
+Change
+ChangeTarget
+ChangeApplication
+ExecutionContext
+TargetScope
+DeliveryOperation
+DeliveryTarget
+DeliveryState
+DeliveryEvidence
+
+Ein neuer technischer Stack soll durch Adapter, Capabilities, Contracts und
+Executor-Implementierungen integrierbar sein, ohne dieses zentrale
+Architekturmodell umzubauen.
+
+======================================================================
+3. SUBSUBSYSTEM-ARCHITEKTUR
+======================================================================
+
+WICHTIG: Diese Zerlegung ist die aktuell gewählte Dekomposition von S2–S5,
+nicht die einzig mögliche. S1 und S6 sind aktuell nicht in Sx.y zerlegt.
+
+----------------------------------------------------------------------
+3A. S2 ENGINEERING DECISION (PILOT)
+----------------------------------------------------------------------
+
+S2 Engineering Decision wird intern in fünf Subsubsystem-Verantwortungen
+zerlegt. Dies ist ein PILOT für S2; S1 und S3–S6 sind nicht in
+Subsubsysteme zerlegt.
+
+S2.1 Engineering Alternatives
+  Zweck: unabhängige, technisch sinnvolle Engineering-Alternativen
+    erzeugen und Cross-Review-Evidenz sammeln.
+  Input: CouncilInput (Requirements, Preflight, Projektkontext).
+  Producer: Requirement Intelligence (S1) über CouncilInput.
+  Output-Artifact: ProposalSet + Cross-Review-Evidenz (reviewte
+    Alternativen).
+  Nächster Consumer: S2.2.
+  Authority: darf Alternativen erzeugen und cross-reviewen.
+  Verbotene Authority: keine Empfehlungsauswahl, keine
+    Zulässigkeitsentscheidung, keine menschliche Auswahl, keine
+    EngineeringDecision.
+
+S2.2 Engineering Synthesis & Recommendation
+  Zweck: Synthese und Empfehlung an den Benutzer.
+  Input: ProposalSet + Cross-Review-Evidenz (von S2.1).
+  Output-Artifact: EngineeringSynthesisResult (Synthese-Ergebnis mit
+    Vollständigkeits-/Fehlerstatus und Empfehlung).
+  Nächster Consumer: S2.3.
+  Authority: Synthese, Empfehlung an den Benutzer, EIN gebundener
+    gezielter Reparaturversuch bei strukturell/semantisch abgelehnter
+    eigener Synthese.
+  Verbotene Authority: KEINE technische Zulässigkeitspolitik
+    (Requirement-Abdeckung, Constraints, Materialisierbarkeit,
+    Executor-Kompatibilität, Verification) — S2.2 fragt dafür
+    ausschließlich S2.3s eigene, einzige Autorität ab, niemals eine
+    eigene, unabhängige Regel. Kein deterministisches Ersetzen der
+    Empfehlung durch eine andere Variante.
+  Kritische Semantik: ein erfolgreich abgeschlossenes Synthese-Protokoll
+    bedeutet AUSSCHLIESSLICH, dass die Synthese selbst gelungen ist —
+    NIEMALS technische Zulässigkeit, menschliche Auswahl oder
+    S3-Bereitschaft.
+
+S2.3 Engineering Admissibility
+  Zweck: die EINZIGE technische Zulässigkeitsautorität innerhalb S2.
+  Input: Engineering-Varianten + PreflightResult + Platform.
+  Output-Artifact: CandidateValidationSet mit admissible/reasons je
+    Kandidat.
+  Nächster Consumer: S2.4 (bei Erfolg) bzw. S2.2 (Rework-Anforderung bei
+    reparierbarem Fehler).
+  Authority: klassifiziert zulässig/unzulässig, liefert exakte sichere
+    deterministische Gründe, erhält mehrere zulässige Alternativen.
+  Verbotene Authority: wählt niemals eine bevorzugte Lösung,
+    verändert/mergt/repariert niemals einen Kandidaten.
+
+S2.4 Human Engineering Authority
+  Zweck: die finale menschliche Entscheidungsautorität repräsentieren.
+  Input: NUR bereits technisch bewertete S2.3-Ergebnisse
+    (CandidateValidationSet) + Empfehlung + optionale menschliche
+    Auswahl.
+  Output-Artifact: EngineeringVariantSelection (aufgelöstes
+    (CandidateValidation, Autorität)-Paar).
+  Nächster Consumer: S2.5.
+  Authority: Mensch darf Empfehlung annehmen, eine andere zulässige
+    Alternative wählen, ablehnen/aufschieben/Rework anfordern.
+  Verbotene Authority: darf technische Zulässigkeit NIEMALS
+    überstimmen; keine stille Ersetzung der gewünschten Kandidaten-ID.
+
+S2.5 Engineering Decision & S3 Handoff
+  Zweck: das finale S2-Entscheidungsartefakt erzeugen und die
+    S2→S3-Grenze besitzen.
+  Input: validierte S2.4-Auswahl.
+  Output-Artifact: EngineeringDecision (Variante, Solution Class,
+    Auswahl-Autorität) — das EINZIGE Artefakt, das die S2→S3-Grenze im
+    Normalfall überquert.
+  Nächster Consumer: S3 Environment & Setup.
+  Authority: bewahrt exakte Kandidaten-Identität, Auswahl-Autorität und
+    Validierungs-Provenienz.
+  Verbotene Authority: erfindet keine Auswahl, wählt keinen Gewinner,
+    repariert keinen Kandidaten.
+
+Zielbild-Bezug: Trennung von technischer Zulässigkeit (S2.3) und
+menschlicher Auswahlautorität (S2.4) verhindert, dass eine Empfehlung oder
+menschliche Auswahl stillschweigend zu technischer Gültigkeit wird.
+
+----------------------------------------------------------------------
+3B. S3 ENVIRONMENT & SETUP
+----------------------------------------------------------------------
+
+S3 Environment & Setup wird intern in fünf Subsubsystem-Verantwortungen
+zerlegt, analog zum S2-Piloten. Es werden KEINE neuen Sx.y-Einheiten und
+KEINE Sx.y.z-Ebene eingeführt.
+
+S3.1 Setup Planning
+  Zweck: bestimmen, WELCHE Setup-Aktionen erforderlich sind, und die
+    bereits durch S2.5 freigegebene Engineering Decision kontrolliert
+    materialisieren.
+  Input: EngineeringDecision (von S2.5).
+  Output-Artifact: SetupPlan (strukturierte SetupSteps, klassifiziert
+    nach SetupEffect).
+  Nächster Consumer: S3.2 Setup Approval.
+  Authority: bestimmt WELCHE Setup-Aktionen erforderlich sind;
+    materialisiert die bereits freigegebene S2-Entscheidung;
+    klassifiziert Requirements/Effects; erzeugt einen strukturierten
+    SetupPlan.
+  Verbotene Authority: keine Ausführung; keine menschliche Freigabe;
+    kein Wiederaufgreifen der S2-Kandidatenauswahl/-Zulässigkeit.
+
+S3.2 Setup Approval
+  Zweck: die alleinige menschliche Freigabeautorität über geplante
+    mutierende Setup-Aktionen.
+  Input: SetupPlan (von S3.1).
+  Output-Artifact: freigegebener bzw. abgelehnter SetupPlan-Zustand
+    (Approval-Provenienz).
+  Nächster Consumer: S3.3 Controlled Execution.
+  Authority: alleinige menschliche Autorität darüber, ob geplante
+    Setup-Mutationen ausgeführt werden dürfen.
+  Verbotene Authority: keine Planung; keine Ausführung; kein Ersetzen
+    der menschlichen Autorität durch LLM oder deterministische Policy.
+
+S3.3 Controlled Execution
+  Zweck: freigegebene Setup-Mutation kontrolliert und deterministisch
+    ausführen.
+  Authority: erfordert einen freigegebenen SetupPlan; erfordert einen
+    freigegebenen ausführbaren SetupStep; erzwingt die
+    Setup-Ausführungsgrenze; integriert Replay-/Idempotenz-Zustandsschutz
+    (S3.4); delegiert die konkrete Setup-Mutation an den zuständigen
+    registrierten Executor.
+
+S3.4 Execution State & Idempotency
+  Zweck: persistierte Ausführungsidentität und -zustand pro
+    Setup-Schritt.
+  Authority: persistierte SetupStep-Ausführungsidentität/-zustand;
+    Claim/Check; prozessübergreifender Schutz; Bindung an
+    Content-Fingerprint; Wiederverwendung bei bekanntem Erfolg
+    (known-success reuse); fail-closed bei unbekanntem/Recovery-Zustand;
+    geänderter Inhalt erzwingt neue Generierung/Freigabe statt stiller
+    Wiederverwendung.
+  Abgrenzung: S3.4 betrifft ausschließlich die
+    Setup-Schritt-Ausführungsidentität, nicht die generische
+    Workflow-Stage-Synchronisation.
+
+S3.5 Missing-Toolchain Recovery
+  (Name exakt: Missing-Toolchain Recovery — nicht bloß „Retry".)
+  Zweck: generische TOOL_UNAVAILABLE-Evidenz in eine begrenzte,
+    freigabegebundene Recovery überführen.
+  Authority: wandelt generische TOOL_UNAVAILABLE-Evidenz in eine
+    begrenzte, freigabegebundene Recovery um; nutzt die Autoritäten von
+    S3.1/S3.2/S3.3 erneut; exakt begrenzte Recovery; führt den
+    persistierten VerificationPlan nach dem Setup erneut aus.
+  Verbotene Authority: keine ungenehmigte Installation; keine
+    unbegrenzte Schleife; kein Wiederaufgreifen der
+    S2-Engineering-Auswahl; keine stack-spezifische zentrale Policy.
+  Umkehrgrenze (S5→S3):
+    S5 TOOL_UNAVAILABLE → S3.5 Recovery → persistierter
+    Verification-Retry in S5.
+
+Zielbild-Bezug: Human Approval als alleinige Freigabeautorität vor
+mutierender Ausführung (S3.2); bewiesene Ausführbarkeit vor Approval
+(S3.1/S3.3); Restart-/Recovery-Sicherheit (S3.4/S3.5).
+
+----------------------------------------------------------------------
+3C. S4 DEVELOPMENT & CHANGE
+----------------------------------------------------------------------
+
+S4 Development & Change wird intern in vier Subsubsystem-Verantwortungen
+zerlegt. Es werden KEINE neuen Sx.y-Einheiten und KEINE Sx.y.z-Ebene
+eingeführt.
+
+S4.1 Development Change Generation
+  Zweck: strukturierte Entwicklungsänderungen erzeugen.
+  Authority: erzeugt strukturierte DeveloperChanges. Keine
+    ChangeTarget-Mutation.
+  Kritische Invariante: ein leeres Development-Change-Set MUSS
+    FEHLSCHLAGEN (MUST_FAIL). S4.1 besitzt KEINE No-op-Autorität — der
+    explizite No-op-Vertrag existiert ausschließlich in S4.2 (Test
+    Change Generation).
+
+S4.2 Test Change Generation
+  Zweck: strukturierte Teständerungen erzeugen, mit explizitem
+    No-op-Vertrag.
+  Gültiger No-op: disposition="no_changes_required", changes=[],
+    reason=<nicht-leer>.
+  Ein bloß leeres changes-Array ist KEIN No-op. S4.2 besitzt exklusiv
+    die Semantik dieser Deklaration.
+
+S4.3 Change Application
+  Zweck: einen strukturierten Engineering-Change über den kontrollierten
+    ChangeApplication-Mechanismus auf sein autorisiertes
+    ChangeTarget/TargetScope anwenden. Fail-closed bei partieller oder
+    übersprungener Anwendung.
+  Authority: wendet generierte Inhalte ausschließlich innerhalb des
+    autorisierten TargetScope an; klassifiziert tatsächliche
+    Apply-Versuche; erzwingt eine zentrale Scope-Sicherheitspolicy;
+    verhindert Mutation außerhalb des Projekt-Scopes.
+
+S4.4 Change Provenance & Attribution
+  Zweck: nachvollziehbare Änderungsherkunft.
+  Authority: Baseline-before; Event-after; Run-/Phase-Attribution;
+    kontrollierte Änderungsevidenz.
+
+Zielbild-Bezug: kontrollierte, nachvollziehbare Änderung (S4.1/S4.3);
+expliziter No-op-Vertrag statt stillschweigender Leerausführung (S4.2);
+Provenance (S4.4).
+
+----------------------------------------------------------------------
+3D. S5 QUALITY & VERIFICATION
+----------------------------------------------------------------------
+
+S5 Quality & Verification wird intern in sieben Subsubsystem-
+Verantwortungen zerlegt. Es werden KEINE neuen Sx.y-Einheiten und KEINE
+Sx.y.z-Ebene eingeführt.
+
+S5.1 Verification Planning
+  Zweck: einen strukturierten VerificationPlan aus den
+    Projektanforderungen und der vorhandenen Toolchain ableiten.
+
+S5.2 Controlled Verification Execution
+  Zweck: registrierte kontrollierte Verification Runner deterministisch
+    ausführen.
+  Invariante: toolchain-spezifische Logik gehört ausschließlich in
+    Runner/Adapter, niemals in die zentrale S5-Orchestrierung.
+
+S5.3 Verification Evidence Aggregation
+  Zweck: Verification-Ergebnisse pro Step aggregieren und
+    Failure-Evidence strukturiert erhalten.
+
+S5.4 Diagnostic Evidence Formatting
+  Zweck: deterministische Formatierung bereits erzeugter
+    Verification-Evidenz. Keine Diagnoseautorität.
+
+S5.5 Diagnosis Interpretation
+  Zweck: diagnostische Evidenz interpretieren lassen, ohne dass die
+    Interpretation deterministische Testergebnisse überschreiben kann.
+  Authority: interpretiert diagnostische Evidenz.
+  Verbotene Authority: darf einen realen deterministischen Testfehler
+    NIEMALS in Erfolg umdeuten.
+
+S5.6 Deterministic Test Outcome Policy
+  Zweck: die deterministische Test-Outcome-Policy durchsetzen — ein
+    realer Fehler erzwingt immer Rework.
+  Kritische Invariante: ein realer Verification-/Testfehler erzwingt
+    Rework, unabhängig von der Interpretation aus S5.5.
+
+S5.7 Controlled Rework Orchestration
+  Zweck: genau einen begrenzten kontrollierten Rework-Zyklus
+    orchestrieren.
+  Authority: genau EIN begrenzter kontrollierter Rework-Zyklus.
+  Begründung der S5-Ownership: Retry/Rework wird durch das
+    S5-Verification-Verdikt ausgelöst; die Ownership liegt daher
+    korrekt bei S5, nicht bei S4.
+
+Zielbild-Bezug: reale Verifikation als autoritative Evidence (S5.2/S5.3);
+Diagnose-Interpretation darf reale Ergebnisse nie überschreiben
+(S5.5/S5.6) — dies ist die architektonische Umsetzung des Zielbild-
+Prinzips "Diagnostic Evidence ist Evidence, nicht Authority"; begrenzter
+Rework (S5.7).
+
+======================================================================
+4. GRENZEN (BOUNDARIES) S2 → S3 → S4 → S5 → S6
+======================================================================
+
+S2.5 → S3.1
+  Input: EngineeringDecision.
+  S3 muss die bereits ausgewählte Engineering Decision konsumieren.
+  S3 darf die S2-Auswahl-/Zulässigkeitsautorität NICHT wiederaufgreifen.
+
+S3 → S4
+  S4.1 darf erst starten, wenn alle ERFORDERLICHEN S3-Setup-
+  Verantwortungen für den gewählten Plan erfüllt sind. Dazu gehören:
+  freigegebenes Setup; abgeschlossene erforderliche ausführbare
+  Setup-Schritte; kein ungelöster Setup-Blocker; persistierter
+  Ausführungs-/Recovery-Zustand ist sicher für den Fortschritt.
+
+S4 → S5
+  S5 darf erst beginnen, wenn alle ERFORDERLICHEN S4-Mutationen
+  erfolgreich waren.
+  Development-Mutation: immer erforderlich.
+  Test-Mutation: erforderlich bei disposition=changes.
+  Test-Mutation: nicht erforderlich nur bei explizitem gültigem
+  S4.2 no_changes_required.
+
+S5 → S4
+  ReworkRequest / ReworkDevelopmentRequest.
+  Genau EIN kontrollierter begrenzter Rework-Zyklus.
+
+S5 → S3
+  Nur für generische Missing-Toolchain-/Capability-Recovery:
+  TOOL_UNAVAILABLE → begrenzte freigabegebundene S3.5-Recovery →
+  persistierter VerificationPlan-Retry.
+
+S5 → S6
+  Terminale Verification-/Outcome-Evidenz erst nachdem die
+  deterministische S5-Policy erfüllt ist.
+
+======================================================================
+5. ADC GENERICITY / NON-SPECIALIZATION INVARIANT (ARCHITEKTUR-EBENE)
+======================================================================
+
+Zielbild-Bezug: dieser Abschnitt beschreibt, WIE die Architektur die
+Zielbild-Anforderung der Technologieneutralität (siehe Zielbild, Abschnitt
+"Technologieoffenheit") strukturell umsetzt.
+
+Die zentrale ADC-Architektur — S1–S6, zentrale Orchestrierung,
+Composition Roots, Shared Infrastructure — darf nicht von einer
+bestimmten Sprache, einem Framework, einer Toolchain, einem Build-System,
+einer Repository-Struktur, einem Betriebssystem, einem
+Dateisystem-Modell, einem Versionskontrollsystem oder einer
+Delivery-Plattform abhängen.
+
+Stack-spezifische Logik gehört in Adapter, Inspektoren, Executoren,
+Runner, Change-Applier und Provider — niemals in die zentrale
+Orchestrierung.
+
+Die zentrale S3/S4/S5-Orchestrierung muss bestehende heterogene
+Repositories unterstützen. Beispiele sind unter anderem:
+
+- Python
+- JavaScript/Web
+- C/C++
+- CMake
+- PlatformIO
+- ESPHome
+- gemischte Repositories
+
+Dies sind Beispiele, keine zentralen Sonderfälle.
+
+Wichtige Unterscheidung:
+
+Generische Architektur ≠ vollständige Adapter-Abdeckung. Wie breit die
+aktuell verfügbaren Adapter/Executoren/Runner sind, ist Implementierungs-
+status (siehe künftiges Implementierungs-/Status-Dokument), nicht Teil
+dieser Architekturbeschreibung.
+
+======================================================================
+6. ENGINEERING COUNCIL UND CHAIRMAN (S2-REALISIERUNG)
+======================================================================
+
+Zielbild-Bezug: dieser Abschnitt beschreibt, WIE die Architektur die
+Zielbild-Anforderung "technisch fundierte Engineering-Entscheidungen bei
+Erhalt mehrerer gültiger Lösungswege" strukturell umsetzt (siehe Zielbild,
+Abschnitte "Engineering-Qualität" und "Menschliche Autorität").
+
+Die aktuelle Architektur realisiert S2.1/S2.2 über einen KI-basierten
+Engineering Council mit einer Chairman-Rolle:
+
+- Der Council erzeugt mehrere technisch sinnvolle Alternativen (S2.1) und
+  bewertet sie im Cross-Review.
+- Der Chairman synthetisiert Vorschläge und Cross-Reviews und wählt eine
+  technisch begründete Empfehlung (S2.2).
+- Diese Empfehlung wird dem Benutzer nachvollziehbar präsentiert.
+- Der Benutzer kann die Empfehlung akzeptieren oder sich bewusst für eine
+  andere zulässige Variante entscheiden (S2.4).
+
+Der Council darf kreativ unterschiedliche Engineering-Lösungen
+vorschlagen.
+
+NON-NORMATIVE BEISPIELE für mögliche Varianten: Native Host Toolchain,
+Project-local venv, Docker-basierte Isolation, VM oder andere
+abgeschottete Umgebung. Alle können grundsätzlich gültig sein.
+
+Der Chairman vergleicht Varianten anhand realer Engineering-Kriterien
+(u. a.: Requirement-Erfüllung, Passung zum vorhandenen Projekt, nötige
+Änderungen, Wiederverwendbarkeit vorhandener Capabilities, Risiken,
+Reproduzierbarkeit, Materialisierbarkeit, kontrollierte Ausführbarkeit,
+reale Verifizierbarkeit, Kosten/Komplexität, eingeführte Abhängigkeiten).
+
+Der Chairman ist kein deterministischer Solver, der immer dieselbe
+Architektur liefern muss, sondern ein Engineering-Empfehlungsselektor.
+Unterschiedliche technisch gültige Empfehlungen bei gleicher Ausgangslage
+sind grundsätzlich erlaubt — der Schutz liegt nicht in künstlicher
+Lösungsstabilität, sondern in den nachgelagerten technischen Verträgen und
+Prüfungen (S2.3 Engineering Admissibility).
+
+Council und Chairman sind die aktuell gewählte Realisierung von
+S2.1/S2.2. Eine substantiell andere Architektur (z. B. ein anderes
+Mehr-Alternativen-Verfahren) könnte dieselbe Zielbild-Anforderung
+grundsätzlich anders realisieren.
+
+======================================================================
+7. MATERIALISIERBARKEIT UND SETUP-CONTRACTS (S3-REALISIERUNG)
+======================================================================
+
+Zielbild-Bezug: dieser Abschnitt beschreibt, WIE die Architektur die
+Zielbild-Anforderung "keine Mutation ohne nachgewiesene Ausführbarkeit,
+fail-closed" strukturell umsetzt.
+
+Vor jeder mutierenden Ausführung muss ADC architektonisch beweisen können:
+
+- Welcher SetupEffect ist erforderlich?
+- Welcher SetupStep wird daraus erzeugt?
+- Welcher kontrollierte Executor ist zuständig?
+- Welches strukturierte Input-Schema erwartet dieser Executor?
+- Sind alle benötigten Felder vorhanden?
+- Ist die Installations-/Ausführungsdarstellung unterstützt?
+- Ist die Capability registriert?
+- Ist das Projekt-Scope korrekt?
+- Ist die Operation zulässig?
+- Ist Human Approval erforderlich und vorhanden?
+- Kann das Ergebnis danach verifiziert werden?
+
+Die aktuelle Architektur bildet den Readiness-Zustand eines SetupSteps in
+folgenden Zuständen ab:
+
+- already_satisfied
+- materializable
+- manual_review
+- unsupported
+- blocked
+- approval_required
+- executable
+- verification_required
+
+Dies ist die aktuell gewählte Zustandsmodellierung, nicht die einzig
+mögliche.
+
+Ein SetupEffect beschreibt semantisch, WAS geändert werden soll — ADC
+modelliert Setup nicht als Sammlung unstrukturierter, frei formulierter
+Operationsrepräsentationen. NON-NORMATIVE BEISPIELE für SetupEffect-Arten:
+Python package installation, system package installation, project tool
+installation, container runtime setup, system configuration, device
+access, zukünftige Hardware-/Toolchain-Setup-Klassen.
+
+Die konkrete Ausführung wird über strukturierte Contracts mit passenden
+Executoren abgebildet:
+
+Engineering Decision
+→ semantischer Setup-Bedarf
+→ strukturierter Setup Contract
+→ kontrollierter Executor
+→ verifizierter EnvironmentState
+
+======================================================================
+8. PRODUCER → ARTIFACT → CONSUMER (AKTUELLE ARCHITEKTUR-KETTE)
+======================================================================
+
+Zielbild-Bezug: dieser Abschnitt beschreibt, WIE die Architektur die
+Zielbild-Anforderung "jedes wichtige Artefakt hat klaren Producer,
+Consumer, Authority und Evidence" strukturell umsetzt.
+
+User / Adapter
+→ CommonRequest
+→ S1 Requirement Intelligence
+
+(Diese externe Eintrittsschnittstelle ist im Interface-Katalog als
+IF-000A normativ spezifiziert.)
+
+Project Inspector
+→ Project Intelligence
+→ S1 / S2
+
+(Diese externe Inspektionsschnittstelle ist im Interface-Katalog als
+IF-000B normativ spezifiziert.)
+
+S1 → RequirementSet → S2
+
+S2 Engineering Council + Chairman → Engineering Decision / CouncilResult
+→ S3
+
+S3 Materializer → SetupPlan → Human Approval / Controlled Setup
+Execution
+
+S3 Execution → EnvironmentState → S4 / S5
+
+S4 → Structured Changes / Change Provenance → S5
+
+S5 → VerificationResult → Final Approval / S6
+
+S6 → Delivery Evidence (Outcome, Delivery State, Publish Evidence wo
+anwendbar) → Benutzer / Projektstatus / Learning
+
+(Diese S6-Ausgangsschnittstelle ist im Interface-Katalog als IF-029
+normativ spezifiziert.)
+
+Für jedes wichtige Artifact sollen langfristig folgende Fragen eindeutig
+beantwortbar sein: Wer erzeugt es? Wer darf es verändern? Wo wird es
+persistiert? Wer konsumiert es? Welche Authority gilt? Welche Evidence
+beweist seinen Zustand? Welche Contract-Version gilt?
+
+======================================================================
+9. DIAGNOSTIC TRACE — AUTORITÄTS-ABBILDUNG
+======================================================================
+
+Zielbild-Bezug: das Zielbild fordert, dass Diagnostic Evidence niemals
+formale Entscheidungs-Authority ersetzt. Diese aktuelle Architektur bildet
+diese Anforderung auf konkrete Sx.y-Autoritäten ab:
+
+Diagnostic Trace / Diagnostic Evidence darf insbesondere nicht
+substituieren für:
+  - CandidateValidation (S2.3),
+  - Human Engineering Selection (S2.4),
+  - Setup Approval (S3.2),
+  - Approval Provenance,
+  - deterministisches VerificationResult (S5),
+  - Final Approval (S5→S6),
+  - Publish Approval (S6).
+
+Diese Trennung ist konsistent mit IF-027 des Interface-Katalogs.
+
+======================================================================
+10. REFERENZ-WORKFLOW DURCH DIE AKTUELLE ARCHITEKTUR
+======================================================================
+
+Dies ist die aktuelle S1–S6-Realisierung des im Zielbild beschriebenen
+Ziel-Workflows (siehe Zielbild, Abschnitt "Erfolgskriterien / typischer
+Ablauf").
+
+1. Benutzer formuliert Ziel oder Problem.
+2. ADC inspiziert das Projekt read-only.
+3. S1 erzeugt strukturierte Requirements mit Evidence.
+4. Requirements werden validiert.
+5. Der aktuelle EnvironmentState / Preflight wird beobachtet.
+6. S2 Engineering Council erzeugt mehrere Varianten.
+7. Council-Agenten reviewen die Varianten.
+8. Chairman synthetisiert und wählt eine Empfehlung.
+9. ADC prüft jede für Ausführung relevante Variante gegen: Requirements,
+   Constraints, Materialisierbarkeit, Setup-/Executor-Contracts,
+   Verification-Möglichkeiten (S2.3).
+10. Benutzer sieht Empfehlung und Alternativen.
+11. Benutzer entscheidet (S2.4).
+12. S3 erzeugt einen konkreten SetupPlan.
+13. Nicht ausführbare oder manuelle Teile werden sichtbar markiert.
+14. Human Approval für mutierende Setup-Schritte (S3.2).
+15. Controlled Setup Execution (S3.3).
+16. Environment Re-Verification.
+17. S4 Development & Change.
+18. S5 reale Tests und Verification.
+19. Bei Fehler: Diagnosis → Missing Contract / Failure Mode → Regression
+    Test → Fix → Re-Verification (S5.5–S5.7).
+20. Final Approval.
+21. S6 Controlled Delivery.
+22. Separate Publish Approval (wo anwendbar).
+23. Controlled Publish (wo anwendbar).
+24. Outcome und Evidence werden persistiert.
+25. FMEA / Learning Memory werden nur nach akzeptierter Evidence
+    aktualisiert.
+
+======================================================================
+11. ENGINEERING SUPERVISOR — GEPLANTE QUERSCHNITTSARCHITEKTUR
+======================================================================
+
+Zielbild-Bezug: langfristige Aufsichts-/Qualitätsfähigkeit (siehe
+Zielbild, Abschnitt "Lernen / FMEA").
+
+Langfristig ist ein Engineering Supervisor als querschnittliche
+Qualitätsschicht vorgesehen. Der Supervisor ist kein siebtes Subsystem;
+er beobachtet S1 bis S6.
+
+Dies ist eine geplante, noch nicht entschiedene Architekturerweiterung
+und beschreibt keine aktuell realisierte Struktur.
+
+======================================================================
+12. TRACEABILITY-HINWEISE (AUSWAHL)
+======================================================================
+
+Architektur-Entscheidung: Trennung der technischen Zulässigkeitsautorität
+(S2.3) von der menschlichen Auswahlautorität (S2.4).
+Zielbild-Anforderung: technisch unzulässige Lösungen dürfen nicht allein
+durch Empfehlung oder menschliche Auswahl gültig werden.
+Architektur-Rationale: die Trennung verhindert, dass Auswahlautorität
+stillschweigend zu technischer Gültigkeitsautorität wird.
+
+Architektur-Entscheidung: Trennung von Setup Approval (S3.2) und
+Controlled Execution (S3.3).
+Zielbild-Anforderung: Umgebungsverändernde Operationen benötigen
+angemessene Freigabe und müssen kontrolliert ablaufen.
+Architektur-Rationale: eine getrennte, alleinige menschliche
+Freigabeautorität vor jeder Ausführung verhindert stille oder implizite
+Freigabe.
+
+Architektur-Entscheidung: Trennung von Diagnosis Interpretation (S5.5)
+und Deterministic Test Outcome Policy (S5.6).
+Zielbild-Anforderung: keine KI-Selbstaussage darf reale Verifikation
+überschreiben.
+Architektur-Rationale: ein realer Testfehler erzwingt Rework unabhängig
+davon, wie die Interpretation ausfällt — die deterministische Policy
+bleibt von der Interpretation strukturell unabhängig.
+
+Diese Liste ist nicht erschöpfend und dient der Nachvollziehbarkeit
+zentraler Entscheidungen, nicht einer vollständigen Rechtfertigung jeder
+architektonischen Wahl.

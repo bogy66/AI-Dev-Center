@@ -1,0 +1,394 @@
+{
+  "$defs": {
+    "type-ziel": {
+      "properties": {
+        "type": {
+          "const": "ziel"
+        }
+      }
+    },
+    "type-sysreq": {
+      "properties": {
+        "type": {
+          "const": "sysreq"
+        }
+      }
+    },
+    "type-arch": {
+      "properties": {
+        "type": {
+          "const": "arch"
+        }
+      }
+    },
+    "type-arcreq": {
+      "properties": {
+        "type": {
+          "const": "arcreq"
+        }
+      }
+    },
+    "type-subreq": {
+      "properties": {
+        "type": {
+          "const": "subreq"
+        }
+      }
+    },
+    "type-ifreq": {
+      "properties": {
+        "type": {
+          "const": "ifreq"
+        }
+      }
+    },
+    "type-impl": {
+      "properties": {
+        "type": {
+          "const": "impl"
+        }
+      }
+    },
+    "type-test": {
+      "properties": {
+        "type": {
+          "const": "test"
+        }
+      }
+    },
+    "type-evidence": {
+      "properties": {
+        "type": {
+          "const": "evidence"
+        }
+      }
+    },
+    "type-implementable-req": {
+      "properties": {
+        "type": {
+          "enum": [
+            "arcreq",
+            "subreq",
+            "ifreq"
+          ]
+        }
+      }
+    },
+    "type-verifiable-req": {
+      "properties": {
+        "type": {
+          "enum": [
+            "sysreq",
+            "arcreq",
+            "subreq",
+            "ifreq"
+          ]
+        }
+      }
+    }
+  },
+  "schemas": [
+    {
+      "id": "sysreq-realizes-ziel",
+      "severity": "violation",
+      "message": "Every System Requirement must realize at least one Zielbild goal.",
+      "select": {
+        "$ref": "#/$defs/type-sysreq"
+      },
+      "validate": {
+        "network": {
+          "realizes": {
+            "contains": {
+              "local": {
+                "$ref": "#/$defs/type-ziel"
+              }
+            },
+            "minContains": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "arch-satisfies-sysreq",
+      "severity": "violation",
+      "message": "Every Architecture Decision must satisfy at least one System Requirement.",
+      "select": {
+        "$ref": "#/$defs/type-arch"
+      },
+      "validate": {
+        "network": {
+          "satisfies": {
+            "contains": {
+              "local": {
+                "$ref": "#/$defs/type-sysreq"
+              }
+            },
+            "minContains": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "arcreq-derived-from-arch",
+      "severity": "violation",
+      "message": "Every Architecture-derived Requirement must originate from an Architecture Decision.",
+      "select": {
+        "$ref": "#/$defs/type-arcreq"
+      },
+      "validate": {
+        "network": {
+          "derived_from": {
+            "contains": {
+              "local": {
+                "$ref": "#/$defs/type-arch"
+              }
+            },
+            "minContains": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "subreq-has-architecture-origin",
+      "severity": "violation",
+      "message": "Every Subsystem Requirement must originate from Architecture or an Architecture-derived Requirement.",
+      "select": {
+        "$ref": "#/$defs/type-subreq"
+      },
+      "validate": {
+        "network": {
+          "derived_from": {
+            "contains": {
+              "local": {
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "arch",
+                      "arcreq"
+                    ]
+                  }
+                }
+              }
+            },
+            "minContains": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "ifreq-has-derived-origin",
+      "severity": "violation",
+      "message": "Every Interface Requirement must originate from a Subsystem or Architecture-derived Requirement.",
+      "select": {
+        "$ref": "#/$defs/type-ifreq"
+      },
+      "validate": {
+        "network": {
+          "derived_from": {
+            "contains": {
+              "local": {
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "subreq",
+                      "arcreq"
+                    ]
+                  }
+                }
+              }
+            },
+            "minContains": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "impl-implements-requirement",
+      "severity": "violation",
+      "message": "Every Implementation item must implement at least one lower-level requirement.",
+      "select": {
+        "$ref": "#/$defs/type-impl"
+      },
+      "validate": {
+        "network": {
+          "implements": {
+            "contains": {
+              "local": {
+                "$ref": "#/$defs/type-implementable-req"
+              }
+            },
+            "minContains": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "test-verifies-requirement",
+      "severity": "violation",
+      "message": "Every Test must verify at least one requirement.",
+      "select": {
+        "$ref": "#/$defs/type-test"
+      },
+      "validate": {
+        "network": {
+          "verifies": {
+            "contains": {
+              "local": {
+                "$ref": "#/$defs/type-verifiable-req"
+              }
+            },
+            "minContains": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "evidence-evidences-test",
+      "severity": "violation",
+      "message": "Every Evidence item must evidence at least one Test.",
+      "select": {
+        "$ref": "#/$defs/type-evidence"
+      },
+      "validate": {
+        "network": {
+          "evidences": {
+            "contains": {
+              "local": {
+                "$ref": "#/$defs/type-test"
+              }
+            },
+            "minContains": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "ziel-realized-by-sysreq",
+      "severity": "violation",
+      "message": "Every approved Zielbild goal must be realized by at least one System Requirement.",
+      "select": {
+        "properties": {
+          "type": {
+            "const": "ziel"
+          },
+          "status": {
+            "const": "approved"
+          }
+        }
+      },
+      "validate": {
+        "network_back": {
+          "realizes": {
+            "contains": {
+              "local": {
+                "$ref": "#/$defs/type-sysreq"
+              }
+            },
+            "minContains": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "sysreq-satisfied-by-arch",
+      "severity": "violation",
+      "message": "Every approved System Requirement must be satisfied by at least one Architecture Decision.",
+      "select": {
+        "properties": {
+          "type": {
+            "const": "sysreq"
+          },
+          "status": {
+            "const": "approved"
+          }
+        }
+      },
+      "validate": {
+        "network_back": {
+          "satisfies": {
+            "contains": {
+              "local": {
+                "$ref": "#/$defs/type-arch"
+              }
+            },
+            "minContains": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "ifreq-implemented",
+      "severity": "violation",
+      "message": "Every approved Interface Requirement must have at least one Implementation item.",
+      "select": {
+        "properties": {
+          "type": {
+            "const": "ifreq"
+          },
+          "status": {
+            "const": "approved"
+          }
+        }
+      },
+      "validate": {
+        "network_back": {
+          "implements": {
+            "contains": {
+              "local": {
+                "$ref": "#/$defs/type-impl"
+              }
+            },
+            "minContains": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "ifreq-verified",
+      "severity": "violation",
+      "message": "Every approved Interface Requirement must have at least one verifying Test.",
+      "select": {
+        "properties": {
+          "type": {
+            "const": "ifreq"
+          },
+          "status": {
+            "const": "approved"
+          }
+        }
+      },
+      "validate": {
+        "network_back": {
+          "verifies": {
+            "contains": {
+              "local": {
+                "$ref": "#/$defs/type-test"
+              }
+            },
+            "minContains": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "test-has-evidence",
+      "severity": "violation",
+      "message": "Every Test must have at least one Evidence item.",
+      "select": {
+        "$ref": "#/$defs/type-test"
+      },
+      "validate": {
+        "network_back": {
+          "evidences": {
+            "contains": {
+              "local": {
+                "$ref": "#/$defs/type-evidence"
+              }
+            },
+            "minContains": 1
+          }
+        }
+      }
+    }
+  ]
+}

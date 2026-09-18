@@ -317,6 +317,18 @@ def _emit_failure_diagnostics(e, progress, trace_events):
     logger.error("  last_completed_percentage: %s%%", progress.pct)
     logger.error("  exception: %s: %s", type(e).__name__, _safe_exception_message(e))
 
+    # CLAUDE-ADC-S23-RSE-PREFLIGHT-TEST-HARDENING-001, Part H: additive
+    # only -- covers any OTHER code path where a NoEligibleEngineering
+    # CandidateError reaches this generic handler directly (rather than
+    # via the assert selection.admissible_variants branch above, which
+    # already embeds the same evidence in its own message). Never
+    # changes control flow, retries, or the pass/fail outcome.
+    validations = getattr(e, "validations", None)
+    if validations:
+        rejected = [v for v in validations if not getattr(v, "admissible", True)]
+        for line in _engineering_candidate_rejection_evidence_lines(rejected):
+            logger.error("  %s", line)
+
 
 def _safe_exception_message(e):
     message = str(e)
@@ -393,6 +405,32 @@ def _esphome_failure_evidence_lines(esphome_steps) -> list[str]:
             lines.append(
                 "  diagnostics:\n" + _redact_secrets_preserving_layout(diagnostics)
             )
+    return lines
+
+
+def _engineering_candidate_rejection_evidence_lines(rejected_candidates) -> list[str]:
+    """CLAUDE-ADC-S23-RSE-PREFLIGHT-TEST-HARDENING-001, Part H: bounded,
+    safe, structured evidence for every rejected S2.3 CandidateValidation
+    (`rejected_candidates` is `EngineeringVariantSelection.rejected_variants`
+    or `NoEligibleEngineeringCandidateError.validations` filtered to
+    inadmissible ones -- both already the SAME structured objects S2.3
+    itself produced). Diagnostic output only: never re-validates,
+    auto-repairs, or otherwise feeds back into which candidates are
+    admissible -- it only renders fields validate_variants() already
+    computed, exactly mirroring _esphome_failure_evidence_lines()'s own
+    reuse-only, no-secrets style."""
+    lines = []
+    for candidate in rejected_candidates:
+        variant = getattr(candidate, "variant", None)
+        candidate_id = getattr(variant, "id", None) if variant is not None else None
+        lines.append(
+            "S2.3 rejected candidate: "
+            f"candidate_id={_safe_diagnostic_value(candidate_id)} "
+            f"missing_binding_requirement_ids={_safe_diagnostic_value(list(getattr(candidate, 'missing_binding_requirement_ids', ())))} "
+            f"verification_feasibility_gap_ids={_safe_diagnostic_value(list(getattr(candidate, 'verification_feasibility_gap_ids', ())))} "
+            f"unmaterializable_items={_safe_diagnostic_value(list(getattr(candidate, 'unmaterializable_items', ())))} "
+            f"platform_conflict={_safe_diagnostic_value(getattr(candidate, 'platform_conflict', None))}"
+        )
     return lines
 
 
@@ -727,7 +765,9 @@ def test_real_esphome_esp32_hello_world_acceptance(monkeypatch, diagnostic_level
         assert isinstance(selection, EngineeringVariantSelection)
         assert selection.admissible_variants, (
             "no admissible engineering candidate is available for human "
-            "selection"
+            "selection; " + " | ".join(
+                _engineering_candidate_rejection_evidence_lines(selection.rejected_variants)
+            )
         )
         progress.milestone(
             35, "Engineering Council including Chairman completed; "

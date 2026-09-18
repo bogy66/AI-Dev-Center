@@ -64,7 +64,8 @@ S2 Engineering Decision.
 
 IF-000A-REQ-005 MUST NOT:
 Der Adapter DARF KEINE Mutation ausführen. Er ist eine reine Eingabeschnittstelle
-ohne Dateisystem-, Umgebungs- oder Projekt-Mutations-Authority.
+ohne Projekt-, Target- oder Environment-Mutations-Authority (Current
+Implementation Mapping: dies schließt insbesondere Dateisystem-Mutation ein).
 
 IF-000A-REQ-006 MUST:
 Die Schnittstelle MUSS technologie-neutral bleiben. Kein Bestandteil der
@@ -113,8 +114,9 @@ und Testsysteme MÜSSEN respektiert und dokumentiert werden. ADC DARF sie NICHT
 stillschweigend durch ADC-eigene Defaults ersetzen.
 
 IF-000B-REQ-003 MUST NOT:
-Project Inspector DARF KEINE Mutation am Projekt, am Dateisystem oder an der
-Umgebung ausführen.
+Project Inspector DARF KEINE Mutation am Projekt, am Target oder an der
+Environment ausführen (Current Implementation Mapping: dies schließt
+insbesondere Dateisystem-Mutation ein).
 
 IF-000B-REQ-004 MUST NOT:
 Project Inspector DARF KEINE versteckte Engineering-Selection-Authority ausüben.
@@ -131,7 +133,7 @@ read-only-Projektanalyse. Deren konkrete Klassen- und Modulnamen sind
 implementationsspezifisch und KEIN Bestandteil des normativen Contracts.
 
 VERIFICATION MAPPING / CURRENT EVIDENCE:
-FUTURE_TEST_NEED: Read-only-Inspection produziert keine Dateisystem-Mutation.
+FUTURE_TEST_NEED: Read-only-Inspection produziert keine Projekt-/Target-/Environment-Mutation (aktuell insbesondere: keine Dateisystem-Mutation).
 FUTURE_TEST_NEED: Beobachtete Konventionen werden nicht durch ADC-Defaults ersetzt.
 FUTURE_TEST_NEED: Project Inspector übt keine S2-Selection-Authority aus.
 FUTURE_TEST_NEED: Project-Intelligence-Evidence ist von Engineering-Decisions unterscheidbar.
@@ -194,13 +196,13 @@ oder Chain-of-Thought enthalten.
 IF-001-REQ-005.1 MUST:
 Requirement Type bezeichnet generische Architektur-Metadaten (z. B. functional, toolchain,
 version, build, test, hardware, security, environment_constraint, project_convention,
-approval, verification). Er bezeichnet KEINEN Python-Typ, kein Modul und kein Paket.
+approval, verification). Er ist ein strukturiertes, technologie-neutrales
+Klassifikationsmerkmal — keine sprach-, framework- oder plattformspezifische Typangabe.
 
 IF-001-REQ-005.2 MUST:
-Technical Identity bezeichnet die strukturierte Identität, über die ein Requirement,
-eine Toolchain, eine Plattform oder ein Capability-Ziel schnittstellenübergreifend
-unterschieden wird. Sie ist generische Architektur-Metadaten — KEIN Python-Typ,
-kein Modul und kein Paket.
+Technical Identity bezeichnet strukturierte, technologie-neutrale Metadaten, über die
+ein Requirement, eine Toolchain, eine Plattform oder ein Capability-Ziel
+schnittstellenübergreifend unterschieden wird. Sie ist generische Architektur-Metadaten.
 
 (Nicht-normative Beispiele: Eine Requirement könnte Technical Identity "python>=3.10"
 tragen; eine Platform-Angabe könnte Technical Identity "arm-none-eabi-gcc" tragen.
@@ -255,7 +257,7 @@ S2.1 = alternatives + review evidence.
 S2.2 = synthesis + recommendation.
 Keine technische Zulässigkeitsauthority.
 
-CURRENT IMPLEMENTATION:
+CURRENT IMPLEMENTATION MAPPING:
 app/engineering_council.py Phase 1 / Phase 2 → Chairman Phase 3.
 
 VERIFICATION:
@@ -319,12 +321,14 @@ fehlende Laufzeit-Verification-Evidence an einer Schnittstelle bezieht, die
 abgeschlossene Verification-Evidence erwartet.
 
 Die Kategorie "Requirement Type" in IF-001-REQ-005.1 ist generische
-Architektur-Metadaten — KEIN Python-Typ, kein Modul, kein Paket.
+Architektur-Metadaten — ein strukturiertes, technologie-neutrales
+Klassifikationsmerkmal.
 
 Die Kategorie "Technical Identity" in IF-001-REQ-005.2 ist generische
-Architektur-Metadaten — KEIN Python-Typ, kein Modul, kein Paket.
+Architektur-Metadaten — strukturierte, technologie-neutrale Metadaten
+zur schnittstellenübergreifenden Unterscheidung.
 
-CURRENT IMPLEMENTATION:
+CURRENT IMPLEMENTATION MAPPING:
 app/engineering_council.py
 app/engineering_decision.py validate_candidates / validate_variants
 
@@ -356,7 +360,7 @@ MUST NOT:
 - S2.3 wählt keinen alternativen Gewinner,
 - keine unbegrenzte Council-/Repair-Schleife.
 
-CURRENT IMPLEMENTATION:
+CURRENT IMPLEMENTATION MAPPING:
 app/engineering_decision.py + bounded Chairman repair in app/engineering_council.py.
 
 ======================================================================
@@ -379,7 +383,7 @@ MUST NOT:
 ZERO-ELIGIBLE:
 0 admissible candidates => keine gültige Human Selection möglich.
 
-CURRENT IMPLEMENTATION:
+CURRENT IMPLEMENTATION MAPPING:
 resolve_human_engineering_selection()
 describe_engineering_variant_selection()
 
@@ -403,7 +407,7 @@ MUST NOT:
 - kein Default-Winner bei ungelöster Auswahl,
 - kein Override technischer Inadmissibility.
 
-CURRENT IMPLEMENTATION:
+CURRENT IMPLEMENTATION MAPPING:
 build_engineering_decision()
 
 ======================================================================
@@ -424,7 +428,7 @@ S3 MUST NOT:
 - S2.3 erneut als eigene Authority ausüben,
 - Chairman-Empfehlung neu interpretieren.
 
-CURRENT IMPLEMENTATION:
+CURRENT IMPLEMENTATION MAPPING:
 S2: build_engineering_decision()
 S3 entry: ToolchainMaterializer.materialize_decision()
 
@@ -457,14 +461,16 @@ Ein genuinely non-mutating already_satisfied Step, dessen Zustand deterministisc
 belegt ist, benötigt keine Human Approval — er erzeugt keine Mutation.
 
 MUST NOT:
-- frei formulierter Shell-Text automatisch mutierbar machen,
+- unstrukturierte, frei formulierte Operationsrepräsentation automatisch mutierbar machen,
 - Approval erzeugen,
 - Execution durchführen,
 - S3.1 darf KEINE Approval-Authority über S3.2 ausüben.
 
-CURRENT IMPLEMENTATION:
+CURRENT IMPLEMENTATION MAPPING:
 app/toolchain_materializer.py
 Requirement/Setup artifacts in app/requirement_model.py
+Ein frei formulierter Shell-Text ist ein aktuelles Beispiel einer
+unstrukturierten Operationsrepräsentation, die dieser Regel unterliegt.
 
 ======================================================================
 IF-009 — S3.2 SETUP APPROVAL → S3.3 CONTROLLED EXECUTION
@@ -524,7 +530,7 @@ MUST NOT:
 - unknown state treated as success,
 - stale success reused for changed content.
 
-CURRENT IMPLEMENTATION:
+CURRENT IMPLEMENTATION MAPPING:
 SetupExecutionStateStore
 
 ======================================================================
@@ -560,18 +566,21 @@ Artifact:
 
 MUST:
 - structured changes,
-- safe project-relative target semantics,
+- safe TargetScope-relative semantics,
 - explicit action/content contract.
 
 MUST NOT:
-- direct arbitrary LLM shell mutation,
+- direct arbitrary LLM-generated unstructured operation mutation,
 - empty Development change set as successful no-op.
 
 EMPTY DEVELOPMENT CHANGE SET:
 MUST_FAIL.
 
-CURRENT IMPLEMENTATION:
+CURRENT IMPLEMENTATION MAPPING:
 DeveloperAgent → ChangeApplicationService / DeveloperFileApplier
+(In der aktuellen Implementierung: project-relative Datei-Zielsemantik)
+Ein direkter LLM-Shell-Mutationsaufruf ist ein aktuelles Beispiel einer
+unstrukturierten LLM-Operationsmutation, die dieser Regel unterliegt.
 
 ======================================================================
 IF-013 — S4.2 TEST CHANGE GENERATION → S4.3 CHANGE APPLICATION
@@ -587,7 +596,7 @@ VALID CASES:
 MUST NOT:
 Empty changes[] alone is not a no-op declaration.
 
-CURRENT IMPLEMENTATION:
+CURRENT IMPLEMENTATION MAPPING:
 TestChangeGenerator
 TestChangeDisposition
 ChangeApplicationService
@@ -605,10 +614,20 @@ Required sequence:
   → S4.4 event/result attribution
 
 MUST:
-- changed files attributable to run/phase,
-- path safety enforced via one central policy,
-- unsafe paths never mutate outside project,
-- skipped/partial mutation cannot masquerade as successful apply.
+- geänderte Ziele (Targets) dem Run/Phase zuordenbar,
+- Target-Sicherheit über eine zentrale Policy erzwungen,
+- nicht autorisierte Ziele werden niemals außerhalb des TargetScope mutiert,
+- übersprungene/partielle Anwendung darf nicht als erfolgreich erscheinen.
+
+CURRENT IMPLEMENTATION MAPPING:
+In der aktuellen dateisystem-basierten Implementierung:
+  - changed files attributable to run/phase,
+  - path safety enforced via one central policy,
+  - unsafe paths never mutate outside project.
+  resolve_safe_path()
+  ChangeApplicationService
+  DeveloperFileApplier
+  RunChangeProvenance
 
 RESTART / PARTIAL-STATE SAFETY:
 Wird ein Prozess/Lauf während oder nach S4-Mutation unterbrochen und kann der
@@ -616,14 +635,18 @@ Mutationszustand nicht aus Baseline-/Event-Provenance bewiesen werden, MUSS ein
 späterer Lauf:
 
   a) den unsicheren oder partiellen Zustand erkennen,
-  b) den aktuellen Projektzustand mit der erfassten Provenance korrelieren,
+  b) den aktuellen Zielzustand mit der erfassten Provenance korrelieren,
   c) dieselbe Änderung NICHT still erneut anwenden,
   d) die Änderung NICHT still als erfolgreich behandeln,
   e) fail-closed gehen oder einen kontrollierten Reconciliation-Pfad betreten.
 
-Bestehende Benutzeränderungen (Pre-existing User Changes) MÜSSEN geschützt bleiben.
+Bestehende Änderungen am Zielzustand (Pre-existing Target Changes) MÜSSEN geschützt bleiben.
 
 ADC DARF NICHT:
+- Pre-existing Target State automatisch verwerfen oder überschreiben,
+- den Zielzustand destruktiv reparieren.
+
+CURRENT IMPLEMENTATION MAPPING (Konkrete Ausprägungen dieses generischen Verbots):
 - zurücksetzen (reset),
 - verstauen (stash),
 - bereinigen (clean),
@@ -631,13 +654,7 @@ ADC DARF NICHT:
 - dirty files verwerfen,
 - automatisch einen "clean state" wiederherstellen.
 
-Diese Semantik MUSS mit Zielbild Abschnitt 17 (Git und Delivery) kompatibel sein.
-
-CURRENT IMPLEMENTATION:
-resolve_safe_path()
-ChangeApplicationService
-DeveloperFileApplier
-RunChangeProvenance
+Diese Semantik MUSS mit Zielbild Abschnitt 17 (Controlled Delivery) kompatibel sein.
 
 ======================================================================
 IF-015 — S4 COMPLETE → S5 QUALITY & VERIFICATION
@@ -670,7 +687,7 @@ are structurally defined.
 MUST NOT:
 Central S5 orchestration special-cases specific ecosystems.
 
-CURRENT IMPLEMENTATION:
+CURRENT IMPLEMENTATION MAPPING:
 build_verification_plan()
 ControlledRunnerRegistry
 
@@ -719,7 +736,7 @@ MUST NOT:
 Formatter decides acceptance/rework.
 Formatter rewrites failed evidence into passed evidence.
 
-CURRENT IMPLEMENTATION:
+CURRENT IMPLEMENTATION MAPPING:
 _test_result_from_verification()
 _step_failure_evidence()
 format_test_result_evidence()
@@ -740,7 +757,7 @@ MUST NOT:
 - LLM receives authority to rewrite deterministic result,
 - hidden provider reasoning becomes system evidence.
 
-CURRENT IMPLEMENTATION:
+CURRENT IMPLEMENTATION MAPPING:
 format_test_result_evidence()
 DiagnosisReviewer
 
@@ -763,7 +780,7 @@ test FAIL + reviewer ACCEPTED => rework_required
 timeout + reviewer ACCEPTED => rework_required
 review infrastructure failure => not silently accepted
 
-CURRENT IMPLEMENTATION:
+CURRENT IMPLEMENTATION MAPPING:
 DiagnosisReviewer → TestingStage.run
 
 ======================================================================
@@ -793,7 +810,7 @@ MUST:
 - rework scope remains bounded,
 - S4 does not silently erase the verification cause.
 
-CURRENT IMPLEMENTATION:
+CURRENT IMPLEMENTATION MAPPING:
 ControlledReworkStage → S4 development path
 
 ======================================================================
@@ -824,7 +841,7 @@ MUST:
 - no infinite retry,
 - recovered capability verified before normal continuation.
 
-CURRENT IMPLEMENTATION:
+CURRENT IMPLEMENTATION MAPPING:
 ProjectSetupApplicationService missing-toolchain methods
 → retry_missing_toolchain_verification
 
@@ -841,19 +858,26 @@ Consumer:
 MUST:
 - only accepted terminal deterministic outcome can reach final delivery approval,
 - final approval remains distinct from verification,
-- commit remains distinct from publish,
+- local controlled delivery state remains distinct from publish (wo anwendbar),
 - publish requires its own governed approval where the architecture defines it,
 - run-owned changes/provenance define delivery scope.
 
 MUST NOT:
 - rework_required/failed verification delivered as success,
-- foreign pre-existing user changes silently included,
-- reset/stash/clean/rebase/force-push used as hidden repair,
+- foreign pre-existing target state changes silently included,
+- destructive repair of delivery state (generisch: jede Form von automatischer
+  Verwerfung oder Überschreibung von Pre-existing Target State),
 - uncontrolled publish.
 
-CURRENT IMPLEMENTATION:
+CURRENT IMPLEMENTATION MAPPING — GIT:
+Die aktuelle Git-Implementierung schützt konkret vor:
+  - reset
+  - stash
+  - clean
+  - rebase
+  - force push
 final approval
-controlled git stage
+controlled Git stage (Git-basierter Delivery-Adapter)
 controlled publish stage
 
 CURRENT EVIDENCE:
@@ -862,18 +886,36 @@ S6 is not yet decomposed into S6.x in the target architecture.
 Do not invent S6.1/S6.2 numbering.
 
 ======================================================================
-IF-026 — S6 LOCAL COMMIT → PUBLISH APPROVAL / CONTROLLED PUBLISH
+IF-026 — S6 LOCAL DELIVERY STATE → PUBLISH APPROVAL / CONTROLLED PUBLISH
 ======================================================================
 
 NOTE:
 This is an unnumbered internal S6 delivery interface because S6 currently has no official S6.x decomposition.
 
+NORMATIVE CONTRACT
+
 MUST:
-- local commit identity known,
-- publish scope known,
-- publish approval distinct from local commit authority,
-- no force push,
-- no unrelated user changes included.
+- completed controlled local Delivery State identity known,
+- publish scope known (wo Publish existiert),
+- publish approval distinct from local delivery authority,
+- no unrelated pre-existing target state changes included.
+
+Generische Semantik:
+Der lokale kontrollierte Delivery-Zustand (wie auch immer technisch realisiert)
+bildet die Grenze zur Publish-Approval. Ein Projekt ohne Versionskontrolle oder
+mit anderem Delivery-Mechanismus muss diese Grenze mit einem anderen
+DeliveryState-Identity-Konzept erfüllen können.
+
+MUST NOT (generisch):
+- ADC DARF NICHT automatisch Pre-existing Target State verwerfen oder destruktiv reparieren.
+
+CURRENT IMPLEMENTATION MAPPING — GIT:
+In der aktuellen Git-Implementierung:
+  - local commit identity known,
+  - publish scope known,
+  - publish approval distinct from local commit authority,
+  - no force push,
+  - no unrelated user changes included.
 
 CURRENT EVIDENCE:
 Remaining partial area; requires stronger end-to-end approval/provenance evidence.
@@ -892,13 +934,14 @@ Consumer:
   Benutzer / Projektstatus / Learning Memory / FMEA
 
 Primary Artifact:
-  Outcome / Commit / Publish Evidence
+  Delivery Evidence (Outcome, Delivery State, Publish Evidence wo anwendbar)
 
 NORMATIVE CONTRACT
 
 IF-029-REQ-001 MUST:
-Outcome-/Commit-/Publish-Evidence MUSS dem tatsächlichen Delivery-Outcome
-entsprechen und eindeutig attributable bleiben.
+Delivery Evidence MUSS dem tatsächlichen Delivery-Outcome entsprechen und
+eindeutig attributable bleiben. Der semantische Gehalt (akzeptiertes Outcome,
+lokaler Delivery-Zustand, Publish-Zustand wo anwendbar) bleibt erhalten.
 
 IF-029-REQ-002 MUST:
 Der Projektstatus MUSS den tatsächlichen Delivery-Zustand reflektieren.
@@ -1042,7 +1085,7 @@ S4.2 → S4.3 (IF-013)
   deterministic architecture/apply-gate evidence exists.
 
 S4.3 ↔ S4.4 (IF-014)
-  Architecture contract strengthened (restart/partial-state safety).
+  Architecture contract strengthened (restart/partial-state safety, target abstraction).
 
 S4 → S5 (IF-015)
   deterministic architecture/apply-gate evidence exists; exact productive-chain classification to review.
@@ -1075,13 +1118,17 @@ S3.5 → S5 (IF-024)
   verification retry after recovery.
 
 S5 → S6 (IF-025)
-  PARTIAL
+  PARTIAL. Contract wording generalized to technology-neutral delivery
+  semantics; evidence completeness status unchanged by this generalization.
 
-S6 local commit → publish (IF-026)
-  PARTIAL / incomplete end-to-end authority evidence.
+S6 local delivery state → publish (IF-026)
+  PARTIAL / incomplete end-to-end authority evidence. Contract wording
+  generalized to a technology-neutral delivery-state boundary; evidence
+  completeness status unchanged by this generalization.
 
 S6 → User / Project Status / Learning (IF-029)
-  NEW_INTERFACE / FUTURE_TEST_NEED
+  NEW_INTERFACE / FUTURE_TEST_NEED. Delivery Evidence vocabulary generalized
+  (technology-neutral); test/evidence status unchanged by this generalization.
 
 ======================================================================
 OPEN REVIEW QUESTIONS FOR OPENROUTER
