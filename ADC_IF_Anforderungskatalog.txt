@@ -1,0 +1,1127 @@
+AI-DEV-CENTER (ADC) – INTERFACE REQUIREMENTS CATALOG (IF)
+Version: Draft 1.0
+Stand: 2026-09-18
+Normative Referenz: ADC Zielbild Stand 2026-09-17 + Interface-Ergänzung 2026-09-18
+Repository-Review-Basis: 5228ffacbc1b1d269bf6cf1b3eb8ca8920179294
+
+STATUS DES DOKUMENTS
+- REVIEW CANDIDATE
+- Noch nicht als endgültiger Contract akzeptiert.
+- Für unabhängigen Review mit OpenRouter vorgesehen.
+
+======================================================================
+0. KONVENTIONEN
+======================================================================
+
+MUST      = verbindliche Zielbild-Anforderung.
+MUST NOT  = verbindliches Verbot.
+SHOULD    = stark erwartete Anforderung; Abweichung braucht Begründung.
+MAY       = zulässige Option.
+
+Jeder IF-Eintrag trennt:
+A. Normative Contract
+B. Current Implementation Mapping
+C. Verification Mapping / Current Evidence
+
+S1 und S6 besitzen im aktuellen Zielbild KEINE nummerierten Subsubsysteme.
+Es werden deshalb keine S1.x- oder S6.x-IDs erfunden.
+
+======================================================================
+IF-000A — USER / ADAPTER → S1 REQUIREMENT INTELLIGENCE
+======================================================================
+
+Boundary:
+  External Entry → S1
+
+Producer:
+  User / Adapter
+
+Consumer:
+  S1 Requirement Intelligence
+
+Primary Artifact:
+  CommonRequest / structured user intent
+
+NORMATIVE CONTRACT
+
+IF-000A-REQ-001 MUST:
+Die Anfrage MUSS eine strukturierte Request-Identity/Correlation besitzen, die eine
+eindeutige Zuordnung über den gesamten ADC-Lauf ermöglicht.
+
+IF-000A-REQ-002 MUST:
+Der User Intent MUSS unverändert erhalten bleiben. Der Adapter DARF den Benutzerwunsch
+nicht umdeuten, einschränken oder still umformulieren.
+
+IF-000A-REQ-003 MUST:
+Die Eingabevalidierung MUSS vor Übergabe an S1 erfolgen. Offensichtlich ungültige,
+leere oder strukturell nicht verarbeitbare Eingaben DÜRFEN NICHT still als gültiger
+Auftrag an S1 übergeben werden.
+
+IF-000A-REQ-004 MUST NOT:
+Der Adapter DARF KEINE technische Lösung auswählen. Die Auswahl einer Toolchain,
+Umgebung, Build-Methode oder Engineering-Strategie ist ausschließlich Sache von
+S2 Engineering Decision.
+
+IF-000A-REQ-005 MUST NOT:
+Der Adapter DARF KEINE Mutation ausführen. Er ist eine reine Eingabeschnittstelle
+ohne Dateisystem-, Umgebungs- oder Projekt-Mutations-Authority.
+
+IF-000A-REQ-006 MUST:
+Die Schnittstelle MUSS technologie-neutral bleiben. Kein Bestandteil der
+normativen Anforderungen DARF eine bestimmte Programmiersprache, ein bestimmtes
+Framework, ein Build-System oder ein Ecosystem als zentrale Policy voraussetzen.
+
+CURRENT IMPLEMENTATION MAPPING:
+Die aktuelle ADC-Implementierung unterstützt verschiedene Entry-Points (CLI,
+Web-Interface, API). Die Abbildung auf CommonRequest ist implementationsspezifisch
+und KEIN Bestandteil des normativen Contracts.
+
+VERIFICATION MAPPING / CURRENT EVIDENCE:
+FUTURE_TEST_NEED: Request-Identity-Erhalt über den gesamten Lauf.
+FUTURE_TEST_NEED: User-Intent-Preservation nach Adapter-Pass-Through.
+FUTURE_TEST_NEED: Input-Validation verhindert Übergabe ungültiger Requests an S1.
+FUTURE_TEST_NEED: Adapter wählt keine technische Lösung (keine S2-Authority-Leak).
+FUTURE_TEST_NEED: Technology-Neutrality des Contracts (keine sprachspezifischen Felder).
+
+======================================================================
+IF-000B — PROJECT INSPECTOR → S1 / S2
+======================================================================
+
+Boundary:
+  Project Inspector → S1 Requirement Intelligence / S2 Engineering Decision
+
+Producer:
+  Project Inspector
+
+Consumer:
+  S1 Requirement Intelligence
+  S2 Engineering Decision (soweit Project Context dort benötigt wird)
+
+Primary Artifact:
+  Project Intelligence / Project Context evidence
+
+NORMATIVE CONTRACT
+
+IF-000B-REQ-001 MUST:
+Project Inspector DARF das Projekt ausschließlich read-only inspizieren.
+Jede Inspektion MUSS evidenzbasiert sein und beobachtbare Fakten liefern,
+nicht Vermutungen oder Präferenzen.
+
+IF-000B-REQ-002 MUST:
+Existing Project First: Beobachtete Projektkonventionen, Toolchains, Build-Systeme
+und Testsysteme MÜSSEN respektiert und dokumentiert werden. ADC DARF sie NICHT
+stillschweigend durch ADC-eigene Defaults ersetzen.
+
+IF-000B-REQ-003 MUST NOT:
+Project Inspector DARF KEINE Mutation am Projekt, am Dateisystem oder an der
+Umgebung ausführen.
+
+IF-000B-REQ-004 MUST NOT:
+Project Inspector DARF KEINE versteckte Engineering-Selection-Authority ausüben.
+Die Beobachtung "Projekt verwendet Toolchain X" DARF NICHT in eine stillschweigende
+Entscheidung "ADC soll Toolchain X verwenden" umgewandelt werden.
+
+IF-000B-REQ-005 MUST:
+Beobachtete Projektkonventionen und Toolchains MÜSSEN als Evidence dokumentiert
+werden. Sie sind Input für S1/S2, NICHT automatisch bindende Engineering-Decisions.
+
+CURRENT IMPLEMENTATION MAPPING:
+Die aktuelle ADC-Implementierung nutzt Project-Inspector-Komponenten zur
+read-only-Projektanalyse. Deren konkrete Klassen- und Modulnamen sind
+implementationsspezifisch und KEIN Bestandteil des normativen Contracts.
+
+VERIFICATION MAPPING / CURRENT EVIDENCE:
+FUTURE_TEST_NEED: Read-only-Inspection produziert keine Dateisystem-Mutation.
+FUTURE_TEST_NEED: Beobachtete Konventionen werden nicht durch ADC-Defaults ersetzt.
+FUTURE_TEST_NEED: Project Inspector übt keine S2-Selection-Authority aus.
+FUTURE_TEST_NEED: Project-Intelligence-Evidence ist von Engineering-Decisions unterscheidbar.
+
+======================================================================
+IF-001 — S1 REQUIREMENT INTELLIGENCE → S2 ENGINEERING DECISION
+======================================================================
+
+Boundary:
+  S1 → S2.1 / CouncilInput
+
+Producer:
+  S1 Requirement Intelligence
+
+Consumer:
+  S2 Engineering Decision, zunächst CouncilInput/S2.1
+
+Primary Artifacts:
+  RequirementSet / Requirements
+  RequirementActivation
+  PreflightResult
+  Project Intelligence / Project Context
+  CouncilInput
+
+NORMATIVE CONTRACT
+
+IF-001-REQ-001 MUST:
+Jede bindende Requirement besitzt eine stabile fachliche Identity.
+
+IF-001-REQ-002 MUST:
+Requirement ID, Typ, technische Identity, Required-Status und relevante Activation müssen
+bis zur S2-Bewertung eindeutig korrelierbar bleiben.
+
+IF-001-REQ-003 MUST:
+S2 darf eine Requirement nicht still anhand eines ähnlichen Namens neu erfinden oder ersetzen.
+
+IF-001-REQ-004 MUST:
+Eine separate Platform-/Hardware-Angabe darf eine bindende Requirement nur dann erfüllen,
+wenn der Contract dies ausdrücklich definiert.
+
+IF-001-REQ-005 MUST:
+Activation Provenance muss für blockierende Requirements nachvollziehbar sein.
+
+Soweit im jeweiligen Pfad relevant, muss Activation Provenance strukturell mindestens
+folgende Ursprünge unterscheiden:
+
+  a) explizite Benutzer-/Provider-Eingabe (user_input / provider_input),
+  b) zentraler Default (central_default),
+  c) Fallback aufgrund fehlender Eingabe (fallback_missing_input),
+  d) Fallback aufgrund ungültiger Eingabe (fallback_invalid_input),
+  e) spätere kontrollierte Transformation (controlled_transformation).
+
+Nicht jede Kategorie muss für jedes Requirement existieren. Die Provenance muss jedoch
+für jede Aktivierung, die im jeweiligen Pfad tatsächlich relevant ist, nachvollziehbar
+dokumentieren, welcher Ursprung zur Geltung kam.
+
+Activation Provenance ist strukturierte Provenance. Sie darf KEIN rohes Provider-Reasoning
+oder Chain-of-Thought enthalten.
+
+IF-001-REQ-005.1 MUST:
+Requirement Type bezeichnet generische Architektur-Metadaten (z. B. functional, toolchain,
+version, build, test, hardware, security, environment_constraint, project_convention,
+approval, verification). Er bezeichnet KEINEN Python-Typ, kein Modul und kein Paket.
+
+IF-001-REQ-005.2 MUST:
+Technical Identity bezeichnet die strukturierte Identität, über die ein Requirement,
+eine Toolchain, eine Plattform oder ein Capability-Ziel schnittstellenübergreifend
+unterschieden wird. Sie ist generische Architektur-Metadaten — KEIN Python-Typ,
+kein Modul und kein Paket.
+
+(Nicht-normative Beispiele: Eine Requirement könnte Technical Identity "python>=3.10"
+tragen; eine Platform-Angabe könnte Technical Identity "arm-none-eabi-gcc" tragen.
+Diese Beispiele begründen keine zentrale Policy für ein bestimmtes Ecosystem.)
+
+IF-001-REQ-006 MUST NOT:
+S1 darf eine technische Engineering-Lösung auswählen oder Setup ausführen.
+
+FAIL-CLOSED:
+ID-Verlust, widersprüchliche bindende Activations oder nicht auflösbare Requirement-Konflikte
+dürfen nicht still in einen normalen Council-Handoff übergehen.
+
+DIAGNOSTIC EVIDENCE:
+Requirement lineage; Activation provenance; Validierungsresultat; Preflight status.
+
+CURRENT IMPLEMENTATION MAPPING:
+app/ai_requirement_discovery.py
+app/requirement_validator.py
+app/requirement_preflight.py
+app/dev_workflow.py CouncilInput-Aufbau
+
+CURRENT EVIDENCE:
+SEPARATED_UNITS.
+Der aktuelle RSE zeigte für req-c2efb7b8 stabile Identity von Discovery bis CouncilInput,
+aber keine vollständige generische S1→S2 productive-chain Evidence.
+
+======================================================================
+IF-002 — S2.1 ENGINEERING ALTERNATIVES → S2.2 SYNTHESIS
+======================================================================
+
+Producer:
+  S2.1 Engineering Alternatives
+
+Consumer:
+  S2.2 Engineering Synthesis & Recommendation
+
+Artifact:
+  ProposalSet + Cross-Review-Evidence
+
+MUST:
+- alle relevanten Proposal-/Candidate-IDs vollständig übergeben,
+- Cross-Review-Evidence vollständig übergeben,
+- Agent-/Contributor-Herkunft erhalten,
+- degraded contributors kenntlich machen, falls Council degraded ist.
+
+MUST NOT:
+- S2.1 darf keinen finalen Gewinner bestimmen,
+- S2.2 darf fehlende Candidates nicht still als vorhanden behandeln.
+
+AUTHORITY:
+S2.1 = alternatives + review evidence.
+S2.2 = synthesis + recommendation.
+Keine technische Zulässigkeitsauthority.
+
+CURRENT IMPLEMENTATION:
+app/engineering_council.py Phase 1 / Phase 2 → Chairman Phase 3.
+
+VERIFICATION:
+tests/test_engineering_council.py
+tests/test_s2_subsubsystem_architecture.py
+
+======================================================================
+IF-003 — S2.2 SYNTHESIS → S2.3 ENGINEERING ADMISSIBILITY
+======================================================================
+
+Producer:
+  S2.2
+
+Consumer:
+  S2.3
+
+Artifact:
+  finale CouncilResult-Varianten / finale Chairman-Candidates
+
+MUST:
+- exakt die finalen Candidates an S2.3 übergeben,
+- finale Candidate-IDs erhalten,
+- Merge-/Synthesis-Lineage muss die folgende Transformationskette strukturell
+  rückverfolgbar machen:
+    source Proposal/Candidate identity
+    → kontrollierte Synthesis-/Merge-Beziehung
+    → finale Chairman-Candidate-Identity,
+- relevante Requirement-Referenzen müssen über diese Transformation hinweg
+  erhalten bleiben,
+- relevante Toolchain-Items strukturiert übergeben,
+- Requirement refs, Typ, technische Identity, State und Verification-relevante Felder
+  soweit der jeweilige Contract sie benötigt, erhalten.
+
+MUST NOT:
+- council_complete=True als technische Zulässigkeit interpretieren,
+- originale Agent-Proposals mit finalen Chairman-Candidates gleichsetzen,
+- S2.2 eigene technische Zulässigkeitspolitik ausüben.
+
+STRUCTURED REJECTION SUPPORT:
+S2.3 muss unterscheiden können zwischen:
+
+PRE-EXECUTION VERIFICATION CONTRACT / STRATEGY ADEQUACY:
+- missing reference,
+- type mismatch,
+- technical identity mismatch,
+- semantic mismatch,
+- version mismatch,
+- verification_contract_gap (die vorgeschlagene Verification-Strategie/der
+  Verification-Contract ist für die Bewertung der Zulässigkeit unzureichend;
+  zu unterscheiden von fehlender Laufzeit-Verification-Evidence, die zu diesem
+  Zeitpunkt noch nicht vorliegen kann),
+
+EXECUTION / MATERIALIZATION ADEQUACY:
+- materializability conflict,
+- platform constraint.
+
+Die Kategorie "verification_contract_gap" betrifft ausschließlich die
+pre-execution-Bewertung der Verification-Strategie. Sie ist explizit zu
+unterscheiden von "verification evidence missing", die sich auf tatsächlich
+fehlende Laufzeit-Verification-Evidence an einer Schnittstelle bezieht, die
+abgeschlossene Verification-Evidence erwartet.
+
+Die Kategorie "Requirement Type" in IF-001-REQ-005.1 ist generische
+Architektur-Metadaten — KEIN Python-Typ, kein Modul, kein Paket.
+
+Die Kategorie "Technical Identity" in IF-001-REQ-005.2 ist generische
+Architektur-Metadaten — KEIN Python-Typ, kein Modul, kein Paket.
+
+CURRENT IMPLEMENTATION:
+app/engineering_council.py
+app/engineering_decision.py validate_candidates / validate_variants
+
+CURRENT EVIDENCE:
+Der RSE 2026-09-18 zeigte eine Evidence-Lücke:
+Original-Proposals enthielten teils req-c2efb7b8, aber die final von S2.3 konsumierten
+Candidate-Felder waren nicht vollständig retained. Root Cause blieb deshalb UNKNOWN.
+
+======================================================================
+IF-004 — S2.3 ADMISSIBILITY → S2.2 ENGINEERING REWORK
+======================================================================
+
+Producer:
+  S2.3
+
+Consumer:
+  S2.2
+
+Artifact:
+  strukturierte Rework-/inadmissibility evidence
+
+MUST:
+- nur deterministisch festgestellte technische Defizite zurückmelden,
+- Candidate + Requirement/Constraint referenzieren,
+- reparierbare und nicht reparierbare Ursachen unterscheidbar halten.
+
+MUST NOT:
+- S2.3 repariert keinen Candidate selbst,
+- S2.3 wählt keinen alternativen Gewinner,
+- keine unbegrenzte Council-/Repair-Schleife.
+
+CURRENT IMPLEMENTATION:
+app/engineering_decision.py + bounded Chairman repair in app/engineering_council.py.
+
+======================================================================
+IF-005 — S2.3 ADMISSIBILITY → S2.4 HUMAN ENGINEERING AUTHORITY
+======================================================================
+
+Artifact:
+  CandidateValidationSet
+
+MUST:
+- jeder Candidate ist technisch bewertet,
+- admissible + strukturierte Reasons/Failure Categories sind verfügbar,
+- mehrere zulässige Alternativen dürfen erhalten bleiben.
+
+MUST NOT:
+- S2.4 darf inadmissible=False? Nein: S2.4 darf einen Candidate mit admissible=False
+  NIEMALS technisch zulässig machen,
+- keine stille Ersatzwahl.
+
+ZERO-ELIGIBLE:
+0 admissible candidates => keine gültige Human Selection möglich.
+
+CURRENT IMPLEMENTATION:
+resolve_human_engineering_selection()
+describe_engineering_variant_selection()
+
+CURRENT EVIDENCE:
+Der RSE bestätigte: S2.4 war nicht Root Cause; NoEligibleEngineeringCandidateError
+spiegelte den S2.3-Zustand korrekt.
+
+======================================================================
+IF-006 — S2.4 HUMAN AUTHORITY → S2.5 ENGINEERING DECISION
+======================================================================
+
+Artifact:
+  EngineeringVariantSelection / resolved CandidateValidation + selection authority
+
+MUST:
+- Auswahl referenziert existierenden admissible Candidate,
+- selection authority bleibt erhalten,
+- Reject/Defer/Rework erzeugt keine versteckte EngineeringDecision.
+
+MUST NOT:
+- kein Default-Winner bei ungelöster Auswahl,
+- kein Override technischer Inadmissibility.
+
+CURRENT IMPLEMENTATION:
+build_engineering_decision()
+
+======================================================================
+IF-007 — S2.5 ENGINEERING DECISION → S3.1 SETUP PLANNING
+======================================================================
+
+Artifact:
+  EngineeringDecision
+
+MUST:
+- exakte Candidate Identity erhalten,
+- Solution Class erhalten,
+- Selection Authority erhalten,
+- Validation-/Selection Provenance korrelierbar halten.
+
+S3 MUST NOT:
+- Candidate neu auswählen,
+- S2.3 erneut als eigene Authority ausüben,
+- Chairman-Empfehlung neu interpretieren.
+
+CURRENT IMPLEMENTATION:
+S2: build_engineering_decision()
+S3 entry: ToolchainMaterializer.materialize_decision()
+
+VERIFICATION:
+tests/test_s2_subsubsystem_architecture.py
+
+======================================================================
+IF-008 — S3.1 SETUP PLANNING → S3.2 SETUP APPROVAL
+======================================================================
+
+Artifact:
+  SetupPlan + SetupSteps + SetupEffects
+
+MUST:
+- jeder mutierende Step semantisch klassifiziert,
+- automatische Executability muss vor Approval auf einen kompatiblen kontrollierten
+  Executor-/Capability-Contract abbildbar sein,
+- unsupported/manual/already_satisfied/executable ehrlich unterscheiden.
+
+ALREADY_SATISFIED CLASSIFICATION:
+Ein SetupStep darf als already_satisfied klassifiziert werden und mutierende
+Approval/Execution umgehen, NUR wenn diese Klassifikation durch deterministische,
+auditierbare Current-State-Evidence gestützt ist. Kann der geforderte Zustand
+nicht nachgewiesen werden, darf der Step NICHT als already_satisfied behandelt
+werden.
+
+S3.1 erlangt durch die already_satisfied-Klassifikation KEINE Approval-Authority.
+Die menschliche Autorität von S3.2 über geplante Mutation bleibt unverändert.
+Ein genuinely non-mutating already_satisfied Step, dessen Zustand deterministisch
+belegt ist, benötigt keine Human Approval — er erzeugt keine Mutation.
+
+MUST NOT:
+- frei formulierter Shell-Text automatisch mutierbar machen,
+- Approval erzeugen,
+- Execution durchführen,
+- S3.1 darf KEINE Approval-Authority über S3.2 ausüben.
+
+CURRENT IMPLEMENTATION:
+app/toolchain_materializer.py
+Requirement/Setup artifacts in app/requirement_model.py
+
+======================================================================
+IF-009 — S3.2 SETUP APPROVAL → S3.3 CONTROLLED EXECUTION
+======================================================================
+
+Artifact:
+  freigegebener persistierter SetupPlan + Approval Provenance + Content Identity
+
+MUST:
+- genau der genehmigte Planinhalt wird ausgeführt,
+- Approval Provenance muss auf denselben relevanten Content gebunden sein,
+- Capability-/Executor-Autorisierung muss vor Mutation gültig sein,
+- geänderter Content benötigt erneute gültige Freigabe.
+
+MUST NOT:
+- Plan nach Approval still verändern,
+- Approval aus transientem In-Memory-Zustand rekonstruieren,
+- direkte Ausführung ohne zentrale Approval-/Authorization-Grenze.
+
+NORMATIVE LIFECYCLE:
+Persisted Plan
+→ Human Approval bound to exact plan content
+→ Authorized Controlled Execution of unchanged approved content
+
+CURRENT IMPLEMENTATION MAPPING:
+persist_setup_plan
+approve_setup_plan
+execute_approved_plan_from_store
+authorize_setup_plan_targets
+CapabilityRegistration / ApprovalProvenance
+
+CURRENT EVIDENCE:
+PARTIAL.
+RSE repair accepted by deterministic review.
+Real-System verification remains NOT_REACHED_UNVERIFIED because the latest RSE failed earlier at S2.3.
+
+======================================================================
+IF-010 — S3.3 CONTROLLED EXECUTION ↔ S3.4 EXECUTION STATE & IDEMPOTENCY
+======================================================================
+
+Interface Type:
+  bidirectional supporting state contract, not a linear pipeline stage.
+
+Artifacts:
+  SetupStep execution identity
+  content fingerprint
+  claim/check state
+  result / known-success state
+
+MUST:
+- identical known-success content may be reused only under explicit contract,
+- changed content requires new execution identity / approval where required,
+- unknown/recovery state fails closed,
+- concurrent/restart semantics remain deterministic.
+
+MUST NOT:
+- unknown state treated as success,
+- stale success reused for changed content.
+
+CURRENT IMPLEMENTATION:
+SetupExecutionStateStore
+
+======================================================================
+IF-011 — S3 COMPLETE → S4 DEVELOPMENT ENTRY
+======================================================================
+
+Producer:
+  completed required S3 responsibilities
+
+Consumer:
+  S4 Development & Change entry
+
+MUST PRECONDITIONS:
+- required setup approved,
+- all required executable setup steps completed successfully,
+- no unresolved setup blocker,
+- execution/recovery state safe to continue.
+
+MUST NOT:
+Development must not start after failed required setup.
+
+CURRENT EVIDENCE:
+PARTIAL.
+Separate architecture tests provide real orchestration evidence for success and setup-failure suppression,
+but full productive boundary evidence remains incomplete.
+
+======================================================================
+IF-012 — S4.1 DEVELOPMENT CHANGE GENERATION → S4.3 CHANGE APPLICATION
+======================================================================
+
+Artifact:
+  DeveloperChanges
+
+MUST:
+- structured changes,
+- safe project-relative target semantics,
+- explicit action/content contract.
+
+MUST NOT:
+- direct arbitrary LLM shell mutation,
+- empty Development change set as successful no-op.
+
+EMPTY DEVELOPMENT CHANGE SET:
+MUST_FAIL.
+
+CURRENT IMPLEMENTATION:
+DeveloperAgent → ChangeApplicationService / DeveloperFileApplier
+
+======================================================================
+IF-013 — S4.2 TEST CHANGE GENERATION → S4.3 CHANGE APPLICATION
+======================================================================
+
+Artifact:
+  DeveloperChanges + TestChangeDisposition
+
+VALID CASES:
+1. disposition="changes" + actual test changes
+2. disposition="no_changes_required" + changes=[] + non-empty reason
+
+MUST NOT:
+Empty changes[] alone is not a no-op declaration.
+
+CURRENT IMPLEMENTATION:
+TestChangeGenerator
+TestChangeDisposition
+ChangeApplicationService
+
+======================================================================
+IF-014 — S4.3 CHANGE APPLICATION ↔ S4.4 CHANGE PROVENANCE
+======================================================================
+
+Interface Type:
+  provenance surrounds mutation; not merely a post-processing consumer.
+
+Required sequence:
+  S4.4 baseline-before
+  → S4.3 controlled apply
+  → S4.4 event/result attribution
+
+MUST:
+- changed files attributable to run/phase,
+- path safety enforced via one central policy,
+- unsafe paths never mutate outside project,
+- skipped/partial mutation cannot masquerade as successful apply.
+
+RESTART / PARTIAL-STATE SAFETY:
+Wird ein Prozess/Lauf während oder nach S4-Mutation unterbrochen und kann der
+Mutationszustand nicht aus Baseline-/Event-Provenance bewiesen werden, MUSS ein
+späterer Lauf:
+
+  a) den unsicheren oder partiellen Zustand erkennen,
+  b) den aktuellen Projektzustand mit der erfassten Provenance korrelieren,
+  c) dieselbe Änderung NICHT still erneut anwenden,
+  d) die Änderung NICHT still als erfolgreich behandeln,
+  e) fail-closed gehen oder einen kontrollierten Reconciliation-Pfad betreten.
+
+Bestehende Benutzeränderungen (Pre-existing User Changes) MÜSSEN geschützt bleiben.
+
+ADC DARF NICHT:
+- zurücksetzen (reset),
+- verstauen (stash),
+- bereinigen (clean),
+- Benutzeränderungen automatisch rückgängig machen,
+- dirty files verwerfen,
+- automatisch einen "clean state" wiederherstellen.
+
+Diese Semantik MUSS mit Zielbild Abschnitt 17 (Git und Delivery) kompatibel sein.
+
+CURRENT IMPLEMENTATION:
+resolve_safe_path()
+ChangeApplicationService
+DeveloperFileApplier
+RunChangeProvenance
+
+======================================================================
+IF-015 — S4 COMPLETE → S5 QUALITY & VERIFICATION
+======================================================================
+
+MUST PRECONDITIONS:
+- all required S4 mutations succeeded,
+- development mutation succeeded,
+- test mutation succeeded when disposition=changes,
+- test mutation may be absent only for valid no_changes_required.
+
+MUST NOT:
+Partial/skipped required apply must not enter normal successful verification flow.
+
+======================================================================
+IF-016 — S5.1 VERIFICATION PLANNING → S5.2 CONTROLLED VERIFICATION EXECUTION
+======================================================================
+
+Artifact:
+  VerificationPlan / VerificationStep
+
+MUST:
+- step identity,
+- working area,
+- verification kind,
+- runner/capability type,
+- execution policy
+are structurally defined.
+
+MUST NOT:
+Central S5 orchestration special-cases specific ecosystems.
+
+CURRENT IMPLEMENTATION:
+build_verification_plan()
+ControlledRunnerRegistry
+
+======================================================================
+IF-017 — S5.2 CONTROLLED EXECUTION → S5.3 EVIDENCE AGGREGATION
+======================================================================
+
+Artifacts:
+  VerificationResult
+  VerificationStepResult
+
+MUST:
+- preserve status,
+- return code,
+- timeout,
+- diagnostics,
+- runner identity,
+- per-step failure evidence.
+
+VERIFICATION STEP REFERENCE FIDELITY:
+Jeder VerificationStepResult MUSS explizite Referenztreue zum exakten
+VerificationStep bewahren, der ihn erzeugt hat. Die stabile VerificationStep-Identity
+MUSS in der Result-/Evidence-Lineage erhalten bleiben.
+
+S5.3 MUSS jeden Result/Failure dem exakten geplanten VerificationStep zuordnen können.
+
+Ein Content-Fingerprint KANN von einer Implementierung verwendet werden, DARF aber
+NICHT als einziger Architektur-Mechanismus vorgeschrieben werden, es sei denn, das
+Zielbild fordert dies unabhängig.
+
+MUST NOT:
+UNSUPPORTED or TOOL_UNAVAILABLE treated as PASS.
+Multiple failures must not be collapsed into misleading generic success/failure without per-step evidence.
+
+======================================================================
+IF-018 — S5.3 EVIDENCE AGGREGATION → S5.4 DIAGNOSTIC EVIDENCE FORMATTING
+======================================================================
+
+Artifact:
+  TestResult + StepFailureEvidence
+
+MUST:
+Formatting preserves deterministic evidence semantics.
+
+MUST NOT:
+Formatter decides acceptance/rework.
+Formatter rewrites failed evidence into passed evidence.
+
+CURRENT IMPLEMENTATION:
+_test_result_from_verification()
+_step_failure_evidence()
+format_test_result_evidence()
+
+======================================================================
+IF-019 — S5.4 DIAGNOSTIC FORMATTING → S5.5 LLM DIAGNOSIS INTERPRETATION
+======================================================================
+
+Artifact:
+  bounded deterministic diagnostic evidence / TestingReviewRequest
+
+MUST:
+- Reviewer consumes authoritative deterministic evidence,
+- evidence is bounded/redacted,
+- provider interpretation is clearly non-authoritative over real test facts.
+
+MUST NOT:
+- LLM receives authority to rewrite deterministic result,
+- hidden provider reasoning becomes system evidence.
+
+CURRENT IMPLEMENTATION:
+format_test_result_evidence()
+DiagnosisReviewer
+
+CURRENT EVIDENCE:
+Needs stronger explicit producer→consumer boundary evidence.
+Tracked as a remaining partial/gap area.
+
+======================================================================
+IF-020 — S5.5 LLM INTERPRETATION → S5.6 DETERMINISTIC OUTCOME POLICY
+======================================================================
+
+Artifact:
+  ReviewResult + authoritative TestResult
+
+MUST:
+Deterministic real failure dominates reviewer interpretation.
+
+Examples:
+test FAIL + reviewer ACCEPTED => rework_required
+timeout + reviewer ACCEPTED => rework_required
+review infrastructure failure => not silently accepted
+
+CURRENT IMPLEMENTATION:
+DiagnosisReviewer → TestingStage.run
+
+======================================================================
+IF-021 — S5.6 OUTCOME POLICY → S5.7 CONTROLLED REWORK
+======================================================================
+
+Artifact:
+  ReworkRequest
+
+MUST:
+- only defined rework state activates rework,
+- bounded failure evidence retained,
+- exactly bounded rework cycle per current contract.
+
+MUST NOT:
+Unlimited self-healing loop.
+
+======================================================================
+IF-022 — S5.7 CONTROLLED REWORK → S4 DEVELOPMENT REWORK ENTRY
+======================================================================
+
+Artifact:
+  ReworkDevelopmentRequest
+
+MUST:
+- original failure evidence remains attributable,
+- rework scope remains bounded,
+- S4 does not silently erase the verification cause.
+
+CURRENT IMPLEMENTATION:
+ControlledReworkStage → S4 development path
+
+======================================================================
+IF-023 — S5 TOOL_UNAVAILABLE → S3.5 MISSING-TOOLCHAIN RECOVERY
+======================================================================
+
+Trigger:
+  generic TOOL_UNAVAILABLE / defined capability absence only
+
+MUST:
+- recovery request structured,
+- VerificationPlan/failure evidence persisted as required,
+- Human Approval reused through S3 approval authority,
+- recovery bounded.
+
+MUST NOT:
+- normal functional test failure converted into toolchain recovery,
+- stack-specific policy in central recovery orchestration,
+- unapproved installation.
+
+======================================================================
+IF-024 — S3.5 RECOVERY → S5 VERIFICATION RETRY
+======================================================================
+
+MUST:
+- retry based on the persisted verification intent/plan,
+- no new S2 candidate selection,
+- no infinite retry,
+- recovered capability verified before normal continuation.
+
+CURRENT IMPLEMENTATION:
+ProjectSetupApplicationService missing-toolchain methods
+→ retry_missing_toolchain_verification
+
+======================================================================
+IF-025 — S5 TERMINAL OUTCOME → S6 DELIVERY & OUTCOME
+======================================================================
+
+Producer:
+  terminal accepted deterministic S5 outcome/evidence
+
+Consumer:
+  S6 Delivery & Outcome
+
+MUST:
+- only accepted terminal deterministic outcome can reach final delivery approval,
+- final approval remains distinct from verification,
+- commit remains distinct from publish,
+- publish requires its own governed approval where the architecture defines it,
+- run-owned changes/provenance define delivery scope.
+
+MUST NOT:
+- rework_required/failed verification delivered as success,
+- foreign pre-existing user changes silently included,
+- reset/stash/clean/rebase/force-push used as hidden repair,
+- uncontrolled publish.
+
+CURRENT IMPLEMENTATION:
+final approval
+controlled git stage
+controlled publish stage
+
+CURRENT EVIDENCE:
+PARTIAL.
+S6 is not yet decomposed into S6.x in the target architecture.
+Do not invent S6.1/S6.2 numbering.
+
+======================================================================
+IF-026 — S6 LOCAL COMMIT → PUBLISH APPROVAL / CONTROLLED PUBLISH
+======================================================================
+
+NOTE:
+This is an unnumbered internal S6 delivery interface because S6 currently has no official S6.x decomposition.
+
+MUST:
+- local commit identity known,
+- publish scope known,
+- publish approval distinct from local commit authority,
+- no force push,
+- no unrelated user changes included.
+
+CURRENT EVIDENCE:
+Remaining partial area; requires stronger end-to-end approval/provenance evidence.
+
+======================================================================
+IF-029 — S6 DELIVERY OUTCOME → USER / PROJECT STATUS / LEARNING
+======================================================================
+
+Boundary:
+  S6 → Benutzer / Projektstatus / Learning
+
+Producer:
+  S6 Delivery & Outcome
+
+Consumer:
+  Benutzer / Projektstatus / Learning Memory / FMEA
+
+Primary Artifact:
+  Outcome / Commit / Publish Evidence
+
+NORMATIVE CONTRACT
+
+IF-029-REQ-001 MUST:
+Outcome-/Commit-/Publish-Evidence MUSS dem tatsächlichen Delivery-Outcome
+entsprechen und eindeutig attributable bleiben.
+
+IF-029-REQ-002 MUST:
+Der Projektstatus MUSS den tatsächlichen Delivery-Zustand reflektieren.
+Eine nicht erfolgte oder fehlgeschlagene Delivery DARF NICHT als erfolgreicher
+Projektstatus dargestellt werden.
+
+IF-029-REQ-003 MUST:
+Learning Memory / FMEA-Updates DÜRFEN NUR auf Basis akzeptierter Evidence erfolgen.
+Eine Observation, die nicht akzeptiert wurde, DARF NICHT zu durable Learning werden.
+
+IF-029-REQ-004 MUST NOT:
+Diagnostic- oder LLM-Behauptungen allein DÜRFEN KEIN akzeptiertes Learning erzeugen.
+
+IF-029-REQ-005 MUST:
+ADC MUSS aus akzeptierter Evidence lernen können, unabhängig vom Publish-Erfolg.
+Akzeptierte Evidence aus fehlgeschlagenen Tests, fehlgeschlagenem RSE, abgelehntem
+Setup oder anderen nicht-publizierten Outcomes DARF NICHT von Learning/FMEA
+ausgeschlossen werden.
+
+Learning Memory / FMEA DÜRFEN NICHT künstlich an eine erfolgreiche Publish-Transaktion
+gekoppelt werden. ADC MUSS fähig bleiben, aus akzeptierter Evidence aller Outcome-Klassen
+zu lernen — einschließlich gescheiterter Outcomes.
+
+IF-029-REQ-006 MUST:
+Die S6→Benutzer-Schnittstelle MUSS technologie-neutral sein. Keine normative
+Anforderung DARF ein bestimmtes VCS, eine bestimmte Delivery-Plattform oder ein
+bestimmtes Projektmanagement-Tool als zentrale Policy voraussetzen.
+
+CURRENT IMPLEMENTATION MAPPING:
+Die aktuelle ADC-Implementierung liefert Delivery-Ergebnisse über Workflow-Resultate
+und persistierte Provenance-Daten. Die konkreten Persistenzmechanismen und
+Datenstrukturen sind implementationsspezifisch und KEIN Bestandteil des normativen
+Contracts.
+
+VERIFICATION MAPPING / CURRENT EVIDENCE:
+FUTURE_TEST_NEED: Outcome-Evidence entspricht tatsächlichem Delivery-Zustand.
+FUTURE_TEST_NEED: Projektstatus reflektiert realen Delivery-Outcome (nicht fiktiven Erfolg).
+FUTURE_TEST_NEED: Learning nur nach akzeptierter Evidence (nicht nach bloßer LLM-Behauptung).
+FUTURE_TEST_NEED: Learning aus fehlgeschlagenen Outcomes möglich (keine Publish-Kopplung).
+FUTURE_TEST_NEED: Keine Technologie-Spezialisierung im normativen Contract.
+
+======================================================================
+IF-027 — DIAGNOSTIC TRACE CROSS-CUTTING CONTRACT
+======================================================================
+
+Applies to all relevant IF boundaries.
+
+MUST:
+- preserve structured input/output lineage,
+- record responsible unit/contract,
+- record status/failure category,
+- correlate to run,
+- retain enough evidence to distinguish producer omission, transition corruption,
+  semantic mismatch and valid consumer rejection.
+
+MUST NOT:
+- store chain-of-thought,
+- store secrets/tokens/credentials,
+- rely on truncated raw prompts as the only evidence for structured contracts.
+
+DIAGNOSTIC TRACE / DIAGNOSTIC EVIDENCE MUST NOT:
+Diagnostic Trace / Diagnostic Evidence darf NIEMALS formale Entscheidungs-Authority
+ersetzen, übersteuern, umgehen oder synthetisieren.
+
+Insbesondere darf Diagnostic Evidence NICHT substituieren für:
+  - CandidateValidation (S2.3),
+  - Human Engineering Selection (S2.4),
+  - Setup Approval (S3.2),
+  - Approval Provenance (S3.2),
+  - deterministisches VerificationResult (S5.2/S5.3),
+  - Final Approval (S5→S6),
+  - Publish Approval (S6).
+
+Diagnostic Evidence ist Evidence, nicht Authority.
+
+Special target requirements (referenziert konsistent IF-001-REQ-005):
+- Activation Provenance mit strukturierten Ursprüngen (user_input, central_default,
+  fallback_missing_input, fallback_invalid_input, controlled_transformation),
+  soweit im jeweiligen Pfad relevant,
+- Final Candidate Snapshot,
+- Transformation/Merge Provenance,
+- Structured CandidateValidation verdicts,
+- Verification target/capability rejection categories.
+
+======================================================================
+IF-028 — INTERFACE VERIFICATION GOVERNANCE
+======================================================================
+
+For each relevant IF, the verification mapping SHOULD identify:
+
+- artifact fidelity test,
+- fail-closed negative test,
+- authority leak test,
+- diagnostic evidence test,
+- persistence/restart test where semantically applicable,
+- hermeticity/order-independence where shared state exists,
+- real-system acceptance evidence where external/live behavior matters.
+
+MUST NOT:
+A deterministic test with fake providers be described as proof of live-provider correctness.
+
+MUST NOT:
+A Real-System failure before a boundary be described as evidence that the later boundary failed.
+
+======================================================================
+CURRENT KNOWN COVERAGE SUMMARY
+======================================================================
+
+User / Adapter → S1 (IF-000A)
+  NEW_INTERFACE / FUTURE_TEST_NEED
+
+Project Inspector → S1 / S2 (IF-000B)
+  NEW_INTERFACE / FUTURE_TEST_NEED
+
+S1 → S2 (IF-001)
+  SEPARATED_UNITS
+
+S2 internal boundaries (IF-002, IF-003, IF-004, IF-005, IF-006)
+  dedicated architecture tests exist; detailed evidence classification should be reviewed per IF.
+
+S2.5 → S3.1 (IF-007)
+  deterministic boundary coverage exists.
+
+S3.1 → S3.2 (IF-008)
+  Architecture contract strengthened (already_satisfied classification).
+
+S3.2 → S3.3 (IF-009)
+  PARTIAL
+  accepted deterministic repair; Real-System path NOT_REACHED_UNVERIFIED.
+
+S3.3 ↔ S3.4 (IF-010)
+  bidirektionale Schnittstelle; deterministische Tests für Execution-Identity.
+
+S3 → S4 (IF-011)
+  PARTIAL
+
+S4.1 → S4.3 (IF-012)
+  deterministic architecture/apply-gate evidence exists.
+
+S4.2 → S4.3 (IF-013)
+  deterministic architecture/apply-gate evidence exists.
+
+S4.3 ↔ S4.4 (IF-014)
+  Architecture contract strengthened (restart/partial-state safety).
+
+S4 → S5 (IF-015)
+  deterministic architecture/apply-gate evidence exists; exact productive-chain classification to review.
+
+S5.1 → S5.2 (IF-016)
+  VerificationStep identity fidelity strengthened.
+
+S5.2 → S5.3 (IF-017)
+  VerificationStepResult → VerificationStep identity fidelity strengthened.
+
+S5.3 → S5.4 (IF-018)
+  deterministic evidence formatting.
+
+S5.4 → S5.5 (IF-019)
+  explicit end-to-end producer→consumer evidence should be strengthened.
+
+S5.5 → S5.6 (IF-020)
+  deterministic real-failure dominance.
+
+S5.6 → S5.7 (IF-021)
+  bounded rework activation.
+
+S5.7 → S4 (IF-022)
+  bounded rework entry.
+
+S5 → S3.5 (IF-023)
+  missing-toolchain recovery.
+
+S3.5 → S5 (IF-024)
+  verification retry after recovery.
+
+S5 → S6 (IF-025)
+  PARTIAL
+
+S6 local commit → publish (IF-026)
+  PARTIAL / incomplete end-to-end authority evidence.
+
+S6 → User / Project Status / Learning (IF-029)
+  NEW_INTERFACE / FUTURE_TEST_NEED
+
+======================================================================
+OPEN REVIEW QUESTIONS FOR OPENROUTER
+======================================================================
+
+1. Is any MUST stronger than the current ADC target architecture warrants?
+2. Does any IF leak authority across subsystem boundaries?
+3. Does any IF incorrectly turn a current implementation detail into a normative contract?
+4. Are Producer / Artifact / Consumer assignments consistent with the target architecture?
+5. Are S3.4 and S4.4 correctly modeled as supporting/bidirectional provenance/state interfaces rather than simple linear stages?
+6. Is Activation Provenance appropriately placed as a cross-cutting requirement?
+7. Is Transformation Provenance sufficient for Council merge/synthesis without storing model reasoning?
+8. Are Structured Rejection Causes specified strongly enough without forcing ecosystem-specific central policy?
+9. Are persistence/restart requirements scoped only where semantically necessary?
+10. Are S1 and S6 correctly left without invented numbered subsubsystems?
+11. Which interfaces lack a clearly named authoritative artifact?
+12. Which interfaces need explicit contract-versioning now versus only later?
+13. Which deterministic tests are missing before another paid Real-System-E2E?
+14. Does any requirement conflict with Existing Project First or Technology Neutrality?
+15. Which requirements should be MUST vs SHOULD?
+16. Are the new external entry interfaces (IF-000A, IF-000B) correctly scoped as external boundaries without S1.x numbering?
+17. Is IF-029 correctly scoped as S6 output boundary without S6.x numbering?
+18. Are Activation Provenance origins (IF-001-REQ-005) appropriately structured without requiring every origin for every Requirement?
+19. Is the already_satisfied rule (IF-008) correctly balanced between non-mutating bypass and deterministic evidence requirement?
+20. Are restart/partial-state semantics (IF-014) correctly fail-closed without destructive cleanup?
+21. Is the Diagnostic Evidence → Authority separation (IF-027) sufficiently explicit?
+
+======================================================================
+ACCEPTANCE CRITERIA FOR THIS CATALOG
+======================================================================
+
+The catalog is ready for adoption only when an independent review confirms:
+
+- no contradiction with the ADC target architecture,
+- no invented authority,
+- no accidental ecosystem specialization,
+- no current implementation detail promoted to permanent architecture without justification,
+- no missing critical boundary among S1 → S2 → S3 → S4 → S5 → S6,
+- no ambiguous mutation/approval boundary,
+- diagnostic evidence sufficient for root-cause analysis,
+- verification mappings do not overclaim coverage.
+
+End of Interface Requirements Catalog.

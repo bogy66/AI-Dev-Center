@@ -217,6 +217,23 @@ Delivery ist ein eigener Engineering-Schritt und nicht Nebenwirkung der Entwickl
 
 4A. SUBSUBSYSTEM-ARCHITEKTUR — S2 ENGINEERING DECISION (PILOT, CLAUDE-ARCH-S2-012A)
 
+WICHTIG: UNTERSCHEIDUNG NORMATIVE ARCHITEKTUR ↔ CURRENT IMPLEMENTATION MAPPING
+
+In den folgenden Sx.y-Beschreibungen bilden:
+
+  Zweck, Verantwortung, Input, Output-Artifact, Authority, Verbotene Authority
+
+die NORMATIVE ARCHITEKTUR. Sie ist technologie- und implementationsneutral.
+
+  Owned Units, Primary Owner, Primary Mechanismen, Tests
+
+sind CURRENT IMPLEMENTATION MAPPING. Sie dokumentieren, WIE die normative
+Architektur aktuell in Python-Klassen, -Funktionen und -Modulen realisiert ist.
+Sie sind KEINE permanenten Architektur-Anforderungen.
+
+Die Zuordnung zwischen normativer Architektur und aktuellem Code wird bewusst
+erhalten, um die Rückverfolgbarkeit zu gewährleisten.
+
 Terminologie:
 Subsystem = Sx (S1 … S6).
 Subsubsystem = Sx.y (z. B. S2.1 … S2.5).
@@ -296,6 +313,12 @@ CURRENT/TARGET-Hinweis: ToolchainMaterializer.materialize(council_result, …) b
 
 4B. SUBSUBSYSTEM-ARCHITEKTUR — S3 ENVIRONMENT & SETUP (CLAUDE-ADC-S3-S4-S5-ARCHITECTURE-PERSIST-001)
 
+WICHTIG: UNTERSCHEIDUNG NORMATIVE ARCHITEKTUR ↔ CURRENT IMPLEMENTATION MAPPING
+
+Wie in Abschnitt 4A: Zweck, Input, Output-Artifact, Authority, Verbotene Authority
+sind NORMATIVE ARCHITEKTUR. Primary Owner, Primary Mechanismen und module/class-Referenzen
+sind CURRENT IMPLEMENTATION MAPPING.
+
 S3 Environment & Setup wird intern in fünf Subsubsystem-Verantwortungen zerlegt, analog zum S2-Piloten aus Abschnitt 4A. Es werden KEINE neuen Sx.y-Einheiten und KEINE Sx.y.z-Ebene eingeführt. Diese Zerlegung beschreibt die aktuelle produktive Implementierung, nicht historische Klassennamen.
 
 S3.1 Setup Planning
@@ -354,6 +377,9 @@ S3.5 Missing-Toolchain Recovery
 
 4C. SUBSUBSYSTEM-ARCHITEKTUR — S4 DEVELOPMENT & CHANGE (CLAUDE-ADC-S3-S4-S5-ARCHITECTURE-PERSIST-001)
 
+Wie in 4A/4B: Zweck, Authority, Verbotene Authority = NORMATIVE ARCHITEKTUR.
+Primary Owner, class/module-Referenzen = CURRENT IMPLEMENTATION MAPPING.
+
 S4 Development & Change wird intern in vier Subsubsystem-Verantwortungen zerlegt. Es werden KEINE neuen Sx.y-Einheiten und KEINE Sx.y.z-Ebene eingeführt.
 
 S4.1 Development Change Generation
@@ -390,6 +416,10 @@ S4.4 Change Provenance & Attribution
 
 
 4D. SUBSUBSYSTEM-ARCHITEKTUR — S5 QUALITY & VERIFICATION (CLAUDE-ADC-S3-S4-S5-ARCHITECTURE-PERSIST-001)
+
+Wie in 4A/4B/4C: Primary Owner / zentraler Mechanismus = CURRENT IMPLEMENTATION MAPPING.
+Artifacts (z. B. VerificationPlan, VerificationResult) = normative Architektur-Begriffe
+(gemäß Abschnitt 22).
 
 S5 Quality & Verification wird intern in sieben Subsubsystem-Verantwortungen zerlegt. Es werden KEINE neuen Sx.y-Einheiten und KEINE Sx.y.z-Ebene eingeführt.
 
@@ -535,9 +565,15 @@ User / Adapter
 → CommonRequest
 → S1 Requirement Intelligence
 
+(Diese externe Eintrittsschnittstelle ist im Interface-Katalog
+als IF-000A normativ spezifiziert.)
+
 Project Inspector
 → Project Intelligence
 → S1 / S2
+
+(Diese externe Inspektionsschnittstelle ist im Interface-Katalog
+als IF-000B normativ spezifiziert.)
 
 S1
 → RequirementSet
@@ -566,6 +602,9 @@ S5
 S6
 → Outcome / Commit / Publish Evidence
 → Benutzer / Projektstatus / Learning
+
+(Diese S6-Ausgangsschnittstelle ist im Interface-Katalog
+als IF-029 normativ spezifiziert.)
 
 Für jedes wichtige Artifact sollen langfristig folgende Fragen eindeutig beantwortbar sein:
 
@@ -915,6 +954,22 @@ Er enthält keine internen Modellgedanken.
 
 Er enthält keine Secrets, Tokens, Credential-Dumps oder unkontrolliert ausführbaren Befehle.
 
+DIAGNOSTIC TRACE HAT KEINE ENTSCHEIDUNGS-AUTHORITY:
+
+Diagnostic Trace / Diagnostic Evidence ist Evidence, nicht Authority.
+
+Er darf NIEMALS formale Entscheidungs-Authority ersetzen, übersteuern, umgehen
+oder synthetisieren. Insbesondere darf er nicht substituieren für:
+  - CandidateValidation (S2.3),
+  - Human Engineering Selection (S2.4),
+  - Setup Approval (S3.2),
+  - Approval Provenance,
+  - deterministisches VerificationResult (S5),
+  - Final Approval (S5→S6),
+  - Publish Approval (S6).
+
+Diese Trennung ist konsistent mit IF-027 des Interface-Katalogs.
+
 Ziel:
 
 y = f(x)
@@ -971,6 +1026,10 @@ Wenn ADC eine bereits dirty Datei zusätzlich verändert, muss dies erkannt werd
 Keine automatische Reparatur durch Reset, Stash, Clean, Rebase oder Force Push.
 
 Publish ist eine separate explizite Aktion nach lokalem Commit und separater Approval-Grenze.
+
+Diese Semantik ist konsistent mit den Restart/Partial-State-Anforderungen in
+IF-014 des Interface-Katalogs: Unterbrochene S4-Mutationen müssen fail-closed
+gehen, ohne destruktive Bereinigung des Workspace.
 
 
 18. BEGRENZTE LOOPS UND RETRIES
@@ -1098,7 +1157,9 @@ ADC darf nicht implizit Python-zentriert werden.
 
 Python kann eine Implementierungstechnologie einzelner ADC-Komponenten sein.
 
-Die Architektur muss aber auf technologie-neutralen Begriffen beruhen:
+Die Architektur muss aber auf technologie-neutralen Begriffen beruhen.
+
+NORMATIVE ARCHITEKTUR-BEGRIFFE (technologie-neutral):
 
 Requirement
 EngineeringDecision
@@ -1110,6 +1171,24 @@ VerificationPlan
 VerificationResult
 EnvironmentState
 Outcome
+
+Diese Begriffe sind explizit Teil des technologie-neutralen ADC-Vokabulars.
+Sie sind KEINE Python-spezifischen Namen, auch wenn die aktuelle
+Implementierung Klassen mit identischen oder ähnlichen Namen verwenden mag.
+
+IMPLEMENTATIONSSPEZIFISCHE NAMEN (nicht-normativ, Current Implementation Mapping):
+
+TestChangeDisposition
+TestingReviewRequest
+ReviewResult
+ReworkRequest
+ReworkDevelopmentRequest
+
+Diese Namen bezeichnen konkrete aktuelle Python-Klassen/Typen. Sie sind als
+CURRENT IMPLEMENTATION MAPPING dokumentiert, nicht als normative
+Architektur-Anforderungen. Das zugrunde liegende normative Konzept
+(z. B. "strukturierte Test-Change-Disposition") kann unabhängig von der
+konkreten Python-Klasse bestehen.
 
 Ein neuer technischer Stack soll durch Adapter, Capabilities, Contracts und Executor-Implementierungen integrierbar sein, ohne das zentrale Architekturmodell umzubauen.
 
