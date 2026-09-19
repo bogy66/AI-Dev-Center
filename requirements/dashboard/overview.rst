@@ -5,25 +5,36 @@ ADC Engineering Dashboard
 .. role:: yellow
 .. role:: green
 
-Erfüllungsstatus der Anforderungen
-----------------------------------
+Requirement Implementation Status
+---------------------------------
 
-:red:`ROT` — Nicht implementiert  |  :yellow:`GELB` — Implementiert, Verifikation NIO  |  :green:`GRÜN` — Implementiert, Verifikation IO
+:red:`RED` — Not implemented  |  :yellow:`YELLOW` — Implemented, verification NIO  |  :green:`GREEN` — Implemented and verified
 
-Siehe :doc:`requirement_status` für die vollständige Aufschlüsselung.
+See :doc:`requirement_status` for the full breakdown.
 
-Engineering-Kette
+Requirement implementation summary
+-----------------------------------
+
+Derived counts across real (non-pilot) System, Architecture-derived, Subsystem,
+and Interface Requirements — computed by the same central status model used on
+every Requirement card and on the :doc:`requirement_status` page.
+
+.. raw:: html
+
+   <div class="adc-status-summary-block">ADC_STATUS_SUMMARY_PLACEHOLDER</div>
+
+Engineering chain
 -----------------
 
-**Zielbild → Systemanforderungen → Architektur → Abgeleitete Anforderungen → Implementierung → Tests → Evidenz**
+**Zielbild → System Requirements → Architecture → Derived Requirements → Implementation → Tests → Evidence**
 
-Das Zielbild-TXT bleibt die normative, menschenlesbare Quelle.
-Die folgenden Seiten bieten Nachverfolgbarkeitsansichten über die Sphinx-Needs-Repräsentation.
+The Zielbild TXT remains the normative human-readable source.
+The pages below provide traceability views over the Sphinx-Needs representation.
 
-Echte ADC-Inhalte
------------------
+Real ADC content
+----------------
 
-Zielbild-Objekte
+Zielbild objects
 ~~~~~~~~~~~~~~~~
 
 .. needtable::
@@ -31,7 +42,7 @@ Zielbild-Objekte
    :columns: id;title;status
    :style: table
 
-Systemanforderungen
+System Requirements
 ~~~~~~~~~~~~~~~~~~~
 
 .. needtable::
@@ -39,24 +50,24 @@ Systemanforderungen
    :columns: id;title;status;realizes
    :style: table
 
-Architekturentscheidungen
-~~~~~~~~~~~~~~~~~~~~~~~~~
+Architecture Decisions
+~~~~~~~~~~~~~~~~~~~~~~
 
 .. needtable::
    :filter: type == "arch" and "pilot" not in tags
    :columns: id;title;status;satisfies
    :style: table
 
-Abgeleitete Anforderungen
-~~~~~~~~~~~~~~~~~~~~~~~~~
+Derived Requirements
+~~~~~~~~~~~~~~~~~~~~
 
 .. needtable::
    :filter: type in ["arcreq", "subreq", "ifreq"] and "pilot" not in tags
    :columns: id;type;title;status;derived_from
    :style: table
 
-Implementierung / Verifikation
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Implementation / Verification
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. needtable::
    :filter: type in ["impl", "test", "evidence"] and "pilot" not in tags

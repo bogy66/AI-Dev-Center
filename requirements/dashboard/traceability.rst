@@ -1,30 +1,22 @@
 ADC Traceability
 ================
 
-Echter ADC-Trace-Graph
-----------------------
+Real ADC trace graph
+--------------------
 
-Dieser Graph zeigt nur echte ADC-Engineering-Objekte. Der synthetische Pilot ist ausgeschlossen.
+This graph shows only real ADC engineering objects. The synthetic pilot is excluded.
 
-.. needflow:: ADC Ende-zu-Ende Trace
+.. needflow:: ADC end-to-end trace
    :filter: "pilot" not in tags
    :link_types: realizes,satisfies,derived_from,refines,implements,verifies,evidences
    :show_link_names: outgoing
    :engine: graphviz
    :direction: right
 
-Legende (nur Anforderungsknoten)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Red background = Not implemented · Yellow background = Implemented, verification not IO · Green background = Implemented and verification IO
+(traffic-light backgrounds apply to Requirement nodes only — SYS_REQ / ARC_REQ / SUB_REQ / IF_REQ)
 
-🔴 **ROT** — Nicht implementiert
-
-🟡 **GELB** — Implementiert, Verifikation nicht bestanden
-
-🟢 **GRÜN** — Implementiert und Verifikation bestanden
-
-Nicht-Anforderungsknoten (ZIEL, ARC, IMPL, TEST, EVID) tragen keinen Status-Punkt.
-
-Zielbild → Systemanforderungen
+Zielbild → System Requirements
 ------------------------------
 
 .. needtable::
@@ -32,32 +24,32 @@ Zielbild → Systemanforderungen
    :columns: id;type;title;realizes;realizes_back
    :style: table
 
-Systemanforderungen → Architektur
----------------------------------
+System Requirements → Architecture
+----------------------------------
 
 .. needtable::
    :filter: type in ["sysreq", "arch"] and "pilot" not in tags
    :columns: id;type;title;satisfies;satisfies_back
    :style: table
 
-Architektur → Abgeleitete Anforderungen
----------------------------------------
+Architecture → Derived Requirements
+-----------------------------------
 
 .. needtable::
    :filter: type in ["arch", "arcreq", "subreq", "ifreq"] and "pilot" not in tags
    :columns: id;type;title;derived_from;derived_from_back;refines;refines_back
    :style: table
 
-Anforderungen → Implementierung / Tests
----------------------------------------
+Requirements → Implementation / Tests
+-------------------------------------
 
 .. needtable::
    :filter: type in ["arcreq", "subreq", "ifreq", "impl", "test"] and "pilot" not in tags
    :columns: id;type;title;implements;implements_back;verifies;verifies_back
    :style: table
 
-Tests → Evidenz
----------------
+Tests → Evidence
+----------------
 
 .. needtable::
    :filter: type in ["test", "evidence"] and "pilot" not in tags

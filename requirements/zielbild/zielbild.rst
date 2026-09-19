@@ -1,397 +1,695 @@
-ADC Zielbild – Nachverfolgbarkeitsobjekte
-========================================
+ADC Zielbild – Traceability Objects
+===================================
 
-Echte Zielbild-Ziele, abgeleitet aus dem normativen Zielbild-Text.
-Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt
+Real Zielbild goals derived from the normative Zielbild text.
+Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt
 
-.. ziel:: ADC als integrierte Engineering-Plattform
+.. ziel:: ADC as integrated engineering platform
    :id: ZIEL_001
    :status: draft
 
-   ADC soll sich zu einer integrierten Engineering-Plattform für Software,
-   Firmware und Hardware entwickeln.
+   ADC shall develop into an integrated engineering platform for software,
+   firmware, and hardware.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §1 Zweck/Mission
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §1 Purpose/Mission
 
-.. ziel:: Vollständiger kontrollierter Engineering-Prozess
+.. ziel:: Complete controlled engineering process
    :id: ZIEL_002
    :status: draft
 
-   ADC soll einen vollständigen, nachvollziehbaren und kontrollierten
-   Engineering-Prozess unterstützen: Projekt und Anforderungen verstehen,
-   technisch fundierte Entscheidungen treffen, kontrollierte
-   Materialisierung der gewählten Lösung, kontrollierte Änderungsumsetzung,
-   reale mechanische Verifikation, kontrollierte Auslieferung und
-   dauerhaftes Lernen aus gesammelter Evidenz.
+   ADC shall support a complete, traceable, and controlled engineering
+   process: understand project and requirements, make technically
+   founded decisions, controlled materialization of chosen solution,
+   controlled change implementation, real mechanical verification,
+   controlled delivery, and durable learning from collected evidence.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §1 Zweck/Mission
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §1 Purpose/Mission
 
-.. ziel:: Bestehende und neue Projekte unterstützen
+.. ziel:: Support existing and new projects
    :id: ZIEL_003
    :status: draft
 
-   ADC soll sowohl bestehende als auch neue Projekte unterstützen, mit
-   Vorrang für vorhandene Projektstruktur, Konventionen und Toolchains
-   (Existing Project First).
+   ADC shall support both existing and greenfield projects, with
+   priority for existing project structure, conventions, and
+   toolchains (Existing Project First).
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §2 Umfang, §6 Existing Project First
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §2 Scope, §6 Existing Project First
 
-.. ziel:: Heterogenes Multi-Toolchain-Projektverständnis
+.. ziel:: Heterogeneous multi-toolchain project understanding
    :id: ZIEL_004
    :status: draft
 
-   ADC soll heterogene und Multi-Toolchain-Projekte verstehen, ohne sie
-   künstlich zu vereinheitlichen. Ein Projekt kann mehrere unabhängige
-   technische Bereiche gleichzeitig enthalten, jeweils mit eigenen
-   Sprachen, Build-Systemen und Testsystemen. ADC soll diese Bereiche
-   getrennt verstehen und dennoch in einem gemeinsamen Engineering-Kontext
-   zusammenführen.
+   ADC shall understand heterogeneous and multi-toolchain projects
+   without artificially unifying them. A project may contain multiple
+   independent technical areas simultaneously, each with its own
+   languages, build systems, and test systems. ADC shall understand
+   these areas separately while bringing them together in a common
+   engineering context.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §2 Umfang
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §2 Scope
 
-.. ziel:: Langfristige E/E-Engineering-Plattform-Entwicklung
+.. ziel:: Long-term E/E engineering platform evolution
    :id: ZIEL_005
    :status: draft
 
-   ADC soll sich von einer Software-Entwicklungsplattform zu einer
-   integrierten Elektrik-/Elektronik-Engineering-Plattform entwickeln,
-   die den vollständigen Weg von der Anforderung über Systemkonzept,
-   Schaltplan, Simulation, Bauteilauswahl, Platinenlayout,
-   Konformitätsprüfungen, Fertigungsunterlagen, Prototyp,
-   Inbetriebnahme, Firmware, Validierung bis zur Dokumentation abdeckt.
+   ADC shall evolve from a software development platform toward an
+   integrated electrical/electronic engineering platform, covering the
+   full path from requirement through system concept, schematic,
+   simulation, component selection, PCB layout, compliance checks,
+   manufacturing data, prototype, bring-up, firmware, validation, to
+   documentation.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §2 Umfang
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §2 Scope
 
-.. ziel:: Read-Only-Inspektion und Anforderungsidentifikation
+.. ziel:: Read-only inspection and requirement identification
    :id: ZIEL_006
    :status: draft
 
-   ADC soll in der Lage sein, einen Benutzerauftrag zu verstehen, ein
-   bestehendes Projekt read-only zu untersuchen, Anforderungen zu
-   identifizieren und zu strukturieren, Pflicht- von optionalen
-   Anforderungen zu unterscheiden und Anforderungen mit Evidenz zu
-   verbinden.
+   ADC shall be capable of understanding a user request, inspecting
+   an existing project read-only, identifying and structuring
+   requirements, distinguishing mandatory from optional requirements,
+   and connecting requirements with evidence.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §3 Kernfähigkeiten
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §3 Core Capabilities
 
-.. ziel:: Mehrere Lösungsvarianten mit Kriterienbewertung
+.. ziel:: Multiple solution variants with criteria evaluation
    :id: ZIEL_007
    :status: draft
 
-   ADC soll mehrere technisch sinnvolle Engineering-Lösungsvarianten
-   erzeugen und anhand realer Engineering-Kriterien bewerten,
-   einschließlich Anforderungserfüllung, Projektpassung, nötiger
-   Änderungen, Wiederverwendbarkeit vorhandener Fähigkeiten, Risiken,
-   Reproduzierbarkeit, Materialisierbarkeit, kontrollierter
-   Ausführbarkeit, realer Verifizierbarkeit, Kosten/Komplexität und
-   eingeführter Abhängigkeiten.
+   ADC shall generate multiple technically sound engineering solution
+   variants and evaluate them against real engineering criteria,
+   including requirement fulfillment, project fit, necessary changes,
+   reuse of existing capabilities, risks, reproducibility,
+   materializability, controlled executability, real verifiability,
+   cost/complexity, and introduced dependencies.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §3 Kernfähigkeiten, §8 Engineering-Qualität
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §3 Core Capabilities, §8 Engineering Quality
 
-.. ziel:: Nachverfolgbare Empfehlung mit Alternativen
+.. ziel:: Traceable recommendation with alternatives
    :id: ZIEL_008
    :status: draft
 
-   ADC soll eine technisch begründete Empfehlung erzeugen und diese dem
-   Benutzer nachvollziehbar zusammen mit den Alternativen präsentieren,
-   einschließlich der Begründung für jede Alternative, Vor- und
-   Nachteilen, zusätzlichem Aufwand, zusätzlichen Risiken und
-   Verifikationsfolgen.
+   ADC shall produce a technically justified recommendation and
+   present it to the user in a traceable manner together with the
+   alternatives, including the rationale for each alternative,
+   advantages and disadvantages, additional effort, additional risks,
+   and verification implications.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §3 Kernfähigkeiten, §5 Menschliche Autorität
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §3 Core Capabilities, §5 Human Authority
 
-.. ziel:: Kontrollierte Umgebungsvorbereitung
+.. ziel:: Controlled environment preparation
    :id: ZIEL_009
    :status: draft
 
-   ADC soll die gewählte Engineering-Lösung kontrolliert in eine reale,
-   nutzbare Umgebung überführen, ohne die bereits getroffene
-   Engineering-Auswahl neu aufzurollen.
+   ADC shall transfer the chosen engineering solution into a real,
+   usable environment in a controlled manner without reopening the
+   already-made engineering selection.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §3 Kernfähigkeiten, §4 System-Garantien
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §3 Core Capabilities, §4 System Guarantees
 
-.. ziel:: Kontrollierte technische Änderungsumsetzung
+.. ziel:: Controlled technical change execution
    :id: ZIEL_010
    :status: draft
 
-   ADC soll die eigentliche technische Änderung am Projekt kontrolliert
-   durchführen, innerhalb des autorisierten Bereichs, mit vollständiger
-   Änderungs-Provenienz und Schutz des vorbestehenden Zielzustands.
+   ADC shall carry out the actual technical change on the project in a
+   controlled manner, within authorized scope, with full change
+   provenance and protection of pre-existing target state.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §3 Kernfähigkeiten, §9 Kontrollierte Änderung
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §3 Core Capabilities, §9 Controlled Change
 
-.. ziel:: Reale mechanische Verifikation mit Evidenztrennung
+.. ziel:: Real mechanical verification with evidence separation
    :id: ZIEL_011
    :status: draft
 
-   ADC soll mechanisch und real prüfen, ob die technische Lösung und die
-   Änderungen tatsächlich funktionieren, unter Nutzung projektspezifischer
-   Build- und Testsysteme, mit klarer Trennung von Unit-, Komponenten-,
-   System- und Real-System-Evidenz. Reale Testergebnisse sind autoritative
-   Evidenz. Toolchain-Verfügbarkeit soll erkannt und
-   Verifikationsabhängigkeiten abgebildet werden.
+   ADC shall mechanically and actually verify whether the technical
+   solution and changes truly function, using project-specific build
+   and test systems, with clear separation of unit, component, system,
+   and real-system evidence. Real test results are authoritative
+   evidence. Toolchain availability shall be detected and verification
+   dependencies mapped.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §3 Kernfähigkeiten, §10 Verifikation
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §3 Core Capabilities, §10 Verification
 
-.. ziel:: Kontrollierte Auslieferung verifizierter Ergebnisse
+.. ziel:: Controlled delivery of verified outcome
    :id: ZIEL_012
    :status: draft
 
-   ADC soll ein verifiziertes und freigegebenes Ergebnis kontrolliert
-   ausliefern. Die Auslieferung darf nicht unverifizierte oder nicht
-   freigegebene Arbeit als akzeptiertes Endergebnis darstellen.
+   ADC shall deliver a verified and approved result in a controlled
+   manner. Delivery shall not represent unverified or unapproved work
+   as an accepted final result.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §3 Kernfähigkeiten, §13 Auslieferung
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §3 Core Capabilities, §13 Delivery
 
-.. ziel:: Dauerhaftes Lernen aus akzeptierter Evidenz
+.. ziel:: Durable learning from accepted evidence
    :id: ZIEL_013
    :status: draft
 
-   ADC soll dauerhaft aus akzeptierter Evidenz lernen, einschließlich aus
-   fehlgeschlagenen Ergebnissen. Das Lernen darf nicht künstlich an eine
-   erfolgreiche Auslieferung gekoppelt sein.
+   ADC shall durably learn from accepted evidence, including from
+   failed outcomes. Learning shall not be artificially coupled to
+   successful delivery.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §3 Kernfähigkeiten, §15 Lernen/FMEA
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §3 Core Capabilities, §15 Learning/FMEA
 
-.. ziel:: Lösungsvariabilität ohne künstliche Uniformität
+.. ziel:: Solution variability without artificial uniformity
    :id: ZIEL_014
    :status: draft
 
-   ADC soll nicht versuchen, für identischen Input dieselbe Lösungsklasse
-   zu erzwingen. Unterschiedliche projektspezifische Engineering-Lösungen
-   können alle korrekt sein. Variabilität ist erlaubt.
+   ADC shall not attempt to enforce the same solution class for
+   identical input. Different project-specific engineering solutions
+   may all be correct. Variability is permitted.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §3 Kernfähigkeiten, §8 Engineering-Qualität
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §3 Core Capabilities, §8 Engineering Quality
 
-.. ziel:: Lösungsqualitätstore
+.. ziel:: Solution quality gates
    :id: ZIEL_015
    :status: draft
 
-   Jede gewählte Lösung soll bindende Anforderungen erfüllen, keine
-   Constraints verletzen, technisch materialisierbar sein, eine passende
-   kontrollierte Ausführungsfähigkeit besitzen, eine definierte
-   Verifikationsstrategie haben, durch deterministische Tests abgesichert
-   sein und vor mutierender Ausführung dem Menschen nachvollziehbar
-   präsentierbar sein.
+   Every chosen solution shall fulfill binding requirements, violate
+   no constraints, be technically materializable, possess an
+   appropriate controlled execution capability, have a defined
+   verification strategy, be secured by deterministic tests, and be
+   presentable to the human in a traceable manner before mutating
+   execution.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §3 Kernfähigkeiten
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §3 Core Capabilities
 
-.. ziel:: Autoritätstrennung — Verstehen vs. Lösungsauswahl
+.. ziel:: Authority separation — understanding vs solution selection
    :id: ZIEL_016
    :status: draft
 
-   Das Verstehen von Anforderungen darf selbst keine technische Lösung
-   auswählen und keine Setup-Aktion ausführen.
+   Understanding requirements shall itself neither select a technical
+   solution nor execute any setup action.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §4 System-Garantien
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §4 System Guarantees
 
-.. ziel:: Autoritätstrennung — Entscheidung vs. Mutation
+.. ziel:: Authority separation — decision vs mutation
    :id: ZIEL_017
    :status: draft
 
-   Das Treffen einer Engineering-Entscheidung darf selbst keine
-   Installation ausführen und keine Umgebung mutieren.
+   Making an engineering decision shall itself neither execute an
+   installation nor mutate any environment.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §4 System-Garantien
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §4 System Guarantees
 
-.. ziel:: Autoritätstrennung — Vorbereitung vs. Wiederaufrollen der Auswahl
+.. ziel:: Authority separation — preparation vs reopening selection
    :id: ZIEL_018
    :status: draft
 
-   Die Vorbereitung der Umgebung darf die bereits getroffene
-   Engineering-Auswahl nicht neu aufrollen.
+   Preparing the environment shall not reopen the already-made
+   engineering selection.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §4 System-Garantien
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §4 System Guarantees
 
-.. ziel:: Autoritätstrennung — Empfehlung vs. Ausführungsfreigabe
+.. ziel:: Authority separation — recommendation vs execution authorization
    :id: ZIEL_019
    :status: draft
 
-   Eine technische Empfehlung ist keine automatische Ausführungsfreigabe.
-   Menschliche Auswahl oder Freigabe darf eine technisch unzulässige
-   Lösung NIEMALS zulässig machen.
+   A technical recommendation is not an automatic execution
+   authorization. Human selection or approval shall NEVER make a
+   technically inadmissible solution admissible.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §4 System-Garantien, §5 Menschliche Autorität
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §4 System Guarantees, §5 Human Authority
 
-.. ziel:: Reale Verifikation dominiert KI-Interpretation
+.. ziel:: Real verification dominates AI interpretation
    :id: ZIEL_020
    :status: draft
 
-   Ein reales Verifikationsergebnis darf durch keine KI-Interpretation
-   überschrieben werden. Eine KI darf nicht behaupten, dass etwas
-   funktioniert, wenn die reale Verifikation das Gegenteil zeigt. Ein
-   realer deterministischer Testfehler soll immer Rework erzwingen,
-   unabhängig von jeglicher Interpretation.
+   A real verification result shall not be overridden by any AI
+   interpretation. An AI shall not claim that something works when
+   real verification shows the opposite. A real deterministic test
+   failure shall always force rework, independent of any
+   interpretation.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §4 System-Garantien, §10 Verifikation
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §4 System Guarantees, §10 Verification
 
-.. ziel:: Diagnostische Evidenz ist nicht Autorität
+.. ziel:: Diagnostic Evidence is not Authority
    :id: ZIEL_021
    :status: draft
 
-   Diagnostische Evidenz ist Evidenz, nicht Autorität. Sie darf niemals
-   formale Entscheidungsautorität — einschließlich technischer
-   Zulässigkeit, menschlicher Auswahl, Freigabe, Verifikationsergebnis,
-   finaler Freigabe oder Veröffentlichungsfreigabe — ersetzen,
-   übersteuern, umgehen oder synthetisieren.
+   Diagnostic Evidence is Evidence, not Authority. It shall never
+   replace, override, bypass, or synthesize formal
+   decision-authority — including technical admissibility, human
+   selection, approval, verification result, final approval, or
+   publish approval.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §4 System-Garantien
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §4 System Guarantees
 
-.. ziel:: Auslieferung als eigener Schritt getrennt von der Entwicklung
+.. ziel:: Delivery as separate step from development
    :id: ZIEL_022
    :status: draft
 
-   Die Auslieferung soll ihr eigener Engineering-Schritt sein und keine
-   Nebenwirkung der Entwicklung.
+   Delivery shall be its own engineering step and not a side effect of
+   development.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §4 System-Garantien
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §4 System Guarantees
 
-.. ziel:: Mensch als entscheidende Autorität an sicherheitskritischen Grenzen
+.. ziel:: Human as decisive authority at safety-critical boundaries
    :id: ZIEL_023
    :status: draft
 
-   Der Mensch soll die entscheidende Autorität an mutierenden und
-   sicherheitsrelevanten Grenzen bleiben. Der Benutzer kann eine
-   Empfehlung annehmen, eine andere präsentierte zulässige Variante
-   auswählen, eine Änderung verlangen, die Planung ablehnen oder eine
-   neue Entscheidungsrunde anfordern.
+   The human shall remain the decisive authority at mutating and
+   safety-relevant boundaries. The user may accept a recommendation,
+   select another presented admissible variant, request a change,
+   reject planning, or request a new decision round.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §5 Menschliche Autorität
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §5 Human Authority
 
-.. ziel:: Trennung von Empfehlung und Ausführungsfreigabe
+.. ziel:: Separation of recommendation and execution approval
    :id: ZIEL_024
    :status: draft
 
-   Eine System-Empfehlung („Diese Lösung halte ich technisch für die beste
-   Variante") und menschliche Freigabe („Diese konkrete mutierende Aktion
-   darf ausgeführt werden") sollen klar getrennt sein. Diese Trennung ist
-   ein Kernprinzip.
+   A system recommendation ("I consider this the best technical
+   variant") and human approval ("this concrete mutating action may be
+   executed") shall be clearly separated. This separation is a core
+   principle.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §5 Menschliche Autorität
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §5 Human Authority
 
 .. ziel:: Existing Project First
    :id: ZIEL_025
    :status: draft
 
-   Bestehende Projekte sollen Vorrang vor ADC-Präferenzen haben. ADC soll
-   sich an das Projekt anpassen, nicht umgekehrt. Wenn ein bestehendes
-   Projekt bereits ein Buildsystem, eine Toolchain, Tests, CI, eine
-   Projektstruktur oder Konventionen besitzt, soll ADC diese zunächst
-   erkennen und verwenden. ADC soll keine eigene Verzeichnis-, Build-
-   oder Teststruktur auf fremde Repositories aufzwingen.
+   Existing projects shall take priority over ADC preferences. ADC
+   shall adapt to the project, not the reverse. When an existing
+   project already has a build system, toolchain, tests, CI, project
+   structure, or conventions, ADC shall recognize and use these first.
+   ADC shall not impose its own directory, build, or test structure
+   on foreign repositories.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §6 Existing Project First
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §6 Existing Project First
 
-.. ziel:: Technischer Grund erforderlich für Toolchain-Wechsel
+.. ziel:: Technical reason required for toolchain changes
    :id: ZIEL_026
    :status: draft
 
-   Ein Wechsel auf eine andere Toolchain oder Umgebung soll einen
-   technischen Grund erfordern. Zulässige Gründe sind: eine Anforderung,
-   ein Constraint, eine fehlende Fähigkeit, eine Sicherheitsgrenze,
-   reproduzierbare Isolation, Plattforminkompatibilität, eine
-   Benutzerentscheidung oder ein nachgewiesener Engineering-Vorteil.
-   „ADC bevorzugt grundsätzlich Technologie X" allein ist nicht zulässig.
+   Changing to a different toolchain or environment shall require a
+   technical reason. Permissible reasons include a requirement, a
+   constraint, a missing capability, a security boundary,
+   reproducible isolation, platform incompatibility, a user decision,
+   or a demonstrated engineering advantage. "ADC fundamentally prefers
+   technology X" alone is not permissible.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §6 Existing Project First
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §6 Existing Project First
 
-.. ziel:: Technologieneutralität
+.. ziel:: Technology neutrality
    :id: ZIEL_027
    :status: draft
 
-   ADC soll technologieoffen bleiben. Jede konkrete Implementierungstechnologie
-   darf vorkommen, aber KEINE darf das zentrale ADC-System dominieren oder
-   zum versteckten Standard für alle Projekte werden. ADC darf nicht
-   implizit oder explizit um eine bestimmte Implementierungstechnologie
-   zentriert sein. Konkrete Technologien existieren ausschließlich als
-   austauschbare aktuelle Implementierung, projektspezifische Wahl oder
-   explizit nicht-normatives Beispiel.
+   ADC shall remain technology-open. Any concrete implementation
+   technology may occur, but NONE shall dominate the central ADC
+   system or become the hidden default for all projects. ADC shall not
+   be centered implicitly or explicitly around a specific
+   implementation technology. Concrete technologies exist exclusively
+   as replaceable current implementation, project-specific choice, or
+   explicitly non-normative example.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §7 Technologieneutralität
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §7 Technology Neutrality
 
-.. ziel:: Stack-Integrierbarkeit ohne Systemumbau
+.. ziel:: Stack integrability without system rebuild
    :id: ZIEL_028
    :status: draft
 
-   Neue technische Stacks sollen integrierbar sein, ohne dass ADC als
-   System grundlegend umgebaut werden muss. Verschiedene funktionale
-   Bereiche von ADC können in beliebigen Implementierungstechnologien
-   realisiert sein.
+   New technical stacks shall be integrable without fundamentally
+   rebuilding ADC as a system. Various functional areas of ADC may be
+   realized in arbitrary implementation technologies.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §7 Technologieneutralität
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §7 Technology Neutrality
 
-.. ziel:: Mehrere Lösungsvarianten ohne erzwungene Einzellösung
+.. ziel:: Multiple solution variants without enforced single solution
    :id: ZIEL_029
    :status: draft
 
-   ADC soll bewusst mehrere technisch sinnvolle Engineering-Lösungen
-   erzeugen und bewerten, statt eine einzelne vorbestimmte Lösung
-   durchzusetzen.
+   ADC shall deliberately generate and evaluate multiple technically
+   sound engineering solutions rather than enforcing a single
+   predetermined solution.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §8 Engineering-Qualität
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §8 Engineering Quality
 
-.. ziel:: Kein deterministischer Solver
+.. ziel:: No deterministic solver
    :id: ZIEL_030
    :status: draft
 
-   ADC soll kein deterministischer Solver sein, der bei identischem Input
-   immer dieselbe Lösung liefern muss. Unterschiedliche technisch gültige
-   Empfehlungen bei gleicher Ausgangslage sind grundsätzlich erlaubt.
+   ADC shall not be a deterministic solver that must always deliver
+   the same solution for identical input. Different technically valid
+   recommendations for the same starting situation are fundamentally
+   permitted.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §8 Engineering-Qualität
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §8 Engineering Quality
 
-.. ziel:: Lösungsvielfalt mit früher Ungültigkeitsblockierung
+.. ziel:: Solution diversity with early invalidity blocking
    :id: ZIEL_031
    :status: draft
 
-   ADC soll Lösungsvielfalt ermöglichen, aber technische Ungültigkeit
-   früh blockieren. Eine Variante wird erst dann zum Problem, wenn sie
-   Anforderungen verletzt, Constraints ignoriert, nicht materialisierbar
-   ist, keine kontrollierte Ausführungsfähigkeit besitzt, keine
-   Verifikation besitzt, Sicherheitsgrenzen umgeht, unnötige oder
-   unvertretbare Risiken erzeugt oder dem Benutzer als „ausführbar"
-   präsentiert wird, obwohl ADC sie nicht kontrolliert umsetzen kann.
+   ADC shall enable solution diversity but block technical invalidity
+   early. A variant becomes problematic only when it violates
+   requirements, ignores constraints, is not materializable, lacks a
+   controlled execution capability, lacks verification, bypasses
+   security boundaries, creates unnecessary or unreasonable risks, or
+   is presented as "executable" when ADC cannot actually execute it
+   in a controlled manner.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §8 Engineering-Qualität
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §8 Engineering Quality
 
-.. ziel:: Anforderungen als technischer Vertrag
+.. ziel:: Requirements as technical contract
    :id: ZIEL_032
    :status: draft
 
-   Anforderungen sollen nicht nur von einem Analysesystem generierter Text
-   sein. Sie sollen den technischen Vertrag bilden, gegen den Lösungen
-   bewertet werden. Eine Lösung soll nur zulässig sein, wenn sie die
-   bindenden Anforderungen für die konkrete Operation erfüllt.
-   Anforderungen sollen Evidenz besitzen und mit Tests verknüpfbar sein:
-   Anforderung → Vertrag → Verifikation → Evidenz.
+   Requirements shall not be mere system-generated text. They shall form the
+   technical contract against which solutions are evaluated. A
+   solution shall only be admissible if it fulfills the binding
+   requirements for the concrete operation. Requirements shall possess
+   evidence and be linkable with tests: Requirement → Contract →
+   Verification → Evidence.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §8 Engineering-Qualität
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §8 Engineering Quality
 
-.. ziel:: Keine unstrukturierten oder automatischen Analysesystem-Mutationen
+.. ziel:: No unstructured or automatic system-generated mutations
    :id: ZIEL_033
    :status: draft
 
-   ADC soll Änderungen und Setup nicht als Sammlung unstrukturierter,
-   frei formulierter Operationsrepräsentationen modellieren. Kein frei
-   formuliertes oder unstrukturiertes Analyseergebnis soll automatisch
-   zu einer mutierenden Aktion werden. Jede umgebungsverändernde oder
-   projektverändernde Aktion soll semantisch beschreiben, WAS geändert
-   werden soll, und über einen strukturierten, kontrollierten Mechanismus
-   mit passender kontrollierter Ausführungsmöglichkeit umgesetzt werden.
+ADC shall not model changes and setup as a collection of
+    unstructured, freely formulated operation representations. No
+    freely formulated or unstructured reasoning or analysis result
+    shall automatically become a mutating action. Every
+    environment-altering or project-altering action shall semantically
+    describe WHAT is to be changed and be implemented via a structured,
+    controlled mechanism with an appropriate controlled execution
+    capability.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §9 Kontrollierte Änderung
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §9 Controlled Change
 
-.. ziel:: Kontrollierte Ausführungsgrenzen für alle Mutationen
+.. ziel:: Controlled execution boundaries for all mutations
    :id: ZIEL_034
    :status: draft
 
-   Jede mutierende Ausführung soll über kontrollierte Grenzen laufen, die
-   prüfen: welche Fähigkeit beansprucht wird, welche ausführende Instanz
-   zuständig ist, welche Art von Operation vorliegt, in welchem
-   autorisierten Ausführungs-/Zielbereich sie erlaubt ist, ob eine
-   gültige Freigabe vorliegt, ob die Argumentstruktur erlaubt ist und
-   welche Betriebsgrenzen gelten. Es soll keinen allgemeinen Pfad geben,
-   über den ein Analysesystem direkt unstrukturierte Operationen zur
-   Ausführung bringen kann.
+   Every mutating execution shall run through controlled boundaries
+   that check: which capability is claimed, which executing instance
+   is responsible, which type of operation is present, in which
+   authorized execution/target scope it is permitted, whether valid
+   approval exists, whether the argument structure is permitted, and
+   which operational limits apply. There shall be no general path
+   through which a reasoning system can directly bring unstructured
+   operations to execution.
 
-   Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §9 Kontrollierte Änderung
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §9 Controlled Change
+
+.. ziel:: Creative analysis vs controlled mutation separation
+   :id: ZIEL_035
+   :status: draft
+
+   Creative analysis and synthesis shall contribute exclusively to the
+   preparation and justification of decisions, not to direct
+   uncontrolled mutation. Actual changes to projects or environments
+   shall only occur through controlled, checked, and approved
+   channels.
+
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §9 Controlled Change
+
+.. ziel:: No unbounded engineering loops
+   :id: ZIEL_036
+   :status: draft
+
+   ADC shall contain no unbounded engineering loops. Budgets shall
+   exist for controlled operations, including operation, phase, and
+   run time limits, maximum attempts, maximum rework cycles, maximum
+   state revisits, and provider budgets. A workflow shall not pend
+   endlessly between the same states.
+
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §9 Controlled Change
+
+.. ziel:: Multiple clearly separated verification levels
+   :id: ZIEL_037
+   :status: draft
+
+   ADC shall have multiple clearly separated verification levels: from
+   local, narrow checks of individual functions/contracts through
+   checks of individual components against their technical invariants
+   and checks of transitions between components to real-world
+   integration verification with real toolchains, relevant external
+   systems, and real components as necessary. Real integration
+   verification is acceptance evidence, not the primary debugging tool.
+
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §10 Verification
+
+.. ziel:: Real verification as authoritative evidence
+   :id: ZIEL_038
+   :status: draft
+
+   ADC shall treat real verification results as authoritative
+   evidence. Failure modes shall be connected with test coverage. An
+   AI interpretation of diagnostic evidence shall NEVER reinterpret a
+   real deterministic test failure as success. A real failure shall
+   always force rework, independent of interpretation.
+
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §10 Verification
+
+.. ziel:: Proven executability before mutating execution (fail-closed)
+   :id: ZIEL_039
+   :status: draft
+
+   Before any mutating execution, ADC shall be able to prove that
+   execution is actually possible — including a responsible controlled
+   execution capability, a matching structured input, a registered
+   capability, a correct project/target scope, the permissibility of
+   the operation, the required approval, and the ability to verify the
+   result afterward. The system shall operate fail-closed: unproven
+   executability is non-executability.
+
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §11 Safety/Fail-Closed
+
+.. ziel:: Artifact identity and provenance
+   :id: ZIEL_040
+   :status: draft
+
+   For every important artifact, the following questions shall be
+   answerable: Who creates it? Who may modify it? Where is it
+   persisted? Who consumes it? Which authority applies? Which evidence
+   proves its state? Which contract version applies?
+
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §12 Traceability/Evidence
+
+.. ziel:: Read-only project understanding with observation/decision separation
+   :id: ZIEL_041
+   :status: draft
+
+   ADC shall understand existing projects deterministically and
+   read-only, and shall distinguish observed reality (languages,
+   frameworks, build/test systems, conventions, project areas) from
+   deliberately established project decisions. Deliberate project
+   decisions shall not be raw chat history and shall not themselves
+   create approval authority. They shall be versionable (active,
+   superseded, revoked). Observed reality, explicit decisions, and
+   technical configuration shall be brought together without silently
+   overwriting contradictory sources.
+
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §12 Traceability/Evidence
+
+.. ziel:: Diagnostic trace without internal thoughts or secrets
+   :id: ZIEL_042
+   :status: draft
+
+   ADC shall maintain a technical timeline of its run (Diagnostic
+   Trace): which phase was started, which structured inputs were
+   present, which system part processed them, which provider/model
+   was used (where known), which structured result was produced,
+   which approval boundary was reached, which error occurred, which
+   evidence is present, and where the workflow ended or was blocked.
+   This trace shall not be a chain-of-thought store: it shall contain
+   no internal model thoughts, no secrets, no tokens, no credential
+   dumps, and no uncontrolled executable commands.
+
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §12 Traceability/Evidence
+
+.. ziel:: Decisions and transformations traceable for audit and diagnosis
+   :id: ZIEL_043
+   :status: draft
+
+   ADC shall make relevant decisions and transformations traceable.
+   It shall be possible to determine the triggering input or
+   underlying evidence for a relevant result. It shall be possible to
+   identify the responsible processing step or decision context
+   sufficiently for audit and diagnosis. Failure-relevant information
+   shall not silently disappear across processing boundaries.
+
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §12 Traceability/Evidence
+
+.. ziel:: Structured user presentation of recommendation and alternatives
+   :id: ZIEL_044
+   :status: draft
+
+   The user shall not see only an opaque recommendation. ADC shall
+   provide a structured presentation of the recommendation (variant
+   name, short technical justification, fulfilled requirements,
+   required environment, required changes, risks, verification
+   strategy, expected setup steps, human approval points) as well as
+   the alternatives (why they are also admissible, advantages and
+   disadvantages, additional effort, additional risks, verification
+   implications), so that the user can decide consciously.
+
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §12 Traceability/Evidence
+
+.. ziel:: Provenance-based delivery — no foreign state appropriation
+   :id: ZIEL_045
+   :status: draft
+
+   ADC shall not appropriate foreign target state changes that do not
+   belong to the current run. It shall prove per run: initial state,
+   targets changed by ADC, belonging to the run. Only targets whose
+   provenance is fully proven shall be transferred to final state.
+   Pre-existing changes in the delivery target may remain as long as
+   ADC does not modify them; if ADC additionally modifies an already
+   modified target, this shall be detected.
+
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §13 Delivery
+
+.. ziel:: No destructive repair of pre-existing target state
+   :id: ZIEL_046
+   :status: draft
+
+   ADC shall NOT automatically discard, overwrite, undo, or silently
+   absorb pre-existing target state — this includes in particular any
+   form of destructive state repair.
+
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §13 Delivery
+
+.. ziel:: Separate publish with own approval boundary
+   :id: ZIEL_047
+   :status: draft
+
+   Where the delivery solution provides for a publish, publish shall
+   be a separate explicit action after a local controlled delivery
+   state and its own approval boundary.
+
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §13 Delivery
+
+.. ziel:: Version control optional and project-specific
+   :id: ZIEL_048
+   :status: draft
+
+   Version control shall be optional and project-specific. ADC shall
+   remain validly functional without a version control system or with
+   a different delivery mechanism.
+
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §13 Delivery
+
+.. ziel:: Interruption detection and fail-closed on partial state
+   :id: ZIEL_049
+   :status: draft
+
+   If a run is interrupted during or after a mutation, a later run
+   shall detect the unsafe or partial state, correlate the current
+   target state with captured provenance, NOT silently reapply the
+   same change, NOT silently treat the change as successful, and
+   either go fail-closed or enter a controlled reconciliation path.
+
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §14 Recovery/Restart
+
+.. ziel:: Known-success reuse and bounded recovery
+   :id: ZIEL_050
+   :status: draft
+
+   Successfully completed steps may be reused on known success (no
+   unnecessary repetition); on unknown or recovery state, the system
+   shall go fail-closed. Changed content shall force new
+   generation/approval instead of silent reuse. If a needed
+   capability or tool is missing at runtime, ADC shall be able to
+   transfer this into a bounded, approval-bound recovery without
+   reopening the already-made engineering decision and without an
+   unbounded repetition loop. After such recovery, the previously
+   planned verification shall be re-executed.
+
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §14 Recovery/Restart
+
+.. ziel:: Defect-to-test-coverage learning loop
+   :id: ZIEL_051
+   :status: draft
+
+   Every locally reproducible, actually observed defect shall be
+   durably transferred into deterministic test coverage — not only
+   the concrete failure case but the generalized failure pattern it
+   represents. The question shall always be asked: which obvious
+   errors of the same class would otherwise be discovered again only
+   expensively?
+
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §15 Learning/FMEA
+
+.. ziel:: Living project-level engineering FMEA
+   :id: ZIEL_052
+   :status: draft
+
+   ADC shall maintain a living engineering FMEA for each project,
+   derived from requirements, architecture, technologies, toolchains,
+   hardware, operating environment, past errors, tests, and
+   real-system evidence — supplemented by a central, reusable failure
+   mode library. Each relevant failure mode shall be connected with
+   cause, effect, criticality, detection, prevention,
+   control/mitigation, owner, verification evidence, test case,
+   timing/recovery aspects, and residual risk. FMEA is not a static
+   document but part of the engineering learning system.
+
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §15 Learning/FMEA
+
+.. ziel:: Separation of knowledge types
+   :id: ZIEL_053
+   :status: draft
+
+ADC shall keep different knowledge types separate: Knowledge
+    (current valid project/system contract), Evidence (facts from the
+    current run), Learning Memory (accepted insights from past errors
+    and improvements), Analytic Reasoning (flexible analysis,
+    synthesis, and proposal formation), and Deterministic Contracts
+    (hard, non-negotiable rules).
+
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §15 Learning/FMEA
+
+.. ziel:: Learning acceptance process
+   :id: ZIEL_054
+   :status: draft
+
+   A learning shall only be accepted durably after: Observation →
+   Analysis → Test → Evidence → Acceptance → Learning accepted. As
+   long as ADC changes substantially, the current truth lies in
+   structured data, contracts, and evidence — not in model weights.
+
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §15 Learning/FMEA
+
+.. ziel:: Cross-cutting supervisory capability
+   :id: ZIEL_055
+   :status: draft
+
+   ADC shall possess a cross-cutting supervision/quality capability
+   that observes the entire run (timing, loop/retry behavior, evidence
+   quality, project-related FMEA) — starting read-only, initially
+   recognizing rather than automatically repairing, later with
+   limited capability to warn, block, or stop. This capability shall
+   never autonomously execute destructive actions or alternative
+   fixes.
+
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §15 Learning/FMEA
+
+.. ziel:: Outcome dependencies — understand before decide, verify before deliver
+   :id: ZIEL_056
+   :status: draft
+
+   Starting from a clear goal, ADC shall understand the project
+   before making significant technical decisions. Technical decisions
+   shall be sufficiently justified before a mutation occurs that
+   depends on that decision. Mutating actions requiring approval
+   shall not occur without that approval. Results shall be
+   technically verified before being presented as successfully
+   completed. Delivery shall not present unverified or unapproved
+   work as an accepted final result.
+
+    Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §16 Success Criteria
+
+.. ziel:: Governance principles apply to firmware and hardware
+   :id: ZIEL_057
+   :status: draft
+
+   ADC governance principles — engineering decision before mutation,
+   controlled tool/device capabilities, human approval for physical
+   actions, real verification, traceable evidence, FMEA, and
+   traceable delivery — shall apply equally to firmware,
+   electronics, hardware, and physical-system engineering artifacts.
+
+   Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt §2 Scope

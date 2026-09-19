@@ -1,54 +1,57 @@
-Erfüllungsstatus der Anforderungen
+Requirement Implementation Status
 ==================================
 
 .. role:: red
 .. role:: yellow
 .. role:: green
 
-:red:`ROT` — Nicht implementiert
-  Die Anforderung ist nicht vollständig implementiert.
+:red:`RED` — Not implemented
+  The Requirement is not fully implemented.
 
-:yellow:`GELB` — Implementiert, Verifikation nicht bestanden
-  Die Anforderung ist aus Sicht der Implementierungsabdeckung umgesetzt,
-  aber die erfolgreiche Verifikation ist noch nicht nachgewiesen.
+:yellow:`YELLOW` — Implemented, verification not proven
+  The Requirement is implemented from an implementation-coverage
+  perspective, but successful verification is not yet proven.
 
-:green:`GRÜN` — Implementiert und verifiziert
-  Die Anforderung ist vollständig implementiert und die erfolgreiche
-  Verifikation ist nachgewiesen.
+:green:`GREEN` — Implemented and verified
+  The Requirement is fully implemented and successful verification
+  is proven.
 
 .. note::
 
-   Der Status wird automatisch aus dem Nachverfolgbarkeitsgraphen abgeleitet.
-   Er wird niemals manuell in Anforderungsdirektiven eingetragen.
+   Status is derived automatically from the traceability graph.
+   It is never manually entered on Requirement directives.
 
 ---
 
-Rot — Nicht implementiert
--------------------------
+Red — Not implemented
+---------------------
 
 .. container:: adc-status-red
 
    .. needtable::
-      :filter: type in ["sysreq", "arcreq", "subreq", "ifreq"] and "pilot" not in tags and implementation_state == "NOT_IMPLEMENTED"
+      :filter: type in ["sysreq","arcreq","subreq","ifreq"] and "pilot" not in tags
+      :filter-func: status_model.filter_red
       :columns: id;type;title;status
       :style: table
 
-Gelb — Implementiert / Verifikation NIO
+Yellow — Implemented / Verification NIO
 ---------------------------------------
 
 .. container:: adc-status-yellow
 
    .. needtable::
-      :filter: type in ["sysreq", "arcreq", "subreq", "ifreq"] and "pilot" not in tags and implementation_state == "IMPLEMENTED_TEST_NIO"
+      :filter: type in ["sysreq","arcreq","subreq","ifreq"] and "pilot" not in tags
+      :filter-func: status_model.filter_yellow
       :columns: id;type;title;status
       :style: table
 
-Grün — Implementiert / Verifikation IO
---------------------------------------
+Green — Implemented / Verification IO
+-------------------------------------
 
 .. container:: adc-status-green
 
    .. needtable::
-      :filter: type in ["sysreq", "arcreq", "subreq", "ifreq"] and "pilot" not in tags and implementation_state == "IMPLEMENTED_TEST_IO"
+      :filter: type in ["sysreq","arcreq","subreq","ifreq"] and "pilot" not in tags
+      :filter-func: status_model.filter_green
       :columns: id;type;title;status
       :style: table
