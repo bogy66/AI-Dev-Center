@@ -2,16 +2,52 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
-from dataclasses import asdict
+from collections.abc import Mapping
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
+from types import MappingProxyType
 
 from app.requirement_model import SetupPlan
 
 
 class WorkflowPlanStoreError(Exception):
     """Raised when a workflow plan cannot be stored or loaded."""
+
+
+def _serialize_plan(obj):
+    """Recursively convert a SetupPlan (or any nested dataclass) into a
+    JSON-safe dict.
+
+    Unlike ``dataclasses.asdict()`` this handles ``MappingProxyType``,
+    arbitrary ``Mapping`` subclasses, ``datetime``, tuples, enums, and
+    nested dataclasses without relying on ``copy.deepcopy()`` which
+    cannot traverse immutable stdlib types like ``MappingProxyType``.
+    Unsupported object types raise ``TypeError`` rather than silently
+    producing a lossy ``repr()``/``str()`` fallback.
+    """
+    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+        result = {}
+        for f in dataclasses.fields(obj):
+            value = getattr(obj, f.name)
+            result[f.name] = _serialize_plan(value)
+        return result
+    if isinstance(obj, (MappingProxyType, Mapping)):
+        return {str(k): _serialize_plan(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_serialize_plan(v) for v in obj]
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, Enum):
+        return obj.value
+    if isinstance(obj, (str, int, float, bool, type(None))):
+        return obj
+    raise TypeError(
+        f"unsupported type for plan serialization: "
+        f"{type(obj).__qualname__} (value={obj!r})"
+    )
 
 
 class WorkflowPlanStore:
@@ -153,11 +189,10 @@ class WorkflowPlanStore:
         try:
             path.write_text(
                 json.dumps(
-                    asdict(plan),
+                    _serialize_plan(plan),
                     ensure_ascii=False,
                     indent=2,
                     sort_keys=True,
-                    default=str,
                 ),
                 encoding="utf-8",
             )
@@ -216,6 +251,42 @@ class WorkflowPlanStore:
         )
 
     @staticmethod
+    def _deserialize_requirement(req_data: dict):
+        from app.requirement_model import Requirement, RequirementEvidence
+
+        evidence_raw = req_data.get("evidence", ())
+        evidence = tuple(
+        RequirementEvidence(
+        id=e.get("id", ""),
+        source_type=e.get("source_type", ""),
+        description=e.get("description", ""),
+        source_file=e.get("source_file"),
+        snippet=e.get("snippet"),
+        confidence_contribution=e.get("confidence_contribution"),
+        url=e.get("url"),
+        )
+        for e in evidence_raw
+        )
+        return Requirement(
+        id=req_data["id"],
+        name=req_data["name"],
+        type=req_data["type"],
+        purpose=req_data["purpose"],
+        required=req_data["required"],
+        confidence=req_data["confidence"],
+        evidence=evidence,
+        source_file=req_data.get("source_file"),
+        detected_version=req_data.get("detected_version"),
+        required_version=req_data.get("required_version"),
+        install_method=req_data.get("install_method"),
+        verification_method=req_data.get("verification_method"),
+        verification_executable=req_data.get("verification_executable"),
+        status=req_data.get("status", "discovered"),
+        metadata=dict(req_data.get("metadata", {})),
+        technical_identity=req_data.get("technical_identity"),
+        )
+
+    @staticmethod
     def _deserialize_activation(activation: dict):
         from app.requirement_model import RequirementActivation
 
@@ -264,6 +335,10 @@ class WorkflowPlanStore:
             unsupported_backend_effects=tuple(data.get("unsupported_backend_effects", ())),
             provided_requirement_ids=tuple(data.get("provided_requirement_ids", ())),
             generation_id=generation_id,
+            deferred_requirements=tuple(
+                WorkflowPlanStore._deserialize_requirement(r)
+                for r in data.get("deferred_requirements", ())
+            ),
         )
 
     @staticmethod

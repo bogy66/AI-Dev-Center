@@ -1,20 +1,20 @@
-AI-Dev-Center Requirements
-==========================
+AI-Dev-Center Anforderungen
+===========================
 
 ADC Requirements Engineering
 ----------------------------
 
-This site is the traceability and review view for the AI-Dev-Center engineering chain.
+Diese Seite ist die Nachverfolgbarkeits- und Prüfansicht für die AI-Dev-Center Engineering-Kette.
 
-The normative Zielbild remains in:
+Das normative Zielbild bleibt in:
 
 ``ADC_Zielbild_Ausfuehrliche_Beschreibung.txt``
 
-The Sphinx-Needs pages provide a linked traceability representation and engineering views.
+Die Sphinx-Needs-Seiten bieten eine verknüpfte Nachverfolgbarkeitsrepräsentation und Engineering-Ansichten.
 
 .. toctree::
    :maxdepth: 2
-   :caption: Overview
+   :caption: Übersicht
 
    dashboard/overview
    dashboard/requirement_status
@@ -24,7 +24,7 @@ The Sphinx-Needs pages provide a linked traceability representation and engineer
 
 .. toctree::
    :maxdepth: 2
-   :caption: Engineering Layers
+   :caption: Engineering-Ebenen
 
    zielbild/zielbild
    system/system_requirements
@@ -34,10 +34,9 @@ The Sphinx-Needs pages provide a linked traceability representation and engineer
    implementation/implementation
    verification/tests
    verification/evidence
-   verification/evidence_generated
 
 .. toctree::
    :maxdepth: 1
-   :caption: Technical Pilot
+   :caption: Technischer Pilot
 
    pilot/synthetic_traceability

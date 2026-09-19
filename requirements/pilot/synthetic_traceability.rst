@@ -1,87 +1,87 @@
-Synthetic Traceability Pilot
-============================
+Synthetischer Nachverfolgbarkeitspilot
+======================================
 
 .. note::
 
-   This page is a **non-normative technical pilot** for the ADC Sphinx-Needs setup.
-   All Needs on this page carry the ``pilot`` tag and are excluded from the real ADC dashboards.
+   Diese Seite ist ein **nicht-normativer technischer Pilot** für das ADC Sphinx-Needs-Setup.
+   Alle Needs auf dieser Seite tragen den ``pilot``-Tag und sind von den echten ADC-Dashboards ausgeschlossen.
 
-.. ziel:: Synthetic ADC goal
+.. ziel:: Synthetisches ADC-Ziel
    :id: ZIEL_TEST_001
    :tags: pilot
    :status: approved
 
-   ADC shall provide a traceable engineering process.
+   ADC soll einen nachverfolgbaren Engineering-Prozess bereitstellen.
 
-.. sysreq:: Synthetic system requirement
+.. sysreq:: Synthetische Systemanforderung
    :id: SYS_REQ_TEST_001
    :tags: pilot
    :status: approved
    :realizes: ZIEL_TEST_001
 
-   Relevant engineering outcomes shall be traceable to their originating goals.
+   Relevante Engineering-Ergebnisse sollen auf ihre ursprünglichen Ziele zurückverfolgbar sein.
 
-.. arch:: Synthetic architecture decision
+.. arch:: Synthetische Architekturentscheidung
    :id: ARC_TEST_001
    :tags: pilot
    :status: approved
    :satisfies: SYS_REQ_TEST_001
 
-   The selected architecture provides explicit trace relationships.
+   Die gewählte Architektur stellt explizite Nachverfolgbarkeitsbeziehungen bereit.
 
-.. arcreq:: Synthetic architecture-derived requirement
+.. arcreq:: Synthetische architekturabgeleitete Anforderung
    :id: ARC_REQ_TEST_001
    :tags: pilot
    :status: approved
    :derived_from: ARC_TEST_001
 
-   The selected architecture shall expose a traceable derived requirement.
+   Die gewählte Architektur soll eine nachverfolgbare abgeleitete Anforderung bereitstellen.
 
-.. subreq:: Synthetic subsystem requirement
+.. subreq:: Synthetische Subsystemanforderung
    :id: SUB_REQ_TEST_001
    :tags: pilot
    :status: approved
    :derived_from: ARC_REQ_TEST_001
 
-   The responsible functional area shall preserve the required trace relationship.
+   Der zuständige Funktionsbereich soll die geforderte Nachverfolgbarkeitsbeziehung bewahren.
 
-.. ifreq:: Synthetic interface requirement
+.. ifreq:: Synthetische Schnittstellenanforderung
    :id: IF_REQ_TEST_001
    :tags: pilot
    :status: approved
    :derived_from: SUB_REQ_TEST_001
 
-   The interface shall preserve the trace relationship across its boundary.
+   Die Schnittstelle soll die Nachverfolgbarkeitsbeziehung über ihre Grenze hinweg bewahren.
 
-.. impl:: Synthetic implementation
+.. impl:: Synthetische Implementierung
    :id: IMPL_TEST_001
    :tags: pilot
    :status: approved
    :implements: IF_REQ_TEST_001
 
-   Synthetic implementation placeholder.
+   Synthetischer Implementierungs-Platzhalter.
 
-.. test:: Synthetic verification
+.. test:: Synthetische Verifikation
    :id: TEST_TEST_001
    :tags: pilot
    :status: approved
    :verification_result: IO
    :verifies: IF_REQ_TEST_001
 
-   Synthetic verification placeholder.
+   Synthetischer Verifikations-Platzhalter.
 
-.. evidence:: Synthetic evidence
+.. evidence:: Synthetische Evidenz
    :id: EVID_TEST_001
    :tags: pilot
    :status: approved
    :evidences: TEST_TEST_001
 
-   Synthetic PASS evidence.
+   Synthetische PASS-Evidenz.
 
-Traceability graph
-------------------
+Nachverfolgbarkeitsgraph
+-------------------------
 
-.. needflow:: ADC synthetic end-to-end trace
+.. needflow:: ADC synthetischer Ende-zu-Ende-Trace
    :root_id: ZIEL_TEST_001
    :root_direction: incoming
    :link_types: realizes,satisfies,derived_from,refines,implements,verifies,evidences
@@ -89,16 +89,16 @@ Traceability graph
    :engine: graphviz
    :direction: right
 
-Forward traceability matrix
----------------------------
+Vorwärts-Nachverfolgbarkeitsmatrix
+-----------------------------------
 
 .. needtable::
    :filter: "pilot" in tags
    :columns: id;type;title;realizes;satisfies;derived_from;refines;implements;verifies;evidences
    :style: table
 
-Reverse coverage matrix
------------------------
+Rückwärts-Nachverfolgbarkeitsmatrix
+------------------------------------
 
 .. needtable::
    :filter: "pilot" in tags

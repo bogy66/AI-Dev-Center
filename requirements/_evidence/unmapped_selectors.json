@@ -1,3 +1,5 @@
 {
-  "unmapped_selectors": []
+  "unmapped_selectors": [
+    "tests/real_system/real_system_e2e.py::test_real_esphome_esp32_hello_world_acceptance"
+  ]
 }

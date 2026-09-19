@@ -1,0 +1,35 @@
+{
+  "artifact_identity": null,
+  "command_or_procedure": "pytest tests/real_system/real_system_e2e.py --real-system-e2e --adc-evidence -s",
+  "duration": 366.597791,
+  "environment": {
+    "os": "Linux",
+    "platform": "Linux-7.0.0-31-generic-x86_64-with-glibc2.39",
+    "profile": null,
+    "testbed": "pytest"
+  },
+  "event_id": "EVT-0001",
+  "evidence_payload": {
+    "longrepr": "monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7555da33aed0>, diagnostic_level = 'NONE'\n\n    @pytest.mark.real_system\n    def test_real_esphome_esp32_hello_world_acceptance(monkeypatch, diagnostic_level):\n        progress = _E2EProgress()\n        progress.milestone(0, \"test started\")\n    \n        owned = Path(tempfile.mkdtemp(prefix=\"ai-dev-center-real-e2e-\"))\n        prior_cwd = Path.cwd()\n        prior_path = os.environ.get(\"PATH\", \"\")\n        components = None\n        run_id = Non",
+    "outcome": "failed"
+  },
+  "exit_code": null,
+  "mapped_test_id": null,
+  "producer": "ADC",
+  "raw_output_reference": null,
+  "repository_identity": {
+    "commit": "e869f9a08db4bb66daa0df4199f8c2df4109545a",
+    "dirty": false,
+    "worktree": "/home/udo/AI-Dev-Center"
+  },
+  "result": "NIO",
+  "run_id": "ADC-RUN-20260918T190326Z-5ae51307",
+  "schema_version": "1.0",
+  "test_selector": "tests/real_system/real_system_e2e.py::test_real_esphome_esp32_hello_world_acceptance",
+  "timestamp_end": "2026-09-18T19:09:32.946390+00:00",
+  "timestamp_start": "2026-09-18T19:03:26.512085+00:00",
+  "tool_versions": {
+    "pytest": "9.1.1",
+    "python": "3.12.3"
+  }
+}
