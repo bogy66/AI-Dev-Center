@@ -1,0 +1,406 @@
+# Translations template for PROJECT.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the PROJECT project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-09-20 11:28+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:2
+msgid "ADC Subsystem Requirements"
+msgstr "ADC Subsystem-Anforderungen"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:4
+msgid "Requirements allocated to ADC subsystems and sub-sub-system areas. Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt"
+msgstr "Anforderungen, die ADC-Subsystemen und Sub-Subsystembereichen zugeordnet sind. Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:8
+msgid "S1 Requirement Intelligence"
+msgstr "S1 Anforderungsintelligenz"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:15
+msgid "S1 shall analyze user requests read-only, inspect the project, identify requirements, structure them into mandatory and optional, recognize conflicts and uncertainties, and connect requirements with evidence. S1 shall not select technical solutions or execute setup."
+msgstr "S1 soll Benutzeraufträge read-only analysieren, das Projekt untersuchen, Anforderungen identifizieren, sie in Pflicht- und optionale strukturieren, Konflikte und Unsicherheiten erkennen und Anforderungen mit Evidenz verbinden. S1 darf keine technischen Lösungen auswählen und kein Setup ausführen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:20
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:31
+msgid "Source: ARC_002 (S1), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §1/S1"
+msgstr "Quelle: ARC_002 (S1), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §1/S1"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:27
+msgid "S1 shall formulate requirements so they are testable for later verification stages, with stable identities, activation provenance, and evidence linkage."
+msgstr "S1 soll Anforderungen so formulieren, dass sie für spätere Verifikationsstufen testbar sind, mit stabilen Identitäten, Aktivierungs-Provenienz und Evidenzverknüpfung."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:34
+msgid "S2 Engineering Decision"
+msgstr "S2 Engineering-Entscheidung"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:41
+msgid "S2.1 shall generate multiple independent, technically sound engineering alternatives and collect cross-review evidence. S2.1 shall not select a recommendation or decide admissibility."
+msgstr "S2.1 soll mehrere unabhängige, technisch sinnvolle Engineering-Alternativen erzeugen und Cross-Review-Evidenz sammeln. S2.1 darf keine Empfehlung auswählen und nicht über Zulässigkeit entscheiden."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:45
+msgid "Source: ARC_004 (S2.1), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.1"
+msgstr "Quelle: ARC_004 (S2.1), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.1"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:52
+msgid "S2.2 shall synthesize cross-reviewed proposals and produce a technically justified recommendation including one bounded targeted repair attempt on structurally rejected synthesis. S2.2 shall not exercise independent admissibility policy."
+msgstr "S2.2 soll gegengeprüfte Vorschläge synthetisieren und eine technisch begründete Empfehlung erzeugen, einschließlich eines begrenzten gezielten Reparaturversuchs bei strukturell abgelehnter Synthese. S2.2 darf keine eigenständige Zulässigkeitsrichtlinie anwenden."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:57
+msgid "Source: ARC_005 (S2.2), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.2"
+msgstr "Quelle: ARC_005 (S2.2), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.2"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:64
+msgid "S2.3 shall be the sole technical admissibility authority within S2. It shall classify variants as admissible or inadmissible with exact deterministic reasons and preserve multiple admissible alternatives. S2.3 shall not select a preferred solution or modify candidates."
+msgstr "S2.3 soll die alleinige Autorität für technische Zulässigkeit innerhalb von S2 sein. Es soll Varianten mit exakten deterministischen Gründen als zulässig oder unzulässig klassifizieren und mehrere zulässige Alternativen bewahren. S2.3 darf keine bevorzugte Lösung auswählen und keine Kandidaten ändern."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:69
+msgid "Source: ARC_006 (S2.3), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.3"
+msgstr "Quelle: ARC_006 (S2.3), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.3"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:76
+msgid "S2.4 shall present technically evaluated candidates to the human and allow accepting a recommendation, selecting another admissible alternative, rejecting, deferring, or requesting rework. S2.4 shall not make an inadmissible candidate admissible and shall not silently substitute the desired candidate."
+msgstr "S2.4 soll technisch bewertete Kandidaten dem Menschen präsentieren und das Annehmen einer Empfehlung, das Auswählen einer anderen zulässigen Alternative, das Ablehnen, Zurückstellen oder Anfordern von Nacharbeit erlauben. S2.4 darf keinen unzulässigen Kandidaten zulässig machen und den gewünschten Kandidaten nicht stillschweigend ersetzen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:82
+msgid "Source: ARC_007 (S2.4), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.4"
+msgstr "Quelle: ARC_007 (S2.4), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.4"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:89
+msgid "S2.5 shall produce the final EngineeringDecision artifact preserving exact candidate identity, selection authority, and validation provenance. S2.5 shall own the S2→S3 boundary. S2.5 shall not invent a selection, choose a winner, or repair a candidate."
+msgstr "S2.5 soll das finale EngineeringDecision-Artefakt erzeugen und dabei exakte Kandidatenidentität, Auswahlautorität und Validierungs-Provenienz bewahren. S2.5 soll die S2→S3-Grenze verantworten. S2.5 darf keine Auswahl erfinden, keinen Gewinner bestimmen und keinen Kandidaten reparieren."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:94
+msgid "Source: ARC_008 (S2.5), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.5"
+msgstr "Quelle: ARC_008 (S2.5), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.5"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:97
+msgid "S3 Environment & Setup"
+msgstr "S3 Umgebung & Setup"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:104
+msgid "S3.1 shall materialize the EngineeringDecision into a structured SetupPlan with classified SetupSteps. S3.1 shall not execute actions, grant approvals, or reopen the S2 selection."
+msgstr "S3.1 soll die EngineeringDecision in einen strukturierten SetupPlan mit klassifizierten SetupSteps materialisieren. S3.1 darf keine Aktionen ausführen, keine Freigaben erteilen und die S2-Auswahl nicht neu aufrollen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:108
+msgid "Source: ARC_010 (S3.1), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.1"
+msgstr "Quelle: ARC_010 (S3.1), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.1"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:115
+msgid "S3.2 shall be the sole human approval boundary for mutating setup actions, structurally separated from planning and execution. S3.2 shall bind approval to exact plan content and shall not plan or execute actions."
+msgstr "S3.2 soll die alleinige menschliche Freigabegrenze für mutierende Setup-Aktionen sein, strukturell getrennt von Planung und Ausführung. S3.2 soll die Freigabe an den exakten Planinhalt binden und darf keine Aktionen planen oder ausführen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:120
+msgid "Source: ARC_011 (S3.2), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.2"
+msgstr "Quelle: ARC_011 (S3.2), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.2"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:127
+msgid "S3.3 shall execute approved setup mutations through a controlled execution boundary requiring an approved plan, executable step, matching registered executor, and replay/idempotency protection. Execution shall not proceed on non-approved or changed content."
+msgstr "S3.3 soll freigegebene Setup-Mutationen über eine kontrollierte Ausführungsgrenze ausführen, die einen freigegebenen Plan, einen ausführbaren Schritt, einen passenden registrierten Executor und Replay-/Idempotenzschutz erfordert. Die Ausführung darf bei nicht freigegebenem oder geändertem Inhalt nicht fortfahren."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:132
+msgid "Source: ARC_012 (S3.3), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.3"
+msgstr "Quelle: ARC_012 (S3.3), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.3"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:139
+msgid "S3.3 shall classify which controlled operations are a software installation using one central, deterministic, structured criterion (never inferred from command text/argv), and shall route every operation so classified through a dedicated visible, interactive terminal execution surface, ecosystem-neutral by construction (not specific to any one package manager or toolchain) and never scattered across individual installer adapters. Non-installation controlled operations (verification, test, build, compile, configure) shall remain unaffected and continue to execute exactly as before. If no supported visible interactive terminal provider can be opened, S3.3 shall fail closed with a structured cause (``INTERACTIVE_TERMINAL_UNAVAILABLE``) rather than falling back to a hidden subprocess; there shall be no such fallback for any classified installation. S3.3 shall wait for the terminal-hosted command to actually complete before continuing the setup lifecycle, and shall propagate its real exit result: a non-zero exit remains a failure, and a cancelled or closed terminal shall never be reported as success. S3.3 shall never receive, store, pipe, cache, log, serialize, or persist a sudo password in any form; interactive authentication belongs exclusively to the terminal/sudo interaction."
+msgstr "S3.3 soll mithilfe eines einzigen zentralen, deterministischen, strukturierten Kriteriums klassifizieren, welche kontrollierten Operationen eine Software-Installation sind (niemals aus Befehlstext/argv abgeleitet), und soll jede so klassifizierte Operation über eine dedizierte sichtbare, interaktive Terminal-Ausführungsoberfläche leiten, die konstruktionsbedingt ökosystemneutral ist (nicht spezifisch für einen bestimmten Paketmanager oder eine Toolchain) und niemals über einzelne Installer-Adapter verstreut wird. Nicht-Installations-Operationen (Verifikation, Test, Build, Kompilierung, Konfiguration) bleiben unberührt und werden weiterhin genau wie zuvor ausgeführt. Kann kein unterstützter sichtbarer interaktiver Terminal-Provider geöffnet werden, soll S3.3 mit einer strukturierten Ursache (``INTERACTIVE_TERMINAL_UNAVAILABLE``) Fail-Closed gehen, statt auf einen versteckten Subprozess zurückzufallen; ein solcher Rückfall existiert für keine klassifizierte Installation. S3.3 soll auf den tatsächlichen Abschluss des im Terminal ausgeführten Befehls warten, bevor der Setup-Lebenszyklus fortgesetzt wird, und soll dessen reales Ergebnis weitergeben: Ein Exit-Code ungleich null bleibt ein Fehlschlag, und ein abgebrochenes oder geschlossenes Terminal soll niemals als Erfolg gemeldet werden. S3.3 soll ein sudo-Passwort niemals in irgendeiner Form empfangen, speichern, weiterleiten, zwischenspeichern, protokollieren, serialisieren oder persistieren; die interaktive Authentifizierung obliegt ausschließlich der Terminal-/sudo-Interaktion."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:160
+msgid "Source: ARC_REQ_025, CLAUDE-ADC-VISIBLE-TERMINAL-FOR-SOFTWARE-INSTALLATION-001"
+msgstr "Quelle: ARC_REQ_025, CLAUDE-ADC-VISIBLE-TERMINAL-FOR-SOFTWARE-INSTALLATION-001"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:167
+msgid "S3.4 shall persist execution identity and state per setup step with content-fingerprint binding. Known-success shall enable reuse; unknown or recovery state shall fail closed; changed content shall force new generation and approval. S3.4 concerns only setup-step execution identity."
+msgstr "S3.4 soll Ausführungsidentität und -zustand je Setup-Schritt mit Content-Fingerprint-Bindung persistieren. Bekannter Erfolg soll Wiederverwendung ermöglichen; unbekannter oder Wiederherstellungszustand soll Fail-Closed gehen; geänderter Inhalt soll neue Erzeugung und Freigabe erzwingen. S3.4 betrifft nur die Ausführungsidentität von Setup-Schritten."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:173
+msgid "Source: ARC_013 (S3.4), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.4"
+msgstr "Quelle: ARC_013 (S3.4), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.4"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:180
+msgid "S3.5 shall convert TOOL_UNAVAILABLE evidence into a bounded, approval-bound recovery reusing S3.1/S3.2/S3.3 authorities. Recovery shall be exactly bounded, shall not reopen engineering selection, and shall re-execute previously planned verification after completion."
+msgstr "S3.5 soll TOOL_UNAVAILABLE-Evidenz in eine begrenzte, freigabegebundene Wiederherstellung unter Wiederverwendung der Autoritäten von S3.1/S3.2/S3.3 überführen. Die Wiederherstellung soll exakt begrenzt sein, die Engineering-Auswahl nicht neu aufrollen und nach Abschluss die zuvor geplante Verifikation erneut ausführen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:186
+msgid "Source: ARC_014 (S3.5), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.5"
+msgstr "Quelle: ARC_014 (S3.5), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.5"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:189
+msgid "S4 Development & Change"
+msgstr "S4 Entwicklung & Änderung"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:196
+msgid "S4.1 shall generate structured developer changes respecting project conventions and the user's chosen technology. Before generation, relevant properties of the intended target environment that affect source compatibility, including installed tool versions or available capabilities where relevant, shall be established and supplied to the generator as context. Generated source shall be compatible with that intended environment. If compatibility cannot be reliably established, S4.1 shall not silently assume it or represent it as confirmed. Existing project conventions and the user's technology choice take precedence; ADC shall not cause a technology change solely from its own preference. This contract shall not prefer any language, toolchain, platform, or implementation. An empty development change set shall fail. S4.1 has no no-op authority."
+msgstr "S4.1 soll strukturierte Entwickleränderungen erzeugen, die Projektkonventionen und die vom Nutzer gewählte Technologie beachten. Vor der Generierung sollen relevante Eigenschaften der vorgesehenen Zielumgebung festgestellt und dem Generator als Kontext übergeben werden, wenn sie die Quellkompatibilität beeinflussen; dazu zählen gegebenenfalls installierte Werkzeugversionen oder verfügbare Fähigkeiten. Der erzeugte Source soll mit dieser vorgesehenen Umgebung kompatibel sein. Lässt sich die Kompatibilität nicht zuverlässig feststellen, darf S4.1 sie weder stillschweigend voraussetzen noch als bestätigt darstellen. Bestehende Projektkonventionen und die Technologiewahl des Nutzers haben Vorrang; ADC darf keinen Technologiewechsel allein aufgrund eigener Präferenz herbeiführen. Dieser Vertrag bevorzugt keine Sprache, Toolchain, Plattform oder Umsetzung. Ein leeres Entwicklungsänderungsset soll fehlschlagen. S4.1 hat keine No-op-Befugnis."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:200
+msgid "Source: ARC_016 (S4.1), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3C/S4.1"
+msgstr "Quelle: ARC_016 (S4.1), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3C/S4.1"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:207
+msgid "S4.2 shall generate structured test changes with an explicit no-op contract. A valid no-op requires an explicit declaration; an empty changes array alone is not a no-op."
+msgstr "S4.2 soll strukturierte Teständerungen mit einem expliziten No-Op-Vertrag erzeugen. Ein gültiger No-Op erfordert eine explizite Deklaration; ein leeres Änderungs-Array allein ist kein No-Op."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:211
+msgid "Source: ARC_017 (S4.2), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3C/S4.2"
+msgstr "Quelle: ARC_017 (S4.2), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3C/S4.2"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:218
+msgid "S4.3 shall apply structured engineering changes via a controlled mechanism onto authorized targets within defined scope, classifying actual apply attempts. S4.3 shall fail closed on partial or skipped application and prevent mutation outside the project scope."
+msgstr "S4.3 soll strukturierte Engineering Changes über einen kontrollierten Mechanismus auf autorisierte Ziele innerhalb des definierten Bereichs anwenden und tatsächliche Anwendungsversuche klassifizieren. S4.3 soll bei partieller oder übersprungener Anwendung Fail-Closed gehen und Mutation außerhalb des Projektbereichs verhindern."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:223
+msgid "Source: ARC_018 (S4.3), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3C/S4.3"
+msgstr "Quelle: ARC_018 (S4.3), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3C/S4.3"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:230
+msgid "S4.4 shall capture baseline-before and event-after change provenance with run and phase attribution, providing traceable change evidence."
+msgstr "S4.4 soll Baseline-Vorher- und Ereignis-Nachher-Änderungsprovenienz mit Lauf- und Phasenzuordnung erfassen und nachvollziehbare Änderungsevidenz bereitstellen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:233
+msgid "Source: ARC_019 (S4.4), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3C/S4.4"
+msgstr "Quelle: ARC_019 (S4.4), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3C/S4.4"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:236
+msgid "S5 Quality & Verification"
+msgstr "S5 Qualität & Verifikation"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:243
+msgid "S5.1 shall derive a structured verification plan from project requirements and the present toolchain. Generated source shall be checked with the environment intended for that source. Verification shall establish compatibility before representing it as confirmed; unknown compatibility shall remain explicit. Toolchain-specific logic shall reside exclusively in toolchain adapters."
+msgstr "S5.1 soll einen strukturierten Verifikationsplan aus Projektanforderungen und der vorhandenen Toolchain ableiten. Erzeugter Source soll mit der für ihn vorgesehenen Umgebung geprüft werden. Die Verifikation soll die Kompatibilität feststellen, bevor sie als bestätigt dargestellt wird; unbekannte Kompatibilität bleibt ausdrücklich unbekannt. Toolchain-spezifische Logik darf ausschließlich in Toolchain-Adaptern liegen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:247
+msgid "Source: ARC_021 (S5.1), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.1"
+msgstr "Quelle: ARC_021 (S5.1), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.1"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:254
+msgid "S5.2 shall execute registered controlled verification runners deterministically, preserving per-step result, status, return code, timeout, diagnostics, and runner identity."
+msgstr "S5.2 soll registrierte kontrollierte Verifikations-Runner deterministisch ausführen und dabei Ergebnis, Status, Rückgabecode, Timeout, Diagnostik und Runner-Identität je Schritt bewahren."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:258
+msgid "Source: ARC_022 (S5.2), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.2"
+msgstr "Quelle: ARC_022 (S5.2), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.2"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:265
+msgid "S5.2 shall preserve target-workspace integrity while executing a controlled verification runner. Filesystem side effects produced merely as verification side effects (build/tool caches, generated configuration, metadata, and similar incidental artifacts) shall not appear as new, modified, or removed paths in the target project. A runner reporting a successful outcome while the target project was nonetheless left with an unaccounted mutation shall not be reported as a clean verification result; S5.2 shall fail closed and attribute the violation at its own boundary rather than deferring detection to a later subsystem. Pre-existing target state unrelated to the current run shall never be treated as a violation, deleted, or otherwise altered by this check."
+msgstr "S5.2 soll die Integrität des Ziel-Arbeitsbereichs bewahren, während ein kontrollierter Verifikations-Runner ausgeführt wird. Dateisystem-Seiteneffekte, die lediglich als Verifikations-Seiteneffekte entstehen (Build-/Werkzeug-Caches, generierte Konfiguration, Metadaten und ähnliche beiläufige Artefakte), sollen nicht als neue, geänderte oder entfernte Pfade im Zielprojekt erscheinen. Ein Runner, der ein erfolgreiches Ergebnis meldet, während das Zielprojekt dennoch eine nicht erklärte Mutation aufweist, soll nicht als sauberes Verifikationsergebnis gemeldet werden; S5.2 soll Fail-Closed gehen und die Verletzung an seiner eigenen Grenze zuordnen, statt die Erkennung an ein späteres Subsystem zu delegieren. Bereits vorhandener Zielzustand, der nicht mit dem aktuellen Lauf zusammenhängt, soll durch diese Prüfung niemals als Verletzung behandelt, gelöscht oder anderweitig verändert werden."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:278
+msgid "Source: ARC_REQ_024, ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.2"
+msgstr "Quelle: ARC_REQ_024, ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.2"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:285
+msgid "S5.3 shall aggregate verification results per step with failure evidence structurally preserved. Multiple failures shall not be collapsed into misleading generic success."
+msgstr "S5.3 soll Verifikationsergebnisse je Schritt aggregieren, wobei Fehlschlag-Evidenz strukturell bewahrt wird. Mehrere Fehlschläge dürfen nicht zu irreführendem generischem Erfolg zusammengefasst werden."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:289
+msgid "Source: ARC_023 (S5.3), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.3"
+msgstr "Quelle: ARC_023 (S5.3), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.3"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:296
+msgid "S5.4 shall format already-produced verification evidence deterministically. S5.4 shall have no diagnostic authority and shall not decide acceptance/rework or rewrite failed evidence."
+msgstr "S5.4 soll bereits erzeugte Verifikationsevidenz deterministisch formatieren. S5.4 soll keine diagnostische Autorität besitzen und nicht über Akzeptanz/Nacharbeit entscheiden oder fehlgeschlagene Evidenz umschreiben."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:300
+msgid "Source: ARC_024 (S5.4), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.4"
+msgstr "Quelle: ARC_024 (S5.4), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.4"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:307
+msgid "S5.5 shall interpret diagnostic evidence. S5.5 shall never reinterpret a real deterministic test failure as success."
+msgstr "S5.5 soll diagnostische Evidenz interpretieren. S5.5 darf einen realen deterministischen Testfehlschlag niemals als Erfolg umdeuten."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:310
+msgid "Source: ARC_025 (S5.5), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.5"
+msgstr "Quelle: ARC_025 (S5.5), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.5"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:317
+msgid "S5.6 shall enforce the deterministic policy that a real verification or test failure forces rework regardless of any diagnosis interpretation."
+msgstr "S5.6 soll die deterministische Richtlinie durchsetzen, dass ein realer Verifikations- oder Testfehlschlag unabhängig von jeder Diagnoseinterpretation Nacharbeit erzwingt."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:321
+msgid "Source: ARC_026 (S5.6), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.6"
+msgstr "Quelle: ARC_026 (S5.6), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.6"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:328
+msgid "S5.7 shall orchestrate exactly one bounded controlled rework cycle triggered by the S5 verification verdict. No unbounded rework loops shall occur."
+msgstr "S5.7 soll genau einen begrenzten kontrollierten Nacharbeitszyklus orchestrieren, ausgelöst durch das S5-Verifikationsurteil. Es sollen keine unbegrenzten Nacharbeitsschleifen auftreten."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:332
+msgid "Source: ARC_027 (S5.7), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.7"
+msgstr "Quelle: ARC_027 (S5.7), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.7"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:335
+msgid "S6 Delivery & Outcome"
+msgstr "S6 Auslieferung & Ergebnis"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:342
+msgid "S6 shall transfer only technically verified and human-approved results into final state. S6 shall protect pre-existing target state, prevent silent destructive repair, and treat publish as a separate explicit action with its own approval boundary."
+msgstr "S6 soll nur technisch verifizierte und menschlich freigegebene Ergebnisse in den Endzustand überführen. S6 soll vorbestehenden Zielzustand schützen, stillschweigende destruktive Reparatur verhindern und Publish als separate, explizite Aktion mit eigener Freigabegrenze behandeln."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:347
+msgid "Source: ARC_028 (S6), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §1/S6"
+msgstr "Quelle: ARC_028 (S6), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §1/S6"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:350
+msgid "Cross-cutting"
+msgstr "Übergreifend"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:357
+msgid "Cross-subsystem boundaries shall enforce that each subsystem starts only after required upstream responsibilities are fulfilled. A single bounded rework cycle and bounded missing-toolchain recovery are the only allowed backward transitions."
+msgstr "Subsystemübergreifende Grenzen sollen erzwingen, dass jedes Subsystem erst startet, nachdem die erforderlichen vorgelagerten Verantwortlichkeiten erfüllt sind. Ein einzelner begrenzter Nacharbeitszyklus und begrenzte Wiederherstellung bei fehlender Toolchain sind die einzigen erlaubten Rückwärtsübergänge."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:362
+msgid "Source: ARC_029, ADC_Architektur_Ausfuehrliche_Beschreibung.txt §4"
+msgstr "Quelle: ARC_029, ADC_Architektur_Ausfuehrliche_Beschreibung.txt §4"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:369
+msgid "Central orchestration shall use only technology-neutral terms. Stack-specific logic shall reside in adapters and providers."
+msgstr "Die zentrale Orchestrierung soll ausschließlich technologieneutrale Begriffe verwenden. Stack-spezifische Logik soll in Adaptern und Providern liegen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:372
+msgid "Source: ARC_030, ADC_Architektur_Ausfuehrliche_Beschreibung.txt §2, §5"
+msgstr "Quelle: ARC_030, ADC_Architektur_Ausfuehrliche_Beschreibung.txt §2, §5"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:379
+msgid "Every important architectural transition shall have an explicit Producer→Artifact→Consumer chain with answerable identity, authority, provenance, and contract version per artifact."
+msgstr "Jeder wichtige architektonische Übergang soll eine explizite Producer→Artifact→Consumer-Kette mit beantwortbarer Identität, Autorität, Provenienz und Vertragsversion je Artefakt besitzen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:383
+msgid "Source: ARC_031, ADC_Architektur_Ausfuehrliche_Beschreibung.txt §8"
+msgstr "Quelle: ARC_031, ADC_Architektur_Ausfuehrliche_Beschreibung.txt §8"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:390
+msgid "The diagnostic trace across all subsystems shall not substitute for any formal decision authority. It shall not replace admissibility evaluation, human selection, approval, or verification verdicts."
+msgstr "Die diagnostische Trace über alle Subsysteme soll keine formale Entscheidungsautorität ersetzen. Sie soll Zulässigkeitsbewertung, menschliche Auswahl, Freigabe oder Verifikationsurteile nicht ersetzen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:395
+msgid "Source: ARC_032, ADC_Architektur_Ausfuehrliche_Beschreibung.txt §9"
+msgstr "Quelle: ARC_032, ADC_Architektur_Ausfuehrliche_Beschreibung.txt §9"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:402
+msgid "Before any mutating execution, the executing subsystem shall establish proof of: defined setup effect, registered executor, matching input schema, correct target scope, required approval, and verifiability. Readiness shall be modeled in distinct states and the system shall fail closed on unproven executability."
+msgstr "Vor jeder mutierenden Ausführung soll das ausführende Subsystem Folgendes nachweisen: definierten SetupEffect, registrierten Executor, passendes Eingabeschema, korrekten Zielbereich, erforderliche Freigabe und Verifizierbarkeit. Bereitschaft soll in unterschiedlichen Zuständen modelliert werden, und das System soll bei nicht nachgewiesener Ausführbarkeit Fail-Closed gehen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:408
+msgid "Source: ARC_034, ADC_Architektur_Ausfuehrliche_Beschreibung.txt §7"
+msgstr "Quelle: ARC_034, ADC_Architektur_Ausfuehrliche_Beschreibung.txt §7"
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:415
+msgid "The alternative generation and evaluation process shall use a structured multi-perspective mechanism producing cross-reviewed alternatives with traced, technically justified recommendations."
+msgstr "Der Prozess der Alternativenerzeugung und -bewertung soll einen strukturierten Mehrperspektiven-Mechanismus verwenden, der gegengeprüfte Alternativen mit nachvollziehbaren, technisch begründeten Empfehlungen erzeugt."
+
+#: ../../home/udo/AI-Dev-Center/requirements/subsystem/subsystem_requirements.rst:419
+msgid "Source: ARC_033, ADC_Architektur_Ausfuehrliche_Beschreibung.txt §6"
+msgstr "Quelle: ARC_033, ADC_Architektur_Ausfuehrliche_Beschreibung.txt §6"
+
+
+# KIA-ADC-CAPABILITY-AUTH-TERMINAL-BOUNDARY-FIX-001
+msgid "S3.3 shall enforce the execution-surface contract of ARC_REQ_009 at the final child-process boundary. A terminal emulator may additionally receive narrowly necessary desktop/session variables to open and function. The wrapped installation command shall receive exactly the controlled child environment supplied by Controlled Execution for the approved ExecutionRequest. Ambient ADC or terminal-server variables excluded by that policy shall not reappear in the command environment. Environment separation shall preserve the authorized target and cwd, argv fidelity, exactly one command launch per authorized invocation, real exit status, and the prohibition on hidden installation fallback."
+msgstr "S3.3 muss den Vertrag für Ausführungsoberflächen aus ARC_REQ_009 an der Grenze zum endgültigen Kindprozess durchsetzen. Ein Terminalemulator darf zusätzlich die eng begrenzten Desktop-/Sitzungsvariablen erhalten, die er zum Öffnen und Funktionieren benötigt. Der eingebettete Installationsbefehl muss genau die kontrollierte Kindprozessumgebung erhalten, die Controlled Execution für den genehmigten ExecutionRequest bereitstellt. Umgebungsvariablen des ADC- oder Terminalserver-Prozesses, die diese Richtlinie ausschließt, dürfen nicht erneut in der Befehlsumgebung erscheinen. Die Umgebungstrennung muss das autorisierte Ziel und cwd, unveränderte argv, genau einen Befehlsstart pro autorisiertem Aufruf, den tatsächlichen Exit-Status und das Verbot eines verdeckten Installations-Ersatzpfads bewahren."
+
+# KIA-ADC-CAPABILITY-AUTH-TERMINAL-BOUNDARY-FIX-001
+msgid "The visible-terminal path shall apply SUB_REQ_010 at the wrapped command boundary, including separation of desktop/session environment from the controlled child environment."
+msgstr "Der Pfad über das sichtbare Terminal muss SUB_REQ_010 an der Grenze zum eingebetteten Befehl anwenden, einschließlich der Trennung der Desktop-/Sitzungsumgebung von der kontrollierten Kindprozessumgebung."
+
+msgid "Each timeout shall identify attempt, contributor invocation, phase, or Council scope. Only a nonterminal attempt timeout may permit retry within remaining budgets. After terminal closure, no new actual request handover shall occur in the closed scope. Handover begins when request-specific data first leave retractable local preparation for a provider-directed transport whose onward transmission ADC can no longer reliably prevent; this includes SDK, transport, and operating-system buffers. Each supported integration shall document and expose this observable boundary. Admission, start claims, complete() entry, connection setup, or a check before a later send alone shall not establish compliance. Automatic SDK or transport retries and new transfers after connection failure shall count as separate handovers, obey closure, and consume the request budget. Continuing the transfer of an already handed-over request is not a new handover."
+msgstr "Jeder Timeout muss Versuch, Contributor-Aufruf, Phase oder Council als Bereich bezeichnen. Nur ein nichtterminaler Versuchstimeout darf eine Wiederholung innerhalb verbleibender Budgets erlauben. Nach terminalem Abschluss darf im geschlossenen Bereich keine neue tatsächliche Anfrageübergabe stattfinden. Die Übergabe beginnt, wenn auftragsspezifische Daten erstmals eine noch rückhaltbare lokale Vorbereitung in Richtung eines providergerichteten Transports verlassen, dessen Weiterübertragung ADC nicht mehr zuverlässig verhindern kann; SDK-, Transport- und Betriebssystempuffer sind eingeschlossen. Jede unterstützte Anbindung muss diese beobachtbare Grenze dokumentieren und zugänglich machen. Zulassung, Start-Claims, Eintritt in complete(), Verbindungsaufbau oder eine Prüfung vor einem späteren Versand allein weisen die Erfüllung nicht nach. Automatische SDK- oder Transportwiederholungen sowie neue Übertragungen nach Verbindungsfehlern zählen als separate Übergaben, müssen den Abschluss beachten und das Anfragebudget verbrauchen. Die fortgesetzte Übertragung einer bereits übergebenen Anfrage ist keine neue Übergabe."
+
+msgid "Acceptance: Delay work on both sides of the documented boundary and race closure with handover. No handover shall begin after closure, including buffered and automatic retries. A timeout in one scope shall not close unrelated open scopes."
+msgstr "Akzeptanz: Arbeit auf beiden Seiten der dokumentierten Grenze verzögern und Abschluss gegen Übergabe konkurrieren lassen. Nach Abschluss darf keine Übergabe beginnen, einschließlich gepufferter und automatischer Wiederholungen. Ein Timeout in einem Bereich darf unabhängige offene Bereiche nicht schließen."
+
+msgid "Source: ADC_Council_Lifecycle_Anforderungskatalog.txt CL-F01; explicit user adoption CODEX-ADC-COUNCIL-REQUIREMENTS-ADOPTION-026."
+msgstr "Quelle: ADC_Council_Lifecycle_Anforderungskatalog.txt CL-F01; ausdrückliche Benutzerfreigabe CODEX-ADC-COUNCIL-REQUIREMENTS-ADOPTION-026."
+
+msgid "The final snapshot shall preserve result identity, accepted contributions, variants, recommendation, complete/degraded status, and decision-relevant errors. Late success or failure shall not rewrite it or trigger further work in the closed scope. New late facts may be appended as identified diagnostic additions with invocation reference, event time, and receipt time, without overwriting the original completion cause. Handover and confirmed provider acceptance shall be distinct. Unknown acceptance or remote termination shall remain explicitly unknown. Local completion shall not imply termination of remote processing, transfer, or costs."
+msgstr "Der finale Snapshot muss Ergebnisidentität, akzeptierte Beiträge, Varianten, Empfehlung, Complete-/Degraded-Status und entscheidungsrelevante Fehler erhalten. Später Erfolg oder Fehler darf ihn nicht umschreiben und keine Folgearbeit im geschlossenen Bereich auslösen. Neue spätere Tatsachen dürfen als gekennzeichnete Diagnoseergänzungen mit Aufrufbezug, Ereignis- und Empfangszeit angefügt werden, ohne die ursprüngliche Abschlussursache zu überschreiben. Übergabe und bestätigte Provider-Annahme müssen unterschieden werden. Ungewisse Annahme oder entfernte Beendigung bleibt ausdrücklich ungewiss. Lokaler Abschluss bedeutet keine Beendigung entfernter Verarbeitung, Übertragung oder Kosten."
+
+msgid "Acceptance: Inject late success and failure after timeout and compare final snapshots. No accepted contribution, verdict, original error, or follow-up request shall change. Identified diagnostic additions remain permitted; an unconfirmed remote state shall never be reported as confirmed."
+msgstr "Akzeptanz: Späten Erfolg und Fehler nach Timeout zuführen und finale Snapshots vergleichen. Akzeptierte Beiträge, Urteil, ursprünglicher Fehler und Folgeanfragen dürfen sich nicht ändern. Gekennzeichnete Diagnoseergänzungen bleiben zulässig; ein unbestätigter entfernter Zustand darf nie als bestätigt gemeldet werden."
+
+msgid "Source: ADC_Council_Lifecycle_Anforderungskatalog.txt CL-F02; explicit user adoption CODEX-ADC-COUNCIL-REQUIREMENTS-ADOPTION-026."
+msgstr "Quelle: ADC_Council_Lifecycle_Anforderungskatalog.txt CL-F02; ausdrückliche Benutzerfreigabe CODEX-ADC-COUNCIL-REQUIREMENTS-ADOPTION-026."
+
+msgid "Critical diagnosis shall identify run, invocation and contributor, completion cause, degradation, handover status, and resource and storage failures. Retrieval shall be independent of callbacks. A terminal current state shall never become active again because of late, duplicated, or overtaking messages. Redundant late progress may be coalesced and counted; genuinely new information may remain in marked history. The last historical entry need not be terminal. Diagnosis shall retain the existing secret-redaction and non-authority constraints."
+msgstr "Kritische Diagnose muss Lauf, Aufruf und Contributor, Abschlussursache, Degradierung, Übergabestatus sowie Ressourcen- und Speicherfehler identifizieren. Ihr Abruf muss von Callbacks unabhängig sein. Ein terminaler aktueller Zustand darf durch verspätete, doppelte oder überholende Meldungen nicht wieder aktiv werden. Redundanter später Fortschritt darf zusammengefasst und gezählt werden; tatsächlich neue Informationen dürfen gekennzeichnet in der Historie bleiben. Der letzte historische Eintrag muss nicht terminal sein. Die bestehenden Vorgaben zu Geheimnisschutz und fehlender Entscheidungsautorität bleiben erhalten."
+
+msgid "Acceptance: Use the real diagnostic receiver and public state query with delayed, duplicated, and overtaking progress. The terminal current state and retrievable critical causes shall remain correct throughout the promised retrieval period."
+msgstr "Akzeptanz: Den realen Diagnoseempfänger und die öffentliche Zustandsabfrage mit verspätetem, doppeltem und überholendem Fortschritt verwenden. Terminaler aktueller Zustand und abrufbare kritische Ursachen müssen während der zugesagten Abruffrist korrekt bleiben."
+
+msgid "Source: ADC_Council_Lifecycle_Anforderungskatalog.txt CL-F03; explicit user adoption CODEX-ADC-COUNCIL-REQUIREMENTS-ADOPTION-026."
+msgstr "Quelle: ADC_Council_Lifecycle_Anforderungskatalog.txt CL-F03; ausdrückliche Benutzerfreigabe CODEX-ADC-COUNCIL-REQUIREMENTS-ADOPTION-026."
+
+msgid "Functional completion, durable-storage state, and notification state shall be separately observable. Durability shall require confirmed persistence, not merely a local write buffer. Before admission, ADC shall reserve capacity for structurally bounded critical mandatory data, including a bounded failure record. Reservation shall not assume exact prediction of later diagnostic size. Unexpected overflow shall use a visible size/resource failure path retaining available mandatory facts and identifying what could not be retained; critical information shall not be silently truncated and complete auditability shall not be falsely claimed. No further provider handover shall begin once mandatory recording capacity cannot be maintained. Blocked or failed storage shall not extend the public deadline: ADC shall return the functional result with explicitly unconfirmed durability and guarantee bounded volatile retrieval while the service remains alive. Late confirmed persistence may update durability, not the functional snapshot. Restart retrieval shall be promised only for confirmed persistence. Exhausted storage, retention, or volatile retrieval capacity shall reject new admissions before provider handover; existing retrieval or retention promises shall not be silently shortened. Service-held snapshots, references, copies, pending writes, and failure records shall all count against storage limits."
+msgstr "Fachlicher Abschluss, dauerhafter Sicherungszustand und Benachrichtigungszustand müssen getrennt beobachtbar sein. Dauerhafte Sicherung benötigt bestätigte Persistenz statt bloß eines lokalen Schreibpuffers. Vor Aufnahme muss ADC Kapazität für strukturell begrenzte kritische Pflichtdaten einschließlich eines begrenzten Fehlerdatensatzes reservieren. Die Reservierung darf keine exakte Vorhersage der späteren Diagnosegröße voraussetzen. Eine unvorhergesehene Überschreitung muss einen sichtbaren Größen-/Ressourcenfehlerpfad nutzen, verfügbare Pflichtinformationen erhalten und nicht erhaltene Informationen benennen; kritische Informationen dürfen nicht still abgeschnitten und vollständige Nachvollziehbarkeit nicht fälschlich behauptet werden. Sobald notwendige Aufzeichnungskapazität nicht mehr gesichert ist, darf keine weitere Providerübergabe beginnen. Blockierte oder fehlgeschlagene Speicherung darf die öffentliche Frist nicht verlängern: ADC gibt das fachliche Ergebnis mit ausdrücklich unbestätigter Sicherung zurück und gewährleistet begrenzten flüchtigen Abruf während der Dienstlaufzeit. Spätere bestätigte Persistenz darf den Sicherungszustand, nicht den fachlichen Snapshot ändern. Wiederabruf nach Neustart wird nur bei bestätigter Persistenz zugesagt. Erschöpfte Speicher-, Aufbewahrungs- oder flüchtige Abrufkapazität muss neue Aufnahmen vor Providerübergabe ablehnen; bestehende Abruf- oder Aufbewahrungszusagen dürfen nicht still verkürzt werden. Dienstseitig gehaltene Snapshots, Referenzen, Kopien, ausstehende Schreibvorgänge und Fehlerdatensätze zählen vollständig gegen die Speichergrenzen."
+
+msgid "Acceptance: Block writes, inject storage errors, exhaust reservations, and exceed the expected diagnostic size. Completion shall remain bounded with truthful separate states, a visible overflow record, no silent loss claim, and bounded memory. Protected prior data shall remain available; unconfirmed data shall carry no restart guarantee."
+msgstr "Akzeptanz: Schreibvorgänge blockieren, Speicherfehler zuführen, Reservierungen erschöpfen und erwartete Diagnosegrößen überschreiten. Abschluss bleibt begrenzt mit wahrheitsgemäßen getrennten Zuständen, sichtbarem Überschreitungsdatensatz, keiner verschwiegenen Verlustbehauptung und begrenztem Arbeitsspeicher. Geschützte ältere Daten bleiben verfügbar; unbestätigte Daten erhalten keine Neustartgarantie."
+
+msgid "Source: ADC_Council_Lifecycle_Anforderungskatalog.txt CL-F04; explicit user adoption CODEX-ADC-COUNCIL-REQUIREMENTS-ADOPTION-026."
+msgstr "Quelle: ADC_Council_Lifecycle_Anforderungskatalog.txt CL-F04; ausdrückliche Benutzerfreigabe CODEX-ADC-COUNCIL-REQUIREMENTS-ADOPTION-026."
+
+msgid "Callbacks shall be best effort and shall neither determine provider success nor extend public completion. Callback execution shall not overlap within one subscription. Progress may be coalesced; critical completion data shall remain independently retrievable. Omitted, failed, and still-unconfirmed deliveries shall be separately counted. Queue admission shall not be reported as delivery. Blocked prior deliveries shall continue to consume delivery capacity."
+msgstr "Callbacks sind Best Effort und dürfen weder Providererfolg bestimmen noch den öffentlichen Abschluss verlängern. Callback-Ausführungen dürfen sich innerhalb eines Abonnements nicht überlappen. Fortschritt darf zusammengefasst werden; kritische Abschlussdaten müssen unabhängig abrufbar bleiben. Ausgelassene, fehlgeschlagene und noch unbestätigte Zustellungen sind getrennt zu zählen. Warteschlangenaufnahme darf nicht als Zustellung gemeldet werden. Frühere blockierte Zustellungen verbrauchen weiterhin Zustellkapazität."
+
+msgid "Acceptance: Permanently block each notification type and saturate delivery capacity. Functional completion and its deadline shall remain unchanged, critical diagnosis retrievable, delivery bounds respected, and delivery counters truthful."
+msgstr "Akzeptanz: Jeden Benachrichtigungstyp dauerhaft blockieren und Zustellkapazität erschöpfen. Fachlicher Abschluss und seine Frist bleiben unverändert, kritische Diagnose abrufbar, Zustellgrenzen eingehalten und Zustellzähler wahrheitsgemäß."
+
+msgid "Source: ADC_Council_Lifecycle_Anforderungskatalog.txt CL-F05; explicit user adoption CODEX-ADC-COUNCIL-REQUIREMENTS-ADOPTION-026."
+msgstr "Quelle: ADC_Council_Lifecycle_Anforderungskatalog.txt CL-F05; ausdrückliche Benutzerfreigabe CODEX-ADC-COUNCIL-REQUIREMENTS-ADOPTION-026."
+
+msgid "Service-wide capacity shall be configurable independently of contributor count. Supported concurrent invocations shall isolate identity, results, and invocation budgets. Active, waiting, and quarantined work, notifications, and retained completion data shall count against finite resource limits. Overload shall produce a distinguishable resource failure. A missing contribution may be classified as degradation only when functional continuation is admissible. An overload rejection shall start no provider work and shall not itself permanently block healthy later invocations. Reducing previously supported parallelism requires a separate product decision; this adoption imposes no single-Council limit."
+msgstr "Dienstweite Kapazität ist unabhängig von der Contributor-Zahl konfigurierbar. Unterstützte konkurrierende Aufrufe müssen Identität, Ergebnisse und aufrufbezogene Budgets isolieren. Aktive, wartende und quarantänisierte Arbeit, Benachrichtigungen und zurückgehaltene Abschlussdaten zählen gegen endliche Ressourcengrenzen. Überlast muss einen unterscheidbaren Ressourcenfehler erzeugen. Eine fehlende Contribution darf nur bei fachlich zulässiger Fortsetzung als Degradierung eingeordnet werden. Eine Überlastablehnung startet keine Providerarbeit und darf selbst gesunde spätere Aufrufe nicht dauerhaft blockieren. Die Einschränkung bisher unterstützter Parallelität benötigt eine gesonderte Produktentscheidung; diese Freigabe setzt keine Ein-Council-Grenze."
+
+msgid "Acceptance: Run concurrent and repeated invocations under permanent blockage. No identities, results, or budgets shall mix and no resource limit shall be exceeded. An admission rejection shall cause zero provider handovers. A healthy new invocation shall work after actual resource release."
+msgstr "Akzeptanz: Konkurrierende und wiederholte Aufrufe unter Dauerblockade prüfen. Identitäten, Ergebnisse und Budgets dürfen sich nicht vermischen, keine Ressourcengrenze darf überschritten werden. Aufnahmeablehnung verursacht null Providerübergaben. Ein gesunder neuer Aufruf funktioniert nach tatsächlicher Ressourcenfreigabe."
+
+msgid "Source: ADC_Council_Lifecycle_Anforderungskatalog.txt CL-F06; explicit user adoption CODEX-ADC-COUNCIL-REQUIREMENTS-ADOPTION-026."
+msgstr "Quelle: ADC_Council_Lifecycle_Anforderungskatalog.txt CL-F06; ausdrückliche Benutzerfreigabe CODEX-ADC-COUNCIL-REQUIREMENTS-ADOPTION-026."
+
+msgid "A finite public deadline shall begin at entry to the public Council operation before validation and admission and include preparation, all phases, retries, repair, and finalization. Retries shall not reset subordinate deadlines. Supported operations shall declare their finite time and resource profile before admission; concrete values require separate profile approval. No work may treat measurement tolerance as additional execution budget."
+msgstr "Eine endliche öffentliche Frist beginnt beim Eintritt in die öffentliche Council-Operation vor Validierung und Aufnahme und umfasst Vorbereitung, sämtliche Phasen, Wiederholungen, Reparatur und Abschlussbehandlung. Wiederholungen dürfen Unterfristen nicht zurücksetzen. Unterstützte Operationen müssen ihr endliches Zeit- und Ressourcenprofil vor Aufnahme deklarieren; konkrete Werte benötigen eine gesonderte Profilfreigabe. Messtoleranz darf nicht als zusätzliches Arbeitsbudget genutzt werden."
+
+msgid "Acceptance: Include pre-provider and persistence delays in elapsed time. An outcome completed after its applicable deadline shall not be accepted because the coordinator runs late. A timely outcome shall not fail solely because notification is late. Hanging providers and receivers shall not cause an unbounded public return."
+msgstr "Akzeptanz: Verzögerungen vor Providerstart und bei Persistenz in die Laufzeit einbeziehen. Ein nach seiner maßgeblichen Frist abgeschlossenes Ergebnis darf nicht wegen verspäteter Koordinator-Ausführung akzeptiert werden. Ein rechtzeitiges Ergebnis darf nicht allein an später Benachrichtigung scheitern. Hängende Provider und Empfänger dürfen keinen unbegrenzten öffentlichen Abschluss verursachen."
+
+msgid "Source: ADC_Council_Lifecycle_Anforderungskatalog.txt CL-F07; explicit user adoption CODEX-ADC-COUNCIL-REQUIREMENTS-ADOPTION-026."
+msgstr "Quelle: ADC_Council_Lifecycle_Anforderungskatalog.txt CL-F07; ausdrückliche Benutzerfreigabe CODEX-ADC-COUNCIL-REQUIREMENTS-ADOPTION-026."
+
+msgid "Capacity-bounded quarantine is permitted without a guaranteed individual termination deadline. Actually terminated work shall be distinguished from still-running isolated work. Quarantined work shall fully consume its resource limits until termination is confirmed; deletion from bookkeeping shall not release capacity. Council work shall not indefinitely prevent public completion, service shutdown, or exit of the owning process. These outcomes shall not imply termination of remote processing or separately continuing local work. Uncertain remote requests shall not be automatically resubmitted after restart."
+msgstr "Kapazitätsbegrenzte Quarantäne ist ohne garantierte individuelle Beendigungsfrist zulässig. Tatsächlich beendete Arbeit muss von weiterhin laufender isolierter Arbeit unterschieden werden. Quarantänisierte Arbeit verbraucht ihre Ressourcengrenzen vollständig bis zur bestätigten Beendigung; Entfernen aus der Buchhaltung gibt keine Kapazität frei. Council-Arbeit darf öffentlichen Abschluss, Dienst-Shutdown und Ende des besitzenden Prozesses nicht unbegrenzt verhindern. Diese Ergebnisse bedeuten keine Beendigung entfernter Verarbeitung oder gesondert weiterlaufender lokaler Arbeit. Ungewisse entfernte Anfragen dürfen nach Neustart nicht automatisch erneut gesendet werden."
+
+msgid "Acceptance: Keep a provider or receiver permanently blocked: it shall remain counted and may exhaust capacity. An isolated owner process shall exit within its separately approved shutdown bound. Still-running work shall never be recorded as terminated, and restart shall cause no automatic resubmission."
+msgstr "Akzeptanz: Provider oder Empfänger dauerhaft blockieren: Die Arbeit bleibt bilanziert und darf Kapazität erschöpfen. Ein isolierter Besitzerprozess endet innerhalb seiner gesondert freigegebenen Shutdown-Grenze. Weiterlaufende Arbeit darf nie als beendet verbucht werden; Neustart verursacht keine automatische erneute Übermittlung."
+
+msgid "Source: ADC_Council_Lifecycle_Anforderungskatalog.txt CL-F08; explicit user adoption CODEX-ADC-COUNCIL-REQUIREMENTS-ADOPTION-026."
+msgstr "Quelle: ADC_Council_Lifecycle_Anforderungskatalog.txt CL-F08; ausdrückliche Benutzerfreigabe CODEX-ADC-COUNCIL-REQUIREMENTS-ADOPTION-026."
+
+msgid "S4.1 shall generate structured developer changes respecting project conventions and the user's chosen technology. An empty development change set shall fail. S4.1 has no no-op authority."
+msgstr "S4.1 soll strukturierte Entwickleränderungen erzeugen, die Projektkonventionen und die vom Nutzer gewählte Technologie beachten. Ein leeres Entwicklungsänderungsset soll fehlschlagen. S4.1 hat keine No-op-Befugnis."
+
+msgid "Before generating source, S4.1 shall establish relevant properties of the intended target environment, including installed tool versions or available capabilities where they affect compatibility, and provide them as generator context. Generated source shall be compatible with that environment. If compatibility cannot be reliably established, it shall remain explicitly unknown and shall not be represented as confirmed. Project conventions and the user's technology choice take precedence; ADC shall not change technology solely from its own preference. This obligation shall not prefer a language, toolchain, platform, or implementation."
+msgstr "Vor der Quellgenerierung soll S4.1 relevante Eigenschaften der vorgesehenen Zielumgebung feststellen, einschließlich installierter Werkzeugversionen oder verfügbarer Fähigkeiten, soweit sie die Kompatibilität beeinflussen, und sie als Generatorkontext bereitstellen. Der erzeugte Source muss mit dieser Umgebung kompatibel sein. Kann die Kompatibilität nicht zuverlässig festgestellt werden, muss sie ausdrücklich unbekannt bleiben und darf nicht als bestätigt dargestellt werden. Projektkonventionen und die Technologiewahl des Nutzers haben Vorrang; ADC darf die Technologie nicht allein aufgrund eigener Präferenz ändern. Diese Pflicht bevorzugt keine Sprache, Toolchain, Plattform oder Umsetzung."
+
+msgid "Source: ARC_REQ_027, ZIEL_003, ZIEL_010"
+msgstr "Quelle: ARC_REQ_027, ZIEL_003, ZIEL_010"
+
+msgid "S5.1 shall derive a structured verification plan from project requirements and the present toolchain. Toolchain-specific logic shall reside exclusively in toolchain adapters."
+msgstr "S5.1 soll einen strukturierten Verifikationsplan aus Projektanforderungen und der vorhandenen Toolchain ableiten. Toolchain-spezifische Logik darf ausschließlich in Toolchain-Adaptern liegen."
+
+msgid "S5 shall bind verification execution for generated source to the same intended target environment established before generation. A host or default environment that differs from the intended target shall not be used as evidence of target compatibility. If the intended target cannot be reliably identified or used, compatibility shall remain unconfirmed."
+msgstr "S5 muss die Verifikationsausführung für erzeugten Source an dieselbe vor der Generierung festgestellte Zielumgebung binden. Ein Host oder eine Standardumgebung, die vom vorgesehenen Ziel abweicht, darf nicht als Evidenz für Zielkompatibilität verwendet werden. Kann das vorgesehene Ziel nicht zuverlässig identifiziert oder genutzt werden, bleibt die Kompatibilität unbestätigt."
+
+msgid "Source: ARC_REQ_028, SYS_REQ_032"
+msgstr "Quelle: ARC_REQ_028, SYS_REQ_032"

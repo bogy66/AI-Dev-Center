@@ -1,0 +1,85 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 
+# This file is distributed under the same license as the AI-Dev-Center Requirements package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: AI-Dev-Center Requirements \n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-19 08:28+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/overview.rst:2
+msgid "ADC Engineering Dashboard"
+msgstr "ADC Engineering-Dashboard"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/overview.rst:8
+msgid "Change History"
+msgstr "Änderung History"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/overview.rst:15
+msgid "Requirement Implementation Status"
+msgstr "Implementierungsstatus der Anforderungen"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/overview.rst:11
+msgid ":red:`RED` — Not implemented  |  :yellow:`YELLOW` — Implemented, verification NIO  |  :green:`GREEN` — Implemented and verified"
+msgstr ":red:`ROT` — Nicht implementiert  |  :yellow:`GELB` — Implementiert, Verifikation NIO  |  :green:`GRÜN` — Implementiert und verifiziert"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/overview.rst:13
+msgid "See :doc:`requirement_status` for the full breakdown."
+msgstr "Siehe :doc:`requirement_status` für die vollständige Aufschlüsselung."
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/overview.rst
+msgid ":doc:`View changes by version <change_history>`"
+msgstr ":doc:`Änderungen nach Versionsstand anzeigen <change_history>`"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/overview.rst:16
+msgid "Requirement implementation summary"
+msgstr "Zusammenfassung des Anforderungsimplementierungsstatus"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/overview.rst:18
+msgid "Derived counts across real (non-pilot) System, Architecture-derived, Subsystem, and Interface Requirements — computed by the same central status model used on every Requirement card and on the :doc:`requirement_status` page."
+msgstr "Abgeleitete Zählungen über echte (nicht-Pilot-) System-, Architektur-abgeleitete, Subsystem- und Schnittstellenanforderungen — berechnet vom selben zentralen Statusmodell, das auf jeder Anforderungskarte und auf der Seite :doc:`requirement_status` verwendet wird."
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/overview.rst:27
+msgid "Engineering chain"
+msgstr "Engineering-Kette"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/overview.rst:29
+msgid "**Zielbild → System Requirements → Architecture → Derived Requirements → Implementation → Tests → Evidence**"
+msgstr "**Zielbild → Systemanforderungen → Architektur → Abgeleitete Anforderungen → Implementierung → Tests → Evidenz**"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/overview.rst:31
+msgid "The Zielbild TXT remains the normative human-readable source. The pages below provide traceability views over the Sphinx-Needs representation."
+msgstr "Die Zielbild-TXT bleibt die normative, menschenlesbare Quelle. Die folgenden Seiten bieten Nachverfolgbarkeitsansichten über die Sphinx-Needs-Repräsentation."
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/overview.rst:35
+msgid "Real ADC content"
+msgstr "Echter ADC-Inhalt"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/overview.rst:38
+msgid "Zielbild objects"
+msgstr "Zielbild-Objekte"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/overview.rst:46
+msgid "System Requirements"
+msgstr "Systemanforderungen"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/overview.rst:54
+msgid "Architecture Decisions"
+msgstr "Architekturentscheidungen"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/overview.rst:62
+msgid "Derived Requirements"
+msgstr "Abgeleitete Anforderungen"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/overview.rst:70
+msgid "Implementation / Verification"
+msgstr "Implementierung / Verifikation"

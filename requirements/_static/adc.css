@@ -1,0 +1,208 @@
+/* ADC Sphinx-Needs UI adjustments */
+
+.content {
+  max-width: 100%;
+}
+
+/* OC-ADC-REQUIREMENTS-BILINGUAL-EN-DE-001: visible EN/Deutsch switch,
+   present on every page (see _templates/page.html). */
+.adc-language-switch {
+  text-align: right;
+  font-size: 0.85rem;
+  margin-bottom: 0.75rem;
+}
+
+.adc-language-switch a {
+  border: 1px solid var(--color-foreground-border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  text-decoration: none;
+}
+
+article {
+  max-width: 100%;
+}
+
+.needflow {
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+
+.needflow img,
+.needflow svg,
+.graphviz img,
+.graphviz svg {
+  width: 100%;
+  max-width: none;
+  height: auto;
+}
+
+table.need,
+table.needs,
+.dataTable {
+  width: 100% !important;
+}
+
+table {
+  display: table;
+  width: 100%;
+}
+
+div.table-wrapper {
+  overflow-x: auto;
+}
+
+.admonition.note {
+  margin-bottom: 1.5rem;
+}
+
+h1, h2 {
+  scroll-margin-top: 5rem;
+}
+
+/* Traffic-light requirement status styling */
+
+.adc-status-red table tbody tr {
+  background-color: #fff0f0 !important;
+}
+.adc-status-red table tbody tr:nth-child(even) {
+  background-color: #ffe0e0 !important;
+}
+
+.adc-status-yellow table tbody tr {
+  background-color: #fffff0 !important;
+}
+.adc-status-yellow table tbody tr:nth-child(even) {
+  background-color: #ffffd0 !important;
+}
+
+.adc-status-green table tbody tr {
+  background-color: #f0fff0 !important;
+}
+.adc-status-green table tbody tr:nth-child(even) {
+  background-color: #d0ffd0 !important;
+}
+
+/* Dark theme support */
+@media (prefers-color-scheme: dark) {
+  .adc-status-red table tbody tr {
+    background-color: #3d2020 !important;
+  }
+  .adc-status-red table tbody tr:nth-child(even) {
+    background-color: #4d2828 !important;
+  }
+
+  .adc-status-yellow table tbody tr {
+    background-color: #3d3d20 !important;
+  }
+  .adc-status-yellow table tbody tr:nth-child(even) {
+    background-color: #4d4d28 !important;
+  }
+
+  .adc-status-green table tbody tr {
+    background-color: #203d20 !important;
+  }
+  .adc-status-green table tbody tr:nth-child(even) {
+    background-color: #284d28 !important;
+  }
+}
+
+/* Inline role colors */
+.red {
+  color: #d00;
+  font-weight: bold;
+}
+.yellow {
+  color: #b8860b;
+  font-weight: bold;
+}
+.green {
+  color: #0a0;
+  font-weight: bold;
+}
+
+@media (prefers-color-scheme: dark) {
+  .red {
+    color: #ff6b6b;
+  }
+  .yellow {
+    color: #ffd700;
+  }
+  .green {
+    color: #6bff6b;
+  }
+}
+
+/* Requirement card traffic light: the icon + state text come from the
+   derived implementation_state field itself (see status_model.py /
+   conf.py needs_fields predicates) — no color-only signal, the state name
+   is always present as text next to the icon, readable in both themes
+   since it inherits the theme's own text color rather than a fixed one. */
+.needs_implementation_state {
+  font-weight: 600;
+}
+
+/* Dashboard implementation summary (dashboard/overview.rst) */
+.adc-status-summary {
+  list-style: none;
+  margin: 0.5rem 0 1.5rem 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 2rem;
+}
+
+.adc-summary-item {
+  font-size: 1.05rem;
+}
+
+/* CLAUDE-ADC-REQUIREMENTS-DASHBOARD-CHANGE-HISTORY-001: compact
+   "latest model change" line, kept deliberately small -- a single line
+   today, extensible later to a short <ul> of individual entries inside
+   the same wrapper without further CSS changes. */
+.adc-change-history-block {
+  margin: 0.25rem 0 1rem 0;
+  font-size: 0.95rem;
+}
+
+.adc-change-history-block p {
+  margin: 0;
+}
+
+.adc-change-history-details {
+  max-width: 72rem;
+}
+
+.adc-history-intro {
+  margin-bottom: 1.25rem;
+}
+
+.adc-history-entry {
+  border: 1px solid var(--color-foreground-border);
+  border-radius: 0.4rem;
+  margin: 0.65rem 0;
+  padding: 0.65rem 0.85rem;
+}
+
+.adc-history-entry > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.adc-history-entry > p {
+  margin: 0.65rem 0;
+  overflow-wrap: anywhere;
+}
+
+.adc-history-change-group ul {
+  margin-top: 0.25rem;
+}
+
+.adc-history-category {
+  margin: 0.65rem 0;
+}
+
+.adc-history-removed,
+.adc-history-empty {
+  color: var(--color-foreground-muted);
+}

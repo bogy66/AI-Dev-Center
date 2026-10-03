@@ -1,0 +1,12 @@
+# Change History page title translation.
+msgid ""
+msgstr ""
+"Project-Id-Version: AI-Dev-Center Requirements\n"
+"Language: de\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/change_history.rst:1
+msgid "Requirements Change History"
+msgstr "Änderungsverlauf der Anforderungen"

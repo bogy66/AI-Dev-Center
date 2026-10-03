@@ -1,0 +1,53 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 
+# This file is distributed under the same license as the AI-Dev-Center Requirements package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: AI-Dev-Center Requirements \n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-19 08:28+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: ../../home/udo/AI-Dev-Center/requirements/index.rst:15
+msgid "Overview"
+msgstr "Übersicht"
+
+#: ../../home/udo/AI-Dev-Center/requirements/index.rst:25
+msgid "Engineering Layers"
+msgstr "Engineering-Ebenen"
+
+#: ../../home/udo/AI-Dev-Center/requirements/index.rst:39
+msgid "Technical Pilot"
+msgstr "Technischer Pilot"
+
+#: ../../home/udo/AI-Dev-Center/requirements/index.rst:2
+msgid "AI-Dev-Center Requirements"
+msgstr "AI-Dev-Center Anforderungen"
+
+#: ../../home/udo/AI-Dev-Center/requirements/index.rst:5
+msgid "ADC Requirements Engineering"
+msgstr "ADC Requirements Engineering"
+
+#: ../../home/udo/AI-Dev-Center/requirements/index.rst:7
+msgid "This site is the traceability and review view for the AI-Dev-Center engineering chain."
+msgstr "Diese Seite ist die Nachverfolgbarkeits- und Prüfansicht für die AI-Dev-Center Engineering-Kette."
+
+#: ../../home/udo/AI-Dev-Center/requirements/index.rst:9
+msgid "The normative Zielbild remains in:"
+msgstr "Das normative Zielbild bleibt in:"
+
+#: ../../home/udo/AI-Dev-Center/requirements/index.rst:11
+msgid "``ADC_Zielbild_Ausfuehrliche_Beschreibung.txt``"
+msgstr "``ADC_Zielbild_Ausfuehrliche_Beschreibung.txt``"
+
+#: ../../home/udo/AI-Dev-Center/requirements/index.rst:13
+msgid "The Sphinx-Needs pages provide a linked traceability representation and engineering views."
+msgstr "Die Sphinx-Needs-Seiten bieten eine verknüpfte Nachverfolgbarkeitsrepräsentation und Engineering-Ansichten."

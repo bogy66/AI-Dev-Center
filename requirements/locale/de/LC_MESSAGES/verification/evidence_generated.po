@@ -1,0 +1,59 @@
+# Translations template for PROJECT.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the PROJECT project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-09-20 12:07+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../adc-kib-rse-diagnostic-trace-fix-001/requirements/verification/evidence_generated.rst:2
+msgid "ADC Generated Evidence"
+msgstr "ADC Generierte Evidenz"
+
+#: ../adc-kib-rse-diagnostic-trace-fix-001/requirements/verification/evidence_generated.rst:4
+msgid "Machine-generated from requirements/_evidence/runs/ by requirements/evidence/ingest.py. Never hand-edited -- re-running ingest regenerates this file from the complete run history in the store. Historical, hand-authored Evidence from the preceding mapping task remains in verification/evidence.rst, untouched by this file."
+msgstr "Maschinell generiert aus requirements/_evidence/runs/ durch requirements/evidence/ingest.py. Niemals von Hand bearbeiten -- ein erneuter Ingest-Lauf generiert diese Datei vollständig neu aus der kompletten Laufhistorie im Store. Historische, von Hand erstellte Evidenz aus der vorangegangenen Zuordnungsaufgabe bleibt unverändert in verification/evidence.rst."
+
+#: ../adc-kib-rse-diagnostic-trace-fix-001/requirements/verification/evidence_generated.rst:11
+msgid "Producer: ADC. Repository: commit 072aab394d2ee987f29c2b5c6c3b2936eea59ae5 (dirty worktree). Ingested from ``requirements/_evidence/runs/ADC-RUN-20260918T152513Z-a5e0638b/``."
+msgstr ""
+
+#: ../adc-kib-rse-diagnostic-trace-fix-001/requirements/verification/evidence_generated.rst:18
+msgid "Producer: ADC. Repository: commit dacf8a0f09ada37b0d9af84d32533e4b1843a079 (dirty worktree). Ingested from ``requirements/_evidence/runs/ADC-RUN-20260920T061419Z-9292ca74/``."
+msgstr ""
+
+#: ../adc-kib-rse-diagnostic-trace-fix-001/requirements/verification/evidence_generated.rst:25
+msgid "Producer: ADC. Repository: commit dacf8a0f09ada37b0d9af84d32533e4b1843a079 (dirty worktree). Ingested from ``requirements/_evidence/runs/ADC-RUN-20260920T063856Z-b1d8bf0d/``."
+msgstr ""
+
+#: ../adc-kib-rse-diagnostic-trace-fix-001/requirements/verification/evidence_generated.rst:32
+msgid "Producer: ADC. Repository: commit dacf8a0f09ada37b0d9af84d32533e4b1843a079 (dirty worktree). Ingested from ``requirements/_evidence/runs/ADC-RUN-20260920T063907Z-4607b87a/``."
+msgstr ""
+
+#: ../adc-kib-rse-diagnostic-trace-fix-001/requirements/verification/evidence_generated.rst:39
+msgid "Producer: ADC. Repository: commit dacf8a0f09ada37b0d9af84d32533e4b1843a079 (dirty worktree). Ingested from ``requirements/_evidence/runs/ADC-RUN-20260920T092351Z-60257467/``."
+msgstr ""
+
+#: ../adc-kib-rse-diagnostic-trace-fix-001/requirements/verification/evidence_generated.rst:46
+msgid "Producer: ADC. Repository: commit dacf8a0f09ada37b0d9af84d32533e4b1843a079 (dirty worktree). Ingested from ``requirements/_evidence/runs/ADC-RUN-20260920T095007Z-f145c8af/``."
+msgstr ""
+
+#: ../adc-kib-rse-diagnostic-trace-fix-001/requirements/verification/evidence_generated.rst:53
+msgid "This Evidence records a genuinely observed failure. It does not assert success and shall never be read as one."
+msgstr "Diese Evidenz dokumentiert einen tatsächlich beobachteten Fehlschlag. Sie behauptet keinen Erfolg und darf niemals als solcher gelesen werden."
+
+#: ../adc-kib-rse-diagnostic-trace-fix-001/requirements/verification/evidence_generated.rst:55
+msgid "Producer: ADC. Repository: commit dacf8a0f09ada37b0d9af84d32533e4b1843a079 (dirty worktree). Ingested from ``requirements/_evidence/runs/ADC-RUN-20260920T070632Z-b65f005d/``."
+msgstr ""
+

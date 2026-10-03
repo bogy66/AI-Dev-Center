@@ -1,0 +1,73 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 
+# This file is distributed under the same license as the AI-Dev-Center Requirements package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: AI-Dev-Center Requirements \n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-19 08:28+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/coverage.rst:2
+msgid "ADC Coverage"
+msgstr "ADC Abdeckung"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/coverage.rst:5
+msgid "Coverage gaps"
+msgstr "Abdeckungslücken"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/coverage.rst:7
+msgid "The following tables are intended as engineering review views. Empty tables mean no matching gap currently exists in the loaded real ADC Needs."
+msgstr "Die folgenden Tabellen sind als Engineering-Review-Ansichten gedacht. Leere Tabellen bedeuten, dass aktuell keine passende Lücke in den geladenen echten ADC-Needs besteht."
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/coverage.rst:11
+msgid "Zielbild without System Requirement coverage"
+msgstr "Zielbild ohne Systemanforderungs-Abdeckung"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/coverage.rst:19
+msgid "System Requirements without Architecture coverage"
+msgstr "Systemanforderungen ohne Architektur-Abdeckung"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/coverage.rst:27
+msgid "Derived requirements without origin"
+msgstr "Abgeleitete Anforderungen ohne Ursprung"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/coverage.rst:35
+msgid "Requirements without implementation"
+msgstr "Anforderungen ohne Implementierung"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/coverage.rst:37
+msgid "Architecture-, Subsystem-, and Interface-level Requirements only. By design, System Requirements never carry a direct implementation link — they aggregate their status through the Architecture they are satisfied by, so listing them here would flag every System Requirement unconditionally rather than a real gap."
+msgstr "Nur Anforderungen auf Architektur-, Subsystem- und Schnittstellenebene. Systemanforderungen tragen konstruktionsbedingt niemals eine direkte Implementierungsverknüpfung — sie aggregieren ihren Status über die Architektur, die sie erfüllt; sie hier aufzulisten würde jede Systemanforderung bedingungslos markieren statt einer echten Lücke."
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/coverage.rst:49
+msgid "Requirements without verification"
+msgstr "Anforderungen ohne Verifikation"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/coverage.rst:51
+msgid "Architecture-, Subsystem-, and Interface-level Requirements only, for the same aggregation reason as above."
+msgstr "Nur Anforderungen auf Architektur-, Subsystem- und Schnittstellenebene, aus demselben Aggregationsgrund wie oben."
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/coverage.rst:60
+msgid "Implemented but not verified (implementation gap into test)"
+msgstr "Implementiert, aber nicht verifiziert (Implementierungslücke zum Test)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/coverage.rst:62
+msgid "Requirements that have an Implementation object but no Test verifying them — the YELLOW-producing case."
+msgstr "Anforderungen mit einem Implementierungsobjekt, aber ohne verifizierenden Test — der Fall, der GELB erzeugt."
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/coverage.rst:71
+msgid "Tests without Evidence"
+msgstr "Tests ohne Evidenz"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/coverage.rst:79
+msgid "Tests with failed or unproven verification (NIO)"
+msgstr "Tests mit fehlgeschlagener oder nicht nachgewiesener Verifikation (NIO)"

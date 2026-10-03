@@ -1,0 +1,52 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 
+# This file is distributed under the same license as the AI-Dev-Center Requirements package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: AI-Dev-Center Requirements \n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-19 08:28+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: ../../home/udo/AI-Dev-Center/requirements/verification/evidence.rst:2
+msgid "ADC Verification Evidence"
+msgstr "ADC Verifikationsevidenz"
+
+#: ../../home/udo/AI-Dev-Center/requirements/verification/evidence.rst:4
+msgid "Evidence captured from actual, freshly-observed test execution during this mapping task — never inferred from a test's mere existence or from historical statements. Each item records the exact command run, the observed result, and enough provenance for a future reviewer to reproduce it."
+msgstr "Evidenz, erfasst aus tatsächlicher, frisch beobachteter Testausführung während dieser Zuordnungsaufgabe — niemals aus der bloßen Existenz eines Tests oder aus historischen Aussagen abgeleitet. Jeder Eintrag erfasst den exakt ausgeführten Befehl, das beobachtete Ergebnis und ausreichend Provenienz, damit ein künftiger Prüfer es reproduzieren kann."
+
+#: ../../home/udo/AI-Dev-Center/requirements/verification/evidence.rst:10
+msgid "Repository identity for all evidence below: HEAD commit ``072aab394d2ee987f29c2b5c6c3b2936eea59ae5``. Execution context: local deterministic pytest run via ``venv/bin/python -m pytest``, no live/paid provider calls, no Real-System-E2E."
+msgstr "Repository-Identität für alle folgenden Evidenzen: HEAD-Commit ``072aab394d2ee987f29c2b5c6c3b2936eea59ae5``. Ausführungskontext: lokaler deterministischer Pytest-Lauf über ``venv/bin/python -m pytest``, keine Live-/kostenpflichtigen Provider-Aufrufe, kein Real-System-E2E."
+
+#: ../../home/udo/AI-Dev-Center/requirements/verification/evidence.rst:20
+#: ../../home/udo/AI-Dev-Center/requirements/verification/evidence.rst:35
+#: ../../home/udo/AI-Dev-Center/requirements/verification/evidence.rst:51
+#: ../../home/udo/AI-Dev-Center/requirements/verification/evidence.rst:71
+msgid "Command::"
+msgstr "Befehl::"
+
+#: ../../home/udo/AI-Dev-Center/requirements/verification/evidence.rst:27
+msgid "Observed: 382 passed, 0 failed, 1 warning (unrelated Pydantic deprecation notice), 1.80s. Observed 2026-09-18T14:47Z (session-local)."
+msgstr "Beobachtet: 382 bestanden, 0 fehlgeschlagen, 1 Warnung (unabhängiger Pydantic-Deprecation-Hinweis), 1,80 s. Beobachtet 2026-09-18T14:47Z (sitzungslokal)."
+
+#: ../../home/udo/AI-Dev-Center/requirements/verification/evidence.rst:43
+msgid "Observed: 182 passed, 0 failed, 1 warning (unrelated Pydantic deprecation notice), 1.13s. Observed 2026-09-18T14:49Z (session-local)."
+msgstr "Beobachtet: 182 bestanden, 0 fehlgeschlagen, 1 Warnung (unabhängiger Pydantic-Deprecation-Hinweis), 1,13 s. Beobachtet 2026-09-18T14:49Z (sitzungslokal)."
+
+#: ../../home/udo/AI-Dev-Center/requirements/verification/evidence.rst:62
+msgid "Observed: 324 passed, 0 failed, 8 warnings (unrelated pytest collection/Pydantic deprecation notices), 3.81s. Observed 2026-09-18T14:52Z (session-local)."
+msgstr "Beobachtet: 324 bestanden, 0 fehlgeschlagen, 8 Warnungen (unabhängige Pytest-Collection-/Pydantic-Deprecation-Hinweise), 3,81 s. Beobachtet 2026-09-18T14:52Z (sitzungslokal)."
+
+#: ../../home/udo/AI-Dev-Center/requirements/verification/evidence.rst:77
+msgid "Observed: 91 passed, 0 failed, 1 warning (unrelated Pydantic deprecation notice), 2.70s. Observed 2026-09-18T14:48Z (session-local)."
+msgstr "Beobachtet: 91 bestanden, 0 fehlgeschlagen, 1 Warnung (unabhängiger Pydantic-Deprecation-Hinweis), 2,70 s. Beobachtet 2026-09-18T14:48Z (sitzungslokal)."

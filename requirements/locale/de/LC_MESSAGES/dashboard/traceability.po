@@ -1,0 +1,57 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 
+# This file is distributed under the same license as the AI-Dev-Center Requirements package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: AI-Dev-Center Requirements \n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-19 08:28+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/traceability.rst:2
+msgid "ADC Traceability"
+msgstr "ADC Nachverfolgbarkeit"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/traceability.rst:5
+msgid "Real ADC trace graph"
+msgstr "Echter ADC-Trace-Graph"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/traceability.rst:7
+msgid "This graph shows only real ADC engineering objects. The synthetic pilot is excluded."
+msgstr "Dieser Graph zeigt nur echte ADC-Engineering-Objekte. Der synthetische Pilot ist ausgeschlossen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/traceability.rst:9
+msgid "ADC end-to-end trace"
+msgstr "ADC Ende-zu-Ende-Trace"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/traceability.rst:16
+msgid "Red background = Not implemented · Yellow background = Implemented, verification not IO · Green background = Implemented and verification IO (traffic-light backgrounds apply to Requirement nodes only — SYS_REQ / ARC_REQ / SUB_REQ / IF_REQ)"
+msgstr "Roter Hintergrund = Nicht implementiert · Gelber Hintergrund = Implementiert, Verifikation nicht IO · Grüner Hintergrund = Implementiert und Verifikation IO (Ampel-Hintergründe gelten nur für Anforderungsknoten — SYS_REQ / ARC_REQ / SUB_REQ / IF_REQ)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/traceability.rst:20
+msgid "Zielbild → System Requirements"
+msgstr "Zielbild → Systemanforderungen"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/traceability.rst:28
+msgid "System Requirements → Architecture"
+msgstr "Systemanforderungen → Architektur"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/traceability.rst:36
+msgid "Architecture → Derived Requirements"
+msgstr "Architektur → Abgeleitete Anforderungen"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/traceability.rst:44
+msgid "Requirements → Implementation / Tests"
+msgstr "Anforderungen → Implementierung / Tests"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/traceability.rst:52
+msgid "Tests → Evidence"
+msgstr "Tests → Evidenz"

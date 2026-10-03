@@ -1,0 +1,1490 @@
+"""Application-core entry point for canonical project setup planning."""
+
+from __future__ import annotations
+
+from dataclasses import replace
+from pathlib import Path
+
+from app.common_request import CommonRequest, RequestIntent
+from app.development_stage import DevelopmentRequest
+from app.dev_workflow import (
+    DevelopmentWorkflow,
+    SetupDevelopmentTestingResult,
+    WorkflowBlockedError,
+    WorkflowResult,
+)
+from app.project_inspector import ProjectInspector
+from app.project_intelligence import ProjectIntelligence
+from app.workflow_manager import WorkflowManager
+from app.final_approval import FinalApprovalResult
+from app.change_provenance import RunChangeProvenance
+from app.controlled_git_stage import ControlledGitStage, GitCommitRequest, GitCommitResult
+from app.controlled_publish_stage import ControlledPublishStage, PublishRequest, PublishResult
+from app.publish_approval import PublishApprovalResult
+from app.diagnostic_trace import DiagnosticTrace, DiagnosticTraceStore
+from app.diagnostic_trace import DiagnosticTraceError
+from app.canonical_execution import (
+    PROCESS_OWNER_ID, ConcurrentExecutionError, ExecutionReentryError,
+    RecoveryRequiredError, acquire_project_execution,
+)
+from app.capability_registration import (
+    CapabilityRegistrationError,
+    CapabilityRegistrationRequest,
+    CapabilityRegistrationResult,
+)
+from app.execution import (
+    ApprovalProvenance,
+    CapabilityRegistration,
+    CapabilityRegistry,
+    DEFAULT_CAPABILITY_REGISTRY,
+    resolve_structured_installer_identity,
+)
+from app.missing_toolchain_setup import (
+    MissingToolchainSetupError,
+    MissingToolchainSetupRequest,
+    MissingToolchainSetupResult,
+    StructuredInstallerRegistry,
+    already_available_setup_result,
+    correlate_provisioning_requirement,
+    deserialize_setup_plan,
+    deserialize_verification_plan,
+    serialize_setup_plan,
+    serialize_verification_plan,
+)
+from app.setup_approval import SetupApproval
+from app.verification import PASS, TOOL_UNAVAILABLE, verification_target
+from app.project_context import (
+    ProjectContext, ProjectDefinition, ProjectDefinitionStore,
+    compose_project_context,
+)
+from app.execution_identity import execution_identity
+from app.greenfield_project import GreenfieldProjectApproval, GreenfieldProjectMaterializer
+from app.approved_plan_content import ApprovedPlanContentError, ApprovedPlanContentStore
+
+
+class ProjectSetupApplicationService:
+    """Inspect a project, normalize adapter input, and delegate planning."""
+
+    def __init__(
+        self,
+        development_workflow: DevelopmentWorkflow,
+        project_inspector: ProjectInspector | None = None,
+        workflow_manager: WorkflowManager | None = None,
+        controlled_git_stage: ControlledGitStage | None = None,
+        controlled_publish_stage: ControlledPublishStage | None = None,
+        diagnostic_trace: DiagnosticTrace | None = None,
+        capability_registry: CapabilityRegistry | None = None,
+        structured_installers: StructuredInstallerRegistry | None = None,
+        verification_registry: object | None = None,
+        project_definition_store: ProjectDefinitionStore | None = None,
+        technical_config: object | None = None,
+        greenfield_materializer: GreenfieldProjectMaterializer | None = None,
+        approved_content_store: ApprovedPlanContentStore | None = None,
+    ) -> None:
+        self._development_workflow = development_workflow
+        self._project_inspector = project_inspector or ProjectInspector()
+        self._workflow_manager = workflow_manager or WorkflowManager()
+        self._controlled_git_stage = controlled_git_stage or ControlledGitStage()
+        self._controlled_publish_stage = controlled_publish_stage or ControlledPublishStage()
+        self._capability_registry = capability_registry or DEFAULT_CAPABILITY_REGISTRY
+        self._approved_content_store = approved_content_store or ApprovedPlanContentStore()
+        self._structured_installers = structured_installers or StructuredInstallerRegistry()
+        self._verification_registry = verification_registry
+        self._project_definition_store = project_definition_store or ProjectDefinitionStore()
+        self._technical_config = technical_config
+        self._greenfield_materializer = greenfield_materializer or GreenfieldProjectMaterializer()
+        trace_path = self._workflow_manager.storage.parent / ".diagnostic-traces" / "events.jsonl"
+        self._diagnostic_trace = diagnostic_trace or DiagnosticTrace(DiagnosticTraceStore(trace_path))
+        if hasattr(self._development_workflow, "set_diagnostic_trace"):
+            self._development_workflow.set_diagnostic_trace(self._diagnostic_trace)
+        self.recover_approved_capabilities()
+
+    def _trace(self, run_id, phase, event_type, status, summary, **kwargs):
+        try:
+            return self._diagnostic_trace.record(
+                run_id, phase, event_type, status, summary,
+                source="project_setup_application", **kwargs,
+            )
+        except DiagnosticTraceError:
+            return None
+
+    def get_diagnostic_trace(self, run_id: str):
+        """Return the ordered, read-only central trace for one run."""
+        return self._diagnostic_trace.get_trace(run_id)
+
+    def materialize_approved_greenfield(
+        self, approval: GreenfieldProjectApproval,
+    ) -> Path:
+        """Materialize one explicitly approved empty project before planning."""
+        root = self._greenfield_materializer.materialize(approval)
+        self._trace(
+            approval.run_id, "project_inspection", "completed", "completed",
+            "Approved greenfield project root and local repository created",
+            details={"project_id": approval.project_id, "execution_stage": "greenfield"},
+        )
+        return root
+
+    def build_request(
+        self, project_id: str, project_path: str | Path, *,
+        user_request: str | None = None, source_interface: str | None = None,
+    ) -> CommonRequest:
+        """Inspect the project and create the sole supported input intent."""
+        _, intelligence = self._project_inspector.inspect_managed(
+            project_id, project_path,
+        )
+        project_info = intelligence.to_summary()
+        project_info["project_id"] = project_id
+        project_info["project_path"] = str(Path(project_path).expanduser().resolve())
+        return CommonRequest(
+            project_id=project_id,
+            project_info=project_info,
+            intent=RequestIntent.PLAN_PROJECT_SETUP,
+            user_request=user_request.strip() if isinstance(user_request, str) and user_request.strip() else None,
+            source_interface=source_interface.strip() if isinstance(source_interface, str) and source_interface.strip() else None,
+        )
+
+    def build_intelligence(
+        self, project_path: str | Path
+    ) -> ProjectIntelligence:
+        """Return the full typed project intelligence profile."""
+        return self._project_inspector.build_intelligence(project_path)
+
+    def build_project_context(
+        self, project_id: str, project_path: str | Path,
+    ) -> ProjectContext:
+        """Compose observed, decided and configured sources without flattening."""
+        if self._technical_config is None:
+            raise ValueError("Technical config is required for Project Context")
+        intelligence = self._project_inspector.build_intelligence(project_path)
+        return compose_project_context(
+            project_id, intelligence,
+            self._project_definition_store.active(project_id),
+            self._technical_config,
+        )
+
+    def create_project_definition(
+        self, project_id: str, key: str, value, category: str,
+        scope: str, source: str,
+    ) -> ProjectDefinition:
+        """Controlled structured update; never grants workflow authority."""
+        return self._project_definition_store.create(
+            project_id, key, value, category, scope, source,
+        )
+
+    def supersede_project_definition(
+        self, definition_id: str, value, source: str,
+    ) -> ProjectDefinition:
+        return self._project_definition_store.supersede(definition_id, value, source)
+
+    def revoke_project_definition(self, definition_id: str) -> ProjectDefinition:
+        return self._project_definition_store.revoke(definition_id)
+
+    def request_capability_registration(
+        self, request: CapabilityRegistrationRequest,
+    ) -> CapabilityRegistrationResult:
+        """Validate Council authority and open a separate Human Approval."""
+        try:
+            variant = self._validate_capability_request(request)
+            normalized_scope = self._normalized_capability_scope(request)
+        except (CapabilityRegistrationError, ValueError) as error:
+            return CapabilityRegistrationResult(
+                request.request_id, "rejected", blockers=(str(error),),
+            )
+        self._workflow_manager.create_capability_approval(
+            request.request_id,
+            request.project_id,
+            request.project_intelligence.project_root,
+            request.council_result.id,
+            variant.id,
+            request.capability,
+            request.executable_names,
+            request.allowed_operations,
+            normalized_scope,
+        )
+        self._trace(
+            request.request_id, "capability_approval", "pending", "pending",
+            "Capability Human Approval is pending",
+            details={"capability": request.capability, "chairman_variant": variant.id},
+            related_result_id=request.request_id,
+        )
+        return CapabilityRegistrationResult(request.request_id, "pending")
+
+    def decide_capability_approval(
+        self, request_id: str, decision: str,
+        approved_by: str | None = None, comment: str | None = None,
+    ) -> CapabilityRegistrationResult:
+        record = self._workflow_manager.decide_capability_approval(
+            request_id, decision, approved_by, comment,
+        )
+        return CapabilityRegistrationResult(request_id, record["status"])
+
+    def register_approved_capability(
+        self, request: CapabilityRegistrationRequest,
+    ) -> CapabilityRegistrationResult:
+        """Produce and register capability metadata only after all authorities."""
+        try:
+            variant = self._validate_capability_request(request)
+            normalized_scope = self._normalized_capability_scope(request)
+            human = self._workflow_manager.get_capability_approval(request.request_id)
+            if human is None or human.get("status") != "approved":
+                state = human.get("status") if human else "missing"
+                raise CapabilityRegistrationError(f"Human Approval is {state}")
+            if (
+                human.get("project_id") != request.project_id
+                or human.get("project_intelligence_ref") != request.project_intelligence.project_root
+                or human.get("council_result_id") != request.council_result.id
+                or human.get("chairman_variant_id") != variant.id
+                or human.get("capability") != request.capability
+                or tuple(human.get("executable_names", ())) != request.executable_names
+                or tuple(human.get("allowed_operations", ())) != request.allowed_operations
+                or human.get("project_scope") != normalized_scope
+            ):
+                raise CapabilityRegistrationError("Human Approval does not match the registration request")
+            provenance = ApprovalProvenance(
+                project_intelligence_ref=request.project_intelligence.project_root,
+                engineering_council_ref=request.council_result.id,
+                chairman_approval_ref=variant.id,
+                human_approval_ref=human.get("id", ""),
+            )
+            if not provenance.is_complete():
+                raise CapabilityRegistrationError("Required approval provenance is incomplete")
+            registration = CapabilityRegistration(
+                capability=request.capability,
+                executable_names=request.executable_names,
+                allowed_operations=request.allowed_operations,
+                approval_provenance=provenance,
+                project_scope=normalized_scope,
+            )
+            self._capability_registry.register_approved(registration)
+        except (CapabilityRegistrationError, ValueError) as error:
+            return CapabilityRegistrationResult(
+                request.request_id, "rejected", blockers=(str(error),),
+            )
+        self._trace(
+            request.request_id, "capability_registration", "registered", "completed",
+            "Approved capability registered",
+            details={"capability": request.capability},
+            related_result_id=request.request_id,
+        )
+        return CapabilityRegistrationResult(
+            request.request_id, "registered", registration=registration,
+        )
+
+    def recover_approved_capabilities(self) -> tuple[CapabilityRegistration, ...]:
+        """Idempotently restore valid approved dynamic registrations."""
+        recovered: list[CapabilityRegistration] = []
+        state = self._workflow_manager.load()
+        if not isinstance(state, dict):
+            return ()
+        approvals = state.get("capability_approvals", {})
+        if not isinstance(approvals, dict):
+            return ()
+        for record in approvals.values():
+            if not isinstance(record, dict) or record.get("status") != "approved":
+                continue
+            try:
+                scope = str(Path(record["project_scope"]).resolve())
+                intelligence_ref = str(Path(record["project_intelligence_ref"]).resolve())
+                if scope != intelligence_ref or not record.get("approved_at"):
+                    raise ValueError("Recovered project scope or Human Approval is invalid")
+                provenance = ApprovalProvenance(
+                    project_intelligence_ref=record["project_intelligence_ref"],
+                    engineering_council_ref=record["council_result_id"],
+                    chairman_approval_ref=record["chairman_variant_id"],
+                    human_approval_ref=record["id"],
+                )
+                if not provenance.is_complete():
+                    raise ValueError("Recovered approval provenance is incomplete")
+                registration = CapabilityRegistration(
+                    capability=record["capability"],
+                    executable_names=tuple(record["executable_names"]),
+                    allowed_operations=tuple(record["allowed_operations"]),
+                    approval_provenance=provenance,
+                    project_scope=scope,
+                )
+                self._capability_registry.register_approved(registration)
+            except (KeyError, TypeError, ValueError):
+                continue
+            recovered.append(registration)
+        return tuple(recovered)
+
+    def prepare_missing_toolchain_setup(
+        self, request: MissingToolchainSetupRequest,
+    ) -> MissingToolchainSetupResult:
+        """Turn a structured TOOL_UNAVAILABLE result into a pending SetupPlan."""
+        try:
+            root = str(Path(request.project_root).resolve())
+            if root != str(Path(request.verification_plan.project_root).resolve()):
+                raise MissingToolchainSetupError("VerificationPlan belongs to another project")
+            unavailable_ids = {
+                result.step_id for result in request.verification_result.steps
+                if result.status == TOOL_UNAVAILABLE.value
+            }
+            candidates = tuple(
+                step for step in request.verification_plan.steps
+                if step.step_id in unavailable_ids
+                and step.verification_kind == request.operation_type
+            )
+            if not candidates:
+                raise MissingToolchainSetupError("No matching TOOL_UNAVAILABLE verification step")
+            if request.engineering_decision is not None:
+                # A4: reuse the exact already-selected EngineeringDecision
+                # from the original S2->S3 handoff (Chairman
+                # recommendation, explicit human override, or sole
+                # admissible candidate) -- never re-running S2 selection
+                # here, which would silently prefer the Chairman's own
+                # recommendation over an already-made, possibly-different
+                # human selection.
+                materialized = self._development_workflow.materialize_setup_plan_from_decision(
+                    request.engineering_decision, request.project_id,
+                    # CLAUDE-ADC-S23-STRICT-IDENTITY-ENVIRONMENT-BINDING-
+                    # FIX-004: `root` is already validated above as this
+                    # exact project's own project_root -- forwarding it
+                    # here is what lets a "venv" candidate's own
+                    # environment actually bind to a real target instead
+                    # of silently inheriting whatever generic,
+                    # pre-candidate target Preflight happened to stamp.
+                    project_root=root,
+                )
+            else:
+                materialized = self._development_workflow.materialize_setup_plan(
+                    request.council_result, request.project_id,
+                    platform=request.platform,
+                    # CLAUDE-ADC-S23-STRICT-IDENTITY-ENVIRONMENT-BINDING-
+                    # FIX-004: `root` is already validated above as this
+                    # exact project's own project_root -- forwarding it here
+                    # is what lets a "venv" candidate's own environment
+                    # actually bind to a real target instead of silently
+                    # inheriting whatever generic, pre-candidate target
+                    # Preflight happened to stamp.
+                    project_root=root,
+                )
+            # IF_REQ_037: the step is selected through the explicit
+            # tool -> ToolchainItem -> requirement correlation, never by
+            # assuming the tool identity equals a package identity.
+            provisioning_ref = request.provisioning_requirement_ref
+            if not provisioning_ref:
+                provisioning_ref = correlate_provisioning_requirement(
+                    self._recovery_variant(request), request.toolchain,
+                )
+            setup_steps = tuple(
+                step for step in materialized.steps
+                if step.requirement_id == provisioning_ref and step.action == "install"
+            )
+            if len(setup_steps) != 1:
+                raise MissingToolchainSetupError("Council SetupPlan has no unique structured toolchain action")
+            plan = type(materialized)(
+                id=f"{materialized.id}-missing-{candidates[0].step_id}",
+                project_id=materialized.project_id,
+                steps=setup_steps,
+                requires_user_approval=True,
+                warnings=materialized.warnings,
+                status="pending_approval",
+                # the environment the selected variant resolved to: the
+                # recovery plan names the same target S5 verifies through
+                environment_target_executable=getattr(
+                    materialized, "environment_target_executable", None),
+            )
+            chairman_ref = (
+                request.engineering_decision.variant.id
+                if request.engineering_decision is not None
+                else getattr(request.council_result, "recommendation", None)
+            )
+            if not isinstance(chairman_ref, str) or not chairman_ref:
+                chairman_ref = f"council-recommendation:{request.council_result.id}"
+            record = {
+                "status": "pending_approval",
+                "project_id": request.project_id,
+                "project_root": root,
+                "run_id": _text_or_none(getattr(request.verification_plan, "run_id", None)),
+                "toolchain": request.toolchain,
+                "provisioning_requirement_ref": provisioning_ref,
+                # IF_REQ_037: the distinct identities this recovery joins,
+                # recorded so its provenance stays answerable.
+                "package_identity": setup_steps[0].package,
+                "install_method": setup_steps[0].install_method,
+                "installer_identity": resolve_structured_installer_identity(
+                    setup_steps[0].setup_effect, setup_steps[0].install_method,
+                    setup_steps[0].package,
+                ),
+                "selection_authority": (
+                    request.engineering_decision.selection_authority
+                    if request.engineering_decision is not None else None
+                ),
+                "verification_result": {
+                    "run_id": _text_or_none(getattr(request.verification_result, "run_id", None)),
+                    "aggregate_status": _text_or_none(
+                        getattr(request.verification_result, "aggregate_status", None),
+                    ),
+                    "unavailable_step_ids": sorted(unavailable_ids),
+                },
+                "operation_type": request.operation_type,
+                "council_result_id": request.council_result.id,
+                "chairman_approval_ref": chairman_ref,
+                "setup_plan": serialize_setup_plan(plan),
+                "verification_plan": serialize_verification_plan(request.verification_plan),
+                "verification_target": request.verification_target,
+                "verification_retry_status": "pending",
+            }
+            persisted = self._workflow_manager.create_missing_toolchain_setup(plan.id, record)
+            return MissingToolchainSetupResult(plan.id, persisted["status"])
+        except (MissingToolchainSetupError, ValueError) as error:
+            return MissingToolchainSetupResult("", "rejected", blockers=(str(error),))
+
+    def route_tool_unavailable_to_recovery(
+        self, planning_result, execution_result, project_id: str, project_root,
+    ) -> MissingToolchainSetupResult:
+        """Production S5 -> S3.5 seam (ARC_029, IF_REQ_029, IF_REQ_037).
+
+        Consumes the real artifacts only: the S5 TOOL_UNAVAILABLE outcome
+        with the VerificationPlan/VerificationResult S5 actually executed,
+        and the planning result's already-selected EngineeringDecision and
+        CouncilResult. Prepares the existing bounded S3.5 recovery and
+        stops at its pending human approval -- it never approves,
+        installs or retries. Re-routing the same outcome reuses the
+        existing recovery record, never a second one."""
+        testing = execution_result.development_testing_result
+        if testing.status != "tool_unavailable":
+            return MissingToolchainSetupResult(
+                "", "not_applicable", blockers=("No TOOL_UNAVAILABLE verification outcome",),
+            )
+        run_id = getattr(testing.verification_result, "run_id", None) or project_id
+        try:
+            decision = getattr(planning_result, "engineering_decision", None)
+            council_result = getattr(planning_result, "council_result", None)
+            if decision is None or council_result is None:
+                raise MissingToolchainSetupError(
+                    "Selected EngineeringDecision is required for recovery",
+                )
+            if testing.verification_plan is None or testing.verification_result is None:
+                raise MissingToolchainSetupError("S5 verification evidence is missing")
+            unavailable = tuple(
+                step for step in testing.verification_result.steps
+                if step.status == TOOL_UNAVAILABLE.value
+            )
+            tools = {step.unavailable_tool for step in unavailable}
+            if not unavailable or None in tools or len(tools) != 1:
+                raise MissingToolchainSetupError(
+                    "Unavailable tool identity is missing or ambiguous",
+                )
+            tool = tools.pop()
+            provisioning_ref = correlate_provisioning_requirement(decision.variant, tool)
+        except MissingToolchainSetupError as error:
+            self._trace(
+                run_id, "setup_approval", "blocked", "blocked",
+                "Missing-toolchain recovery routing failed closed",
+                details={"failure_summary": str(error)},
+            )
+            return MissingToolchainSetupResult("", "rejected", blockers=(str(error),))
+        prepared = self.prepare_missing_toolchain_setup(MissingToolchainSetupRequest(
+            project_id=project_id,
+            project_root=str(project_root),
+            toolchain=tool,
+            operation_type=unavailable[0].verification_kind,
+            council_result=council_result,
+            verification_plan=testing.verification_plan,
+            verification_result=testing.verification_result,
+            platform=getattr(planning_result, "platform", None),
+            engineering_decision=decision,
+            provisioning_requirement_ref=provisioning_ref,
+            verification_target=getattr(testing, "verification_target", None),
+        ))
+        pending = prepared.status == "pending_approval"
+        self._trace(
+            run_id, "setup_approval", "pending" if pending else "blocked",
+            "pending" if pending else "blocked",
+            f"Missing-toolchain recovery for '{tool}' routed to S3.5: {prepared.status}",
+            details={"plan_id": prepared.plan_id, "blockers": list(prepared.blockers)},
+        )
+        return prepared
+
+    @staticmethod
+    def _recovery_variant(request: MissingToolchainSetupRequest):
+        """The already-selected variant recovery correlates against: the
+        EngineeringDecision when supplied, else the Council's own
+        recommended variant -- the same one materialize_setup_plan()
+        materializes for this request."""
+        if request.engineering_decision is not None:
+            return request.engineering_decision.variant
+        variants = getattr(request.council_result, "variants", ())
+        recommendation = getattr(request.council_result, "recommendation", None)
+        if isinstance(variants, (tuple, list)):
+            for variant in variants:
+                if variant.id == recommendation:
+                    return variant
+        raise MissingToolchainSetupError("Selected engineering variant is unavailable for recovery")
+
+    def decide_missing_toolchain_setup(
+        self, plan_id: str, decision: str,
+        approved_by: str | None = None, comment: str | None = None,
+    ) -> MissingToolchainSetupResult:
+        record = self._workflow_manager.get_missing_toolchain_setup(plan_id)
+        if record is None:
+            return MissingToolchainSetupResult(plan_id, "rejected", blockers=("Setup request is missing",))
+        if decision not in {"approved", "rejected"}:
+            return MissingToolchainSetupResult(plan_id, "rejected", blockers=("Invalid Setup Approval decision",))
+        plan = deserialize_setup_plan(record["setup_plan"])
+        decided = SetupApproval.approve(plan) if decision == "approved" else SetupApproval.reject(plan)
+        if decision == "approved":
+            # Freeze the exact artifact and its authority/scope at the explicit
+            # human transition, never during materialization or execution.
+            self._approved_content_store.record_approved(
+                decided, approval_context=self._missing_setup_approval_context(record),
+            )
+        updated = self._workflow_manager.decide_missing_toolchain_setup(
+            plan_id, decision, serialize_setup_plan(decided), approved_by, comment,
+        )
+        return MissingToolchainSetupResult(plan_id, updated["status"])
+
+    @staticmethod
+    def _missing_setup_approval_context(record: dict) -> dict:
+        return {key: record.get(key) for key in (
+            "project_id", "project_root", "toolchain", "operation_type",
+            "council_result_id", "chairman_approval_ref",
+        )} | {"plan_id": record["setup_plan"]["id"]}
+
+    def execute_missing_toolchain_setup(self, plan_id: str) -> MissingToolchainSetupResult:
+        """Execute one approved structured installer exactly once."""
+        record = self._workflow_manager.get_missing_toolchain_setup(plan_id)
+        if record is not None and record.get("status") == "completed":
+            return MissingToolchainSetupResult(
+                plan_id, "completed",
+            )
+        if record is not None and record.get("status") == "executing":
+            return MissingToolchainSetupResult(
+                plan_id, "recovery_required",
+                blockers=("Interrupted setup requires explicit recovery",),
+            )
+        if record is None or record.get("status") != "approved":
+            status = record.get("status") if record else "missing"
+            return MissingToolchainSetupResult(plan_id, status, blockers=("Setup Approval is required",))
+        plan = deserialize_setup_plan(record["setup_plan"])
+        if plan.status != "approved" or len(plan.steps) != 1 or not plan.steps[0].is_approved:
+            return MissingToolchainSetupResult(plan_id, "failed", blockers=("Approved structured setup step is invalid",))
+        step = plan.steps[0]
+        installer = self._structured_installers.resolve(step)
+        if installer is None:
+            self._workflow_manager.update_missing_toolchain_setup(plan_id, status="failed")
+            return MissingToolchainSetupResult(plan_id, "failed", blockers=("No structured installer is registered",))
+        if installer.is_available(record["toolchain"], step.target_executable):
+            result = already_available_setup_result(step.id)
+            self._workflow_manager.update_missing_toolchain_setup(
+                plan_id, status="completed", setup_outcome="already_available",
+            )
+            return MissingToolchainSetupResult(plan_id, "already_available", result)
+        try:
+            if (not plan.generation_id or not record.get("approved_at")
+                    or not record.get("council_result_id")
+                    or not record.get("chairman_approval_ref")):
+                raise ValueError("Recovery approval provenance is incomplete")
+            from app.execution import capability_for_setup_effect, ExecutionRequest, validate_request
+            capability = capability_for_setup_effect(step.setup_effect)
+            if capability and not step.target_executable:
+                raise ValueError("Recovery execution target is missing")
+            authorize_setup_plan_targets(
+                plan, record["project_root"], record["council_result_id"],
+                record["chairman_approval_ref"], self._capability_registry,
+                self._approved_content_store,
+                approval_context=self._missing_setup_approval_context(record),
+            )
+            if capability:
+                # Check the registered operation/target before entering active
+                # execution. The executor still validates its full argv itself.
+                violation = validate_request(
+                    ExecutionRequest((step.target_executable,), record["project_root"],
+                                     1, capability, "install"),
+                    record["project_root"], self._capability_registry,
+                )
+                if violation is not None:
+                    raise ValueError(violation.diagnostics)
+        except (ApprovedPlanContentError, ValueError) as error:
+            self._workflow_manager.update_missing_toolchain_setup(
+                plan_id, status="authorization_failed", setup_outcome="failed",
+                authorization_error=str(error),
+            )
+            return MissingToolchainSetupResult(
+                plan_id, "authorization_failed", blockers=(str(error),),
+            )
+        self._workflow_manager.update_missing_toolchain_setup(plan_id, status="executing")
+        result = installer.executor.execute(step, record["project_root"])
+        available = result.success and installer.is_available(record["toolchain"], step.target_executable)
+        self._workflow_manager.update_missing_toolchain_setup(
+            plan_id, status="completed" if available else "failed",
+            setup_outcome="installed" if available else "failed",
+        )
+        return MissingToolchainSetupResult(
+            plan_id, "completed" if available else "failed", result,
+            blockers=() if available else ("Toolchain is unavailable after setup",),
+        )
+
+    def retry_missing_toolchain_verification(self, plan_id: str) -> MissingToolchainSetupResult:
+        """Retry only the persisted workflow-owned VerificationPlan, once.
+
+        Recovery is completed only when that single retry actually
+        passes. A retry that fails, is incomplete, or again reports a
+        tool unavailable/unsupported ends the recovery as
+        "verification_failed" -- a terminal, structured blocker that is
+        never re-run here and never opens a second recovery or install."""
+        record = self._workflow_manager.get_missing_toolchain_setup(plan_id)
+        if record is None or record.get("status") != "completed":
+            return MissingToolchainSetupResult(plan_id, "retry_blocked", blockers=("Successful setup is required",))
+        if record.get("verification_retry_status") == "completed":
+            return MissingToolchainSetupResult(plan_id, "verification_completed")
+        if record.get("verification_retry_status") == "failed":
+            return MissingToolchainSetupResult(
+                plan_id, "verification_failed",
+                blockers=(self._reverification_blocker(record.get("verification_retry_aggregate")),),
+            )
+        if self._verification_registry is None:
+            return MissingToolchainSetupResult(plan_id, "retry_blocked", blockers=("Verification registry is unavailable",))
+        target = record.get("verification_target")
+        if not isinstance(target, str) or not target:
+            # IF_REQ_038: S5 never falls back to the host environment; a
+            # recovery without an established target stays unconfirmed.
+            return MissingToolchainSetupResult(
+                plan_id, "retry_blocked",
+                blockers=("Established target environment is unconfirmed; verification is not run on a substitute",),
+            )
+        # Detection, approval and execution must refer to the same target:
+        # re-establish the approved plan's targets (a restart loses the
+        # in-memory approvals) and require the S5 target to be among them.
+        try:
+            authorize_setup_plan_targets(
+                deserialize_setup_plan(record["setup_plan"]), record["project_root"],
+                record["council_result_id"], record["chairman_approval_ref"],
+                self._capability_registry, self._approved_content_store,
+                approval_context=self._missing_setup_approval_context(record),
+            )
+        except (ApprovedPlanContentError, ValueError, KeyError) as error:
+            return MissingToolchainSetupResult(
+                plan_id, "retry_blocked",
+                blockers=(f"Target environment approval could not be re-established: {error}",),
+            )
+        if not self._capability_registry.is_execution_target_approved(record["project_root"], target):
+            return MissingToolchainSetupResult(
+                plan_id, "retry_blocked",
+                blockers=("Established target environment is not approved by the recovery plan; verification is not run on a substitute",),
+            )
+        plan = deserialize_verification_plan(record["verification_plan"])
+        with verification_target(target, record["project_root"]):
+            result = self._verification_registry.execute_plan(plan)
+        aggregate = getattr(result, "aggregate_status", None)
+        passed = aggregate == PASS.value
+        self._workflow_manager.update_missing_toolchain_setup(
+            plan_id, verification_retry_status="completed" if passed else "failed",
+            verification_retry_aggregate=aggregate if isinstance(aggregate, str) else None,
+        )
+        if not passed:
+            return MissingToolchainSetupResult(
+                plan_id, "verification_failed", verification_result=result,
+                blockers=(self._reverification_blocker(aggregate),),
+            )
+        return MissingToolchainSetupResult(
+            plan_id, "verification_completed", verification_result=result,
+        )
+
+    @staticmethod
+    def _reverification_blocker(aggregate) -> str:
+        shown = aggregate if isinstance(aggregate, str) else "unknown"
+        return f"Reverification after recovery did not pass: {shown}"
+
+    @staticmethod
+    def _normalized_capability_scope(request: CapabilityRegistrationRequest) -> str:
+        intelligence_root = Path(request.project_intelligence.project_root).resolve()
+        if request.project_scope is None:
+            raise CapabilityRegistrationError("Dynamic capability registration requires project scope")
+        requested_scope = Path(request.project_scope).resolve()
+        if requested_scope != intelligence_root:
+            raise CapabilityRegistrationError(
+                "Capability project scope must match the Project Intelligence root"
+            )
+        return str(intelligence_root)
+
+    @staticmethod
+    def _validate_capability_request(request: CapabilityRegistrationRequest):
+        if not request.request_id or not request.project_id:
+            raise CapabilityRegistrationError("Capability request identity is incomplete")
+        intelligence = request.project_intelligence
+        council = request.council_result
+        if not intelligence.project_root:
+            raise CapabilityRegistrationError("Project Intelligence reference is missing")
+        if council.project_id != request.project_id:
+            raise CapabilityRegistrationError("Council result belongs to another project")
+        if not council.council_complete or council.chairman_error or not council.id:
+            raise CapabilityRegistrationError("Chairman approval is missing")
+        variant = request.recommended_variant()
+        if request.capability not in variant.capabilities:
+            raise CapabilityRegistrationError("Capability is not present in the Chairman recommendation")
+        council_tools = {item.name for item in variant.toolchain if item.name}
+        if not request.executable_names or not set(request.executable_names).issubset(council_tools):
+            raise CapabilityRegistrationError("Executable identity is not present in the Council result")
+        # Construction performs the shared metadata validation without registering.
+        CapabilityRegistration(
+            capability=request.capability,
+            executable_names=request.executable_names,
+            allowed_operations=request.allowed_operations,
+            approval_provenance=None,
+            project_scope=request.project_scope,
+        )
+        return variant
+
+    def plan_project_setup(
+        self, project_id: str, project_path: str | Path, run_id: str | None = None,
+        *, entry_interface: str | None = None,
+        entry_data: dict | None = None,
+    ) -> WorkflowResult:
+        """Plan setup through the canonical workflow; never approve or execute."""
+        if not isinstance(project_id, str) or not project_id.strip():
+            raise ValueError("project_id must be a non-empty string")
+
+        trace_run_id = run_id or project_id
+        self._trace(trace_run_id, "common_request", "started", "started", "Canonical project setup workflow started", details={"project_id": project_id})
+        self._trace(trace_run_id, "project_inspection", "started", "started", "Project inspection started", details={"project_id": project_id})
+
+        intelligence = self._project_inspector.build_intelligence(project_path)
+        project_context = None
+        if self._technical_config is not None:
+            project_context = compose_project_context(
+                project_id, intelligence,
+                self._project_definition_store.active(project_id),
+                self._technical_config,
+            )
+
+        try:
+            task = entry_data.get("task_description") if isinstance(entry_data, dict) else None
+            request = self.build_request(
+                project_id, project_path, user_request=task,
+                source_interface=entry_interface,
+            )
+        except Exception as error:
+            self._trace(trace_run_id, "project_inspection", "failed", "failed", f"Project inspection failed: {type(error).__name__}")
+            self._trace(trace_run_id, "workflow_end", "failed", "failed", "Workflow ended after project inspection failure", details={"end_state": "failed"})
+            raise
+        info = request.project_info if isinstance(request.project_info, dict) else {}
+        self._trace(trace_run_id, "project_inspection", "completed", "completed", "Project inspection completed", details={
+            "project_id": project_id,
+            "project_kind": intelligence.project_kind,
+            "language_count": len(intelligence.language_names),
+            "framework_count": len(intelligence.framework_names),
+            "area_count": intelligence.area_count,
+            "git_repository_present": intelligence.git_repository_present,
+            "truncated": intelligence.truncated,
+            "warning_count": len(intelligence.warnings),
+            "file_count": intelligence.total_files_traversed,
+        })
+        request_x = {
+            "project_id": project_id,
+            "project_root": str(Path(project_path).expanduser().resolve()),
+            "intent": request.intent.value,
+            "user_request_present": bool(request.user_request),
+            "user_request": request.user_request or "not available at this boundary",
+        }
+        entry_x = dict(entry_data) if isinstance(entry_data, dict) else request_x
+        entry_kind = request.source_interface or "internal"
+
+        def typed(data, data_type, interface, source, destination):
+            return {
+                "type": data_type, "interface": interface,
+                "source": source, "destination": destination, "data": data,
+            }
+        intelligence_y = {
+            "project_id": project_id,
+            "project_root": intelligence.project_root,
+            "project_kind": intelligence.project_kind,
+            "area_count": intelligence.area_count,
+            "file_count": intelligence.total_files_traversed,
+            "languages": list(intelligence.language_names),
+            "frameworks": list(intelligence.framework_names),
+            "package_systems": list(intelligence.package_system_names),
+            "build_systems": list(intelligence.build_system_names),
+            "test_systems": list(intelligence.test_system_names),
+            "warnings": list(intelligence.warnings),
+        }
+        self._trace(
+            trace_run_id, "common_request", "completed", "completed",
+            "Planning request was normalized for the central workflow",
+            details={
+                "diagnostic_level": "NORMAL", "result_kind": "interface",
+                "interface_stage": "common_request",
+                "downstream_stage": "project_inspection",
+                "interface_data": {
+                    "normal": {"summary": "Planning request entered the central workflow.",
+                               "f": execution_identity("common_request")},
+                    "info": {"x": typed({"project_id": project_id}, "user_request",
+                                         entry_kind, entry_kind, "common_request"),
+                             "f": execution_identity("common_request"),
+                             "y": typed({"intent": request.intent.value,
+                                         "user_request_present": bool(request.user_request)}, "common_request",
+                                        "internal", "common_request", "project_inspection")},
+                    "verbose": {"x": typed(entry_x, "user_request", entry_kind,
+                                            entry_kind, "common_request"),
+                                "f": execution_identity("common_request"),
+                                "y": typed({"project_id": request.project_id,
+                                            "intent": request.intent.value,
+                                            "user_request_present": bool(request.user_request),
+                                            "user_request": request.user_request or "not available at this boundary"}, "common_request",
+                                           "internal", "common_request", "project_inspection")},
+                    "very_verbose": {"x": typed(entry_x, "user_request", entry_kind,
+                                                 entry_kind, "common_request"),
+                                     "f": execution_identity("common_request"),
+                                     "y": typed({"project_id": request.project_id,
+                                                 "intent": request.intent.value,
+                                                 "user_request_present": bool(request.user_request),
+                                                 "user_request": request.user_request or "not available at this boundary"}, "common_request",
+                                                "internal", "common_request", "project_inspection")},
+                },
+            },
+        )
+        self._trace(
+            trace_run_id, "project_inspection", "completed", "completed",
+            "Project Inspection transformed a project root into Project Intelligence",
+            details={
+                "diagnostic_level": "NORMAL", "result_kind": "interface",
+                "interface_stage": "project_inspection",
+                "upstream_stage": "common_request",
+                "downstream_stage": "requirement_discovery",
+                "interface_data": {
+                    "normal": {"summary": "Project root produced structured Project Intelligence.",
+                               "f": execution_identity("project_inspection")},
+                    "info": {"x": typed({"project_id": project_id}, "common_request",
+                                         "internal", "common_request", "project_inspection"),
+                             "f": execution_identity("project_inspection"),
+                             "y": typed({"project_kind": intelligence.project_kind,
+                                         "area_count": intelligence.area_count,
+                                         "file_count": intelligence.total_files_traversed},
+                                        "project_intelligence", "internal",
+                                        "project_inspection", "requirement_discovery")},
+                    "verbose": {"x": typed(request_x, "common_request", "internal", "common_request", "project_inspection"),
+                                "f": execution_identity("project_inspection"),
+                                "y": typed(intelligence_y, "project_intelligence", "internal", "project_inspection", "requirement_discovery")},
+                    "very_verbose": {"x": typed(request_x, "common_request", "internal", "common_request", "project_inspection"),
+                                     "f": execution_identity("project_inspection"),
+                                     "y": typed(intelligence_y, "project_intelligence", "internal", "project_inspection", "requirement_discovery")},
+                },
+            },
+        )
+        if request.intent is not RequestIntent.PLAN_PROJECT_SETUP:
+            raise ValueError(f"Unsupported request intent: {request.intent}")
+
+        try:
+            if project_context is None:
+                if run_id is None:
+                    return self._development_workflow.run(
+                        request.project_info, request.project_id,
+                        user_request=request.user_request,
+                        source_interface=request.source_interface,
+                        project_intelligence=intelligence,
+                    )
+                return self._development_workflow.run(
+                    request.project_info, request.project_id, run_id,
+                    user_request=request.user_request,
+                    source_interface=request.source_interface,
+                    project_intelligence=intelligence,
+                )
+            if run_id is None:
+                return self._development_workflow.run(
+                    request.project_info, request.project_id,
+                    project_context=project_context,
+                    user_request=request.user_request,
+                    source_interface=request.source_interface,
+                    project_intelligence=intelligence,
+                )
+            return self._development_workflow.run(
+                request.project_info, request.project_id, run_id,
+                project_context=project_context,
+                user_request=request.user_request,
+                source_interface=request.source_interface,
+                project_intelligence=intelligence,
+            )
+        except WorkflowBlockedError:
+            # The central workflow already persisted the authoritative blocked
+            # terminal event. Do not append a contradictory failed ending.
+            raise
+        except Exception as error:
+            self._trace(trace_run_id, "workflow_end", "failed", "failed", f"Planning workflow failed: {type(error).__name__}", details={"end_state": "failed"}, related_result_id=f"planning:{trace_run_id}:failed")
+            raise
+
+    def record_setup_approval_event(
+        self, project_id: str, plan_id: str, generation_id: str,
+        run_id: str | None = None,
+    ) -> None:
+        """Durably record, in the same central DiagnosticTraceStore
+        execute_approved_setup_and_development already uses, that a
+        real human-approval transition just happened for (project_id,
+        plan_id, generation_id) — under the same related_result_id
+        convention every other lifecycle transition in this file
+        already uses (final_approval, controlled_git, publish_approval,
+        ...).
+
+        CLAUDE-E2E-003I: generation_id (SetupPlan.generation_id) is
+        included in the related_result_id precisely so that Approval
+        for one generation is never indistinguishable from Approval
+        for another materialization of the same plan.id -- "Approval
+        for Generation A ≠ Approval for Generation B" even when every
+        other identifier (project_id, plan_id, step_id, target
+        identity) happens to be identical.
+
+        The resulting related_result_id
+        (f"setup-approval:{plan_id}:{generation_id}:approved") is later
+        reused, unchanged, as ApprovalProvenance.human_approval_ref: a
+        genuine reference to a real, persisted approval event this
+        method itself just recorded, not a value fabricated only at the
+        point of use. Only the service may write to its own trace
+        store, so this stays a method; the surrounding load/approve/save
+        sequence does not need service state and lives in the plain,
+        adapter-shared approve_setup_plan() function below instead.
+        """
+        self._trace(
+            run_id or plan_id, "setup_approval", "approved", "approved",
+            "Setup approval granted",
+            details={"project_id": project_id, "plan_id": plan_id, "generation_id": generation_id},
+            related_result_id=f"setup-approval:{plan_id}:{generation_id}:approved",
+        )
+
+    def execute_approved_setup_and_development(
+        self,
+        plan,
+        project_id: str,
+        project_path: str | Path,
+        task: str,
+        run_id: str | None = None,
+        *,
+        engineering_council_ref: str | None = None,
+        chairman_approval_ref: str | None = None,
+        planning_result=None,
+    ) -> SetupDevelopmentTestingResult:
+        """Execute approved setup, then delegate development/testing once.
+
+        planning_result, when supplied (the WorkflowResult that produced
+        this plan), lets a TOOL_UNAVAILABLE outcome be routed into S3.5
+        recovery here via route_tool_unavailable_to_recovery(); the
+        prepared recovery is returned pending human approval.
+
+        engineering_council_ref / chairman_approval_ref, when both
+        supplied for an already-approved plan, let each step's already-
+        resolved, ecosystem-neutral target_executable be authorized for
+        this exact project scope via the existing, unmodified
+        CapabilityRegistry.register_approved() approval-provenance flow
+        (see app.execution.register_setup_step_targets) — pinning it
+        against later PATH lookup changes, without broadening any
+        bootstrap capability and without a second authorization
+        mechanism. This is strictly additive: when either reference is
+        omitted (the default, fully backward-compatible with every
+        existing caller), execution proceeds exactly as before,
+        continuing to rely on the bootstrap capability's live PATH-based
+        resolution. Selection during planning never authorizes anything
+        by itself — only an already-"approved" plan (checked here) can
+        ever result in a registration, and Human Approval — not this
+        method — is what made that status transition possible.
+        """
+        if not isinstance(project_id, str) or not project_id.strip():
+            raise ValueError("project_id must be a non-empty string")
+        if not isinstance(task, str) or not task.strip():
+            raise ValueError("task must be a non-empty string")
+
+        authorize_setup_plan_targets(
+            plan, project_path, engineering_council_ref, chairman_approval_ref,
+            self._capability_registry, self._approved_content_store,
+        )
+
+        execution_run_id = run_id or plan.id
+        provenance_recorder = RunChangeProvenance(self._workflow_manager, execution_run_id, project_path)
+        # CLAUDE-E2E-NIO-006B: captured here, once, before any of this
+        # run's own mutating actions (setup execution, development,
+        # verification) begin -- see RunChangeProvenance.
+        # capture_working_tree_baseline() and ControlledGitStage.run()
+        # for why this is what lets a later Controlled Git delivery
+        # distinguish pre-existing foreign working-tree content from a
+        # genuinely new, run-introduced unapproved side effect.
+        provenance_recorder.capture_working_tree_baseline()
+        request = DevelopmentRequest(
+            project_id=project_id,
+            project_path=project_path,
+            task=task,
+            run_id=execution_run_id,
+            provenance_recorder=provenance_recorder,
+        )
+        stage = "development"
+        try:
+            lease = acquire_project_execution(project_path, execution_run_id, stage)
+        except ConcurrentExecutionError:
+            self._trace(execution_run_id, "workflow_end", "blocked", "blocked", "Concurrent mutating execution rejected", details={"execution_stage": stage})
+            raise
+        try:
+            self._workflow_manager.begin_execution(
+                execution_run_id, stage, lease.project_root, PROCESS_OWNER_ID,
+            )
+        except RecoveryRequiredError:
+            lease.release()
+            self._trace(execution_run_id, "workflow_end", "blocked", "recovery_required", "Execution re-entry rejected", details={"execution_stage": stage})
+            raise
+        except ExecutionReentryError:
+            lease.release()
+            self._trace(execution_run_id, "workflow_end", "blocked", "blocked", "Execution re-entry rejected", details={"execution_stage": stage})
+            raise
+        self._trace(execution_run_id, "setup_execution", "started", "started", "Mutating execution lifecycle started", details={"execution_stage": stage})
+        try:
+            result = self._development_workflow.execute_approved_and_run_development(
+                plan, request,
+            )
+            approval = self._workflow_manager.complete_development_execution(
+                execution_run_id, PROCESS_OWNER_ID, result.status,
+            )
+            if approval is None:
+                approval = FinalApprovalResult(execution_run_id, "not_applicable", False, False)
+        except Exception as error:
+            self._workflow_manager.finish_execution(
+                execution_run_id, stage, PROCESS_OWNER_ID, "failed",
+                type(error).__name__,
+            )
+            self._trace(execution_run_id, "workflow_end", "failed", "failed", "Mutating execution failed", details={"execution_stage": stage})
+            raise
+        finally:
+            lease.release()
+        self._trace(execution_run_id, "workflow_end", "completed", "completed", "Mutating execution lifecycle completed", details={"execution_stage": stage})
+        approval_type = approval.status if approval.status in {"pending", "approved", "rejected"} else "completed"
+        self._trace(execution_run_id, "final_approval", approval_type, approval.status if approval.status in {"pending", "approved", "rejected"} else "completed", f"Final approval state: {approval.status}", related_result_id=f"final-approval:{execution_run_id}:{approval.status}")
+        end_state = "final_approval_pending" if approval.status == "pending" else result.status
+        self._trace(execution_run_id, "workflow_end", "completed", "pending" if approval.status == "pending" else "completed", f"Workflow stopped at {end_state}", details={"end_state": end_state}, related_result_id=f"workflow-end:{execution_run_id}:{end_state}")
+        recovery = None
+        if planning_result is not None and result.development_testing_result.status == "tool_unavailable":
+            recovery = self.route_tool_unavailable_to_recovery(
+                planning_result, result, project_id, project_path,
+            )
+        return replace(result, final_approval_result=approval, missing_toolchain_recovery=recovery)
+
+    def decide_final_approval(
+        self,
+        run_id: str,
+        decision: str,
+        approved_by: str | None = None,
+        comment: str | None = None,
+    ) -> FinalApprovalResult:
+        result = self._workflow_manager.decide_final_approval(
+            run_id, decision, approved_by, comment,
+        )
+        self._trace(run_id, "final_approval", result.status, result.status, f"Final approval {result.status}", related_result_id=f"final-approval:{run_id}:{result.status}")
+        end_state = "ready_for_git" if result.ready_for_git else "final_approval_rejected"
+        self._trace(run_id, "workflow_end", "completed", "ready_for_git" if result.ready_for_git else "rejected", f"Workflow stopped at {end_state}", details={"end_state": end_state}, related_result_id=f"workflow-end:{run_id}:{end_state}")
+        return result
+
+    def commit_approved_run(
+        self, run_id: str, project_root: str | Path, commit_message: str,
+    ) -> GitCommitResult:
+        """Run the explicit post-approval local Git stage exactly once."""
+        self._trace(run_id, "controlled_git", "requested", "started", "Controlled Git stage requested", related_result_id=f"git:{run_id}:requested")
+        state = self._workflow_manager.load()
+        persisted = state.get("git_commit_results", {}).get(run_id)
+        if persisted and persisted.get("status") in {"committed", "nothing_to_commit"}:
+            result = GitCommitResult.from_record(persisted)
+            self._trace_git_result(result)
+            return result
+        try:
+            lease = acquire_project_execution(project_root, run_id, "git")
+        except ConcurrentExecutionError:
+            self._trace(run_id, "controlled_git", "blocked", "blocked", "Concurrent Git execution rejected", details={"execution_stage": "git"})
+            raise
+        result = None
+        try:
+            lifecycle = self._workflow_manager.get_execution_state(run_id, "git")
+            if lifecycle.get("status") == "started":
+                request = self._git_request(state, run_id, project_root, commit_message)
+                baseline = (lifecycle.get("metadata") or {}).get("baseline_head")
+                result = self._controlled_git_stage.recover_committed_result(request, baseline)
+                if result is None:
+                    self._workflow_manager.require_recovery(run_id, "git")
+                    raise RecoveryRequiredError("Git execution requires manual recovery")
+                with self._workflow_manager.git_stage_transaction():
+                    recovered_state = self._workflow_manager.load()
+                    self._workflow_manager.persist_git_commit_result(
+                        recovered_state, run_id, result.to_record(),
+                    )
+                    self._workflow_manager.create_publish_approval(run_id)
+                self._workflow_manager.complete_recovered_execution(
+                    run_id, "git", PROCESS_OWNER_ID,
+                )
+                self._trace_git_result(result)
+                return result
+            baseline_head = self._controlled_git_stage.current_head(project_root)
+            if not isinstance(baseline_head, str):
+                baseline_head = None
+            self._workflow_manager.begin_execution(
+                run_id, "git", lease.project_root, PROCESS_OWNER_ID,
+                {"baseline_head": baseline_head},
+            )
+            with self._workflow_manager.git_stage_transaction():
+                state = self._workflow_manager.load()
+                request = self._git_request(state, run_id, project_root, commit_message)
+                result = self._controlled_git_stage.run(request)
+                self._workflow_manager.persist_git_commit_result(
+                    state, run_id, result.to_record(),
+                )
+                if result.status == "committed":
+                    self._workflow_manager.create_publish_approval(run_id)
+            terminal = "completed" if result.status in {"committed", "nothing_to_commit"} else "failed"
+            self._workflow_manager.finish_execution(
+                run_id, "git", PROCESS_OWNER_ID, terminal,
+            )
+        except RecoveryRequiredError:
+            self._trace(run_id, "controlled_git", "blocked", "recovery_required", "Git execution requires recovery", details={"execution_stage": "git"})
+            raise
+        except ExecutionReentryError:
+            self._trace(run_id, "controlled_git", "blocked", "blocked", "Git execution re-entry rejected", details={"execution_stage": "git"})
+            raise
+        except Exception as error:
+            lifecycle = self._workflow_manager.get_execution_state(run_id, "git")
+            # A successful commit followed by a state-save failure is an
+            # ambiguous crash window.  Preserve STARTED so the next process
+            # requires proof-based recovery instead of recording a retryable
+            # controlled failure.
+            if lifecycle.get("status") == "started" and not (
+                result is not None and result.status == "committed"
+            ):
+                self._workflow_manager.finish_execution(
+                    run_id, "git", PROCESS_OWNER_ID, "failed", type(error).__name__,
+                )
+            raise
+        finally:
+            lease.release()
+        self._trace_git_result(result)
+        if result.status == "committed":
+            self._trace(run_id, "publish_approval", "pending", "pending", "Publish approval is pending", related_result_id=f"publish-approval:{run_id}:pending")
+            self._trace(run_id, "workflow_end", "completed", "ready_for_publish", "Workflow stopped at pending publish approval", details={"end_state": "publish_pending"}, related_result_id=f"workflow-end:{run_id}:publish-pending")
+        else:
+            self._trace(run_id, "workflow_end", "completed", "failed" if result.status == "failed" else "completed", f"Workflow stopped after Controlled Git: {result.status}", details={"end_state": f"git_{result.status}"}, related_result_id=f"workflow-end:{run_id}:git-{result.status}")
+        return result
+
+    @staticmethod
+    def _git_request(state, run_id, project_root, commit_message):
+        approval = state.get("final_approvals", {}).get(run_id, {})
+        return GitCommitRequest(
+            run_id=run_id, project_root=project_root,
+            commit_message=commit_message,
+            development_status=approval.get("development_status", "missing"),
+            final_approval_status=approval.get("status", "missing"),
+            ready_for_git=approval.get("status") == "approved",
+            provenance=state.get("change_provenance", {}).get(run_id, {}),
+            all_provenance=state.get("change_provenance", {}),
+            pre_run_dirty_state=dict(
+                state.get("working_tree_baselines", {}).get(run_id) or {},
+            ),
+        )
+
+    def _trace_git_result(self, result: GitCommitResult):
+        event_type = result.status if result.status in {"committed", "nothing_to_commit", "failed"} else "completed"
+        details = {"commit_hash": result.commit_hash or "", "controlled_path_count": len(result.paths), "blockers": list(result.blockers)}
+        self._trace(result.run_id, "controlled_git", event_type, result.status, f"Controlled Git finished: {result.status}", details=details, related_result_id=f"git:{result.run_id}:{result.status}:{result.commit_hash or ''}")
+
+    def decide_publish_approval(
+        self, run_id: str, decision: str, approved_by: str | None = None,
+        comment: str | None = None,
+    ) -> PublishApprovalResult:
+        result = self._workflow_manager.decide_publish_approval(
+            run_id, decision, approved_by, comment,
+        )
+        self._trace(run_id, "publish_approval", result.status, result.status, f"Publish approval {result.status}", related_result_id=f"publish-approval:{run_id}:{result.status}")
+        if result.status == "rejected":
+            self._trace(run_id, "workflow_end", "completed", "rejected", "Workflow stopped at rejected publish approval", details={"end_state": "publish_rejected"}, related_result_id=f"workflow-end:{run_id}:publish-rejected")
+        return result
+
+    def publish_approved_run(
+        self, run_id: str, project_root: str | Path, remote: str,
+    ) -> PublishResult:
+        """Run the explicit post-publish-approval remote stage exactly once."""
+        self._trace(run_id, "controlled_publish", "requested", "started", "Controlled Publish stage requested", details={"remote": remote if isinstance(remote, str) and "://" not in remote else ""}, related_result_id=f"publish:{run_id}:requested")
+        state = self._workflow_manager.load()
+        persisted = state.get("publish_results", {}).get(run_id)
+        if persisted and persisted.get("status") in {"published", "already_published"}:
+            result = PublishResult.from_record(persisted, status="already_published")
+            self._trace_publish_result(result)
+            return result
+        try:
+            lease = acquire_project_execution(project_root, run_id, "publish")
+        except ConcurrentExecutionError:
+            self._trace(run_id, "controlled_publish", "blocked", "blocked", "Concurrent publish execution rejected", details={"execution_stage": "publish"})
+            raise
+        result = None
+        try:
+            lifecycle = self._workflow_manager.get_execution_state(run_id, "publish")
+            if lifecycle.get("status") in {"started", "recovery_required"}:
+                self._workflow_manager.resume_publish_execution(run_id, PROCESS_OWNER_ID)
+            else:
+                self._workflow_manager.begin_execution(
+                    run_id, "publish", lease.project_root, PROCESS_OWNER_ID,
+                )
+            with self._workflow_manager.git_stage_transaction():
+                state = self._workflow_manager.load()
+                commit = state.get("git_commit_results", {}).get(run_id, {})
+                approval = state.get("publish_approvals", {}).get(run_id, {})
+                request = PublishRequest(
+                    run_id=run_id, project_root=project_root, remote=remote,
+                    git_commit_status=commit.get("status", "missing"),
+                    local_commit_hash=commit.get("commit_hash"),
+                    ready_for_publish=(commit.get("status") == "committed" and bool(commit.get("commit_hash")) and approval.get("ready_for_publish") is True),
+                    publish_approval_status=approval.get("status", "missing"),
+                )
+                result = self._controlled_publish_stage.run(request)
+                self._workflow_manager.persist_publish_result(
+                    state, run_id, result.to_record(),
+                )
+            terminal = "completed" if result.status in {"published", "already_published"} else "failed"
+            self._workflow_manager.finish_execution(
+                run_id, "publish", PROCESS_OWNER_ID, terminal,
+            )
+        except RecoveryRequiredError:
+            self._trace(run_id, "controlled_publish", "blocked", "recovery_required", "Publish execution requires recovery", details={"execution_stage": "publish"})
+            raise
+        except ExecutionReentryError:
+            self._trace(run_id, "controlled_publish", "blocked", "blocked", "Publish execution re-entry rejected", details={"execution_stage": "publish"})
+            raise
+        except Exception as error:
+            lifecycle = self._workflow_manager.get_execution_state(run_id, "publish")
+            if lifecycle.get("status") == "started" and not (
+                result is not None and result.status in {"published", "already_published"}
+            ):
+                self._workflow_manager.finish_execution(
+                    run_id, "publish", PROCESS_OWNER_ID, "failed", type(error).__name__,
+                )
+            raise
+        finally:
+            lease.release()
+        self._trace_publish_result(result)
+        end_state = result.status if result.status in {"published", "already_published"} else "publish_failed"
+        self._trace(run_id, "workflow_end", "completed", "published" if result.status in {"published", "already_published"} else "failed", f"Workflow stopped after publish: {result.status}", details={"end_state": end_state}, related_result_id=f"workflow-end:{run_id}:{end_state}")
+        return result
+
+    def _trace_publish_result(self, result: PublishResult):
+        event_type = result.status if result.status in {"published", "already_published", "failed"} else "completed"
+        self._trace(result.run_id, "controlled_publish", event_type, result.status, f"Controlled Publish finished: {result.status}", details={"commit_hash": result.local_commit_hash or "", "published_commit_hash": result.published_commit_hash or "", "remote": result.remote, "remote_ref": result.remote_ref or "", "blockers": list(result.blockers), "failure_summary": result.error or ""}, related_result_id=f"publish:{result.run_id}:{result.status}:{result.published_commit_hash or ''}")
+
+    def _final_approval_for(self, run_id: str, development_status: str) -> FinalApprovalResult:
+        if development_status != "accepted":
+            return FinalApprovalResult(run_id, "not_applicable", False, False)
+        return self._workflow_manager.create_final_approval(run_id, development_status)
+
+
+def _text_or_none(value):
+    return value if isinstance(value, str) else None
+
+
+# ---------------------------------------------------------------------------
+# Shared adapter-agnostic setup-plan lifecycle helpers (CLAUDE-E2E-003F).
+#
+# Web/API and MCP must both call these three functions instead of each
+# independently deciding how to persist a plan, approve one, or gather
+# the references needed to execute one -- a single, central
+# implementation for exactly the parts of the productive lifecycle that
+# would otherwise be duplicated per adapter. They are plain functions,
+# not ProjectSetupApplicationService methods, because none of them need
+# service-owned state beyond what is already passed in explicitly
+# (plan_store, service); ProjectSetupApplicationService itself
+# deliberately still does not own a WorkflowPlanStore reference (see
+# CLAUDE-E2E-003D/E) -- persistence remains the caller's dependency,
+# just no longer the caller's own bespoke logic.
+# ---------------------------------------------------------------------------
+
+def persist_setup_plan(plan_store, plan, council_result=None, planning_result=None) -> None:
+    """Adapter-agnostic persistence step for a freshly materialized
+    SetupPlan and (when available) the Engineering Council reference it
+    was materialized from.
+
+    Reuses the existing WorkflowPlanStore introduced in
+    CLAUDE-E2E-003E -- there is no second, competing store. When
+    council_result carries no usable id/recommendation (an incomplete
+    Council run), the council reference is simply not saved rather than
+    saved with a fabricated value; a later execute_approved_plan_from_store()
+    call for this plan then finds no council reference and executes
+    exactly as it did before CLAUDE-E2E-003E/F, falling back to the
+    bootstrap capability's PATH-based resolution.
+
+    planning_result, when supplied, is the WorkflowResult that produced
+    *plan*; it is bound to the persisted plan
+    (WorkflowPlanStore.bind_planning_result) so the full-lifecycle entry
+    point can route an S5 TOOL_UNAVAILABLE outcome into S3.5 recovery with
+    the already-made EngineeringDecision.
+    """
+    plan_store.save(plan)
+    if planning_result is not None:
+        plan_store.bind_planning_result(plan, planning_result)
+    if (
+        council_result is not None
+        and getattr(council_result, "id", None)
+        and getattr(council_result, "recommendation", None)
+    ):
+        plan_store.save_council_reference(
+            plan.project_id, plan.id,
+            council_result.id, council_result.recommendation,
+        )
+
+
+def approve_setup_plan(
+    service: "ProjectSetupApplicationService", plan_store,
+    project_id: str, plan_id: str, run_id: str | None = None,
+):
+    """Single authorization point for transitioning a persisted
+    SetupPlan to "approved". Web/API and MCP must both call this
+    instead of invoking SetupApproval.approve() directly: it keeps this
+    logic in exactly one shared place, and it durably records this
+    exact approval as a real DiagnosticTraceEvent via
+    service.record_setup_approval_event() -- see that method for why
+    the resulting reference is a genuine approval-event reference, not
+    a value fabricated only at the point of use.
+    """
+    plan = plan_store.load(project_id, plan_id)
+    approved_plan = SetupApproval.approve(plan)
+    plan_store.save(approved_plan)
+    # CLAUDE-E2E-003I-B: this is the one real Human Approval transition
+    # both Web and MCP go through -- record the exact execution-relevant
+    # content this approval authorizes for this exact generation, before
+    # any authorization or execution can ever be attempted. See
+    # app.approved_plan_content for why this closes a gap
+    # REQ-S3-GENERATION-CONTENT-IMMUTABILITY cannot: no SetupExecutionState
+    # record exists yet at this point.
+    service._approved_content_store.record_approved(approved_plan)
+    service.record_setup_approval_event(
+        project_id, plan_id, approved_plan.generation_id, run_id,
+    )
+    return approved_plan
+
+
+def execute_approved_plan_from_store(
+    service: "ProjectSetupApplicationService", plan_store,
+    project_id: str, plan_id: str,
+    project_path, task: str, run_id: str | None = None,
+) -> SetupDevelopmentTestingResult:
+    """Single execution entry point for adapters whose product scope
+    includes the full setup + development/testing/rework lifecycle
+    (today, Web/API): loads the persisted approved plan and its
+    ADC-owned Engineering Council reference from plan_store itself,
+    never from caller-supplied arguments. Neither adapter can supply or
+    substitute engineering_council_ref/chairman_approval_ref through
+    this function -- there is no parameter for a caller to do so;
+    whatever plan_store actually holds for (project_id, plan_id) is
+    what gets used, exactly as approve_setup_plan() and
+    persist_setup_plan() left it.
+
+    An adapter whose product scope is setup execution only (today,
+    MCP's execute_setup_plan tool) should call the narrower
+    execute_approved_setup_from_store() below instead -- it reaches
+    the exact same authorization gate (authorize_setup_plan_targets)
+    without also triggering a full development/testing/rework cycle.
+
+    Production S5 -> S3.5 composition (ARC_029, IF_REQ_037): this entry
+    point owns the routing of a TOOL_UNAVAILABLE outcome into bounded
+    S3.5 recovery. The planning provenance is taken only from plan_store
+    (the WorkflowResult persist_setup_plan() bound to this exact plan
+    generation), never from a caller argument; when none is bound the
+    routing still runs and fails closed with a structured blocker.
+    Recovery always stops at its pending human approval.
+    """
+    plan = plan_store.load(project_id, plan_id)
+    council_refs = plan_store.load_council_reference(project_id, plan_id)
+    engineering_council_ref, chairman_approval_ref = (
+        council_refs if council_refs is not None else (None, None)
+    )
+    result = service.execute_approved_setup_and_development(
+        plan, project_id, project_path, task, run_id,
+        engineering_council_ref=engineering_council_ref,
+        chairman_approval_ref=chairman_approval_ref,
+    )
+    if getattr(result.development_testing_result, "status", None) != "tool_unavailable":
+        return result
+    recovery = service.route_tool_unavailable_to_recovery(
+        _bound_planning_result(plan_store, plan, council_refs),
+        result, project_id, project_path,
+    )
+    return replace(result, missing_toolchain_recovery=recovery)
+
+
+def _bound_planning_result(plan_store, plan, council_refs):
+    """The planning WorkflowResult bound to this exact persisted plan
+    generation, or None when it is absent or does not match the plan and
+    Council reference plan_store holds (fail closed, never reselect)."""
+    planning = plan_store.load_planning_result(plan.project_id, plan.id)
+    produced = getattr(planning, "setup_plan", None)
+    council = getattr(planning, "council_result", None)
+    if (
+        produced is None
+        or produced.id != plan.id
+        or produced.generation_id != plan.generation_id
+        or (council_refs is not None and getattr(council, "id", None) != council_refs[0])
+    ):
+        return None
+    return planning
+
+
+def authorize_setup_plan_targets(
+    plan, project_path,
+    engineering_council_ref: str | None, chairman_approval_ref: str | None,
+    capability_registry=None,
+    approved_content_store: ApprovedPlanContentStore | None = None,
+    *, approval_context: dict | None = None,
+) -> None:
+    """The one shared gate deciding whether register_setup_step_targets()
+    should run at all for a given (plan, references) combination.
+
+    execute_approved_setup_and_development() and
+    execute_approved_setup_from_store() (MCP's narrower, setup-only
+    execution path) both call this exact function instead of each
+    independently re-deciding when registration is appropriate --
+    there is exactly one place this conditional (both references
+    present, and the plan is genuinely "approved") is written.
+
+    CLAUDE-E2E-003I-B: this is also the one shared place that verifies
+    the plan's CURRENT execution-relevant content still matches what
+    Human Approval actually authorized for this exact generation
+    (REQ-S3-APPROVED-PLAN-CONTENT-IMMUTABILITY) -- before any dynamic
+    capability registration is even attempted. Placed after the
+    reference/approval-status gate so this never runs for a plan that
+    is not genuinely approved (an unapproved plan is already rejected
+    by other, pre-existing means) and never for the fallback bootstrap-
+    capability shape (no council/chairman references at all), matching
+    exactly the shape register_setup_step_targets() itself protects.
+    """
+    if not (engineering_council_ref and chairman_approval_ref and plan.status == "approved"):
+        return
+    content_store = approved_content_store or ApprovedPlanContentStore()
+    if approval_context is None:
+        content_store.verify(plan)
+    else:
+        content_store.verify(plan, approval_context=approval_context)
+    from app.execution import DEFAULT_CAPABILITY_REGISTRY, register_setup_step_targets
+    register_setup_step_targets(
+        plan, project_path,
+        engineering_council_ref=engineering_council_ref,
+        chairman_approval_ref=chairman_approval_ref,
+        # CLAUDE-E2E-003I: generation_id is embedded so that Approval
+        # for one setup generation can never be mistaken for -- or reused
+        # as -- Approval for a different one, even for the identical
+        # plan.id/project/target. See record_setup_approval_event().
+        human_approval_ref=f"setup-approval:{plan.id}:{plan.generation_id}:approved",
+        capability_registry=capability_registry or DEFAULT_CAPABILITY_REGISTRY,
+    )
+
+
+def execute_approved_setup_from_store(
+    service: "ProjectSetupApplicationService", plan_store,
+    project_id: str, plan_id: str, project_path,
+):
+    """Central, single setup-only execution entry point for adapters
+    whose product scope does not include a development/testing/rework
+    cycle (today, MCP's execute_setup_plan tool). Loads the persisted
+    approved plan and its ADC-owned Council reference from plan_store
+    itself, authorizes via the exact same authorize_setup_plan_targets()
+    gate execute_approved_setup_and_development() uses, then executes
+    through DevelopmentWorkflow.execute_approved() -- the same
+    setup-execution primitive execute_approved_setup_and_development()
+    itself reaches internally (via
+    DevelopmentWorkflow.execute_approved_and_run_development()). Never
+    reimplements register_setup_step_targets()'s invocation logic.
+    """
+    plan = plan_store.load(project_id, plan_id)
+    council_refs = plan_store.load_council_reference(project_id, plan_id)
+    engineering_council_ref, chairman_approval_ref = (
+        council_refs if council_refs is not None else (None, None)
+    )
+    authorize_setup_plan_targets(
+        plan, project_path, engineering_council_ref, chairman_approval_ref,
+        service._capability_registry, service._approved_content_store,
+    )
+    return service._development_workflow.execute_approved(plan, project_path)

@@ -1,0 +1,367 @@
+# Translations template for PROJECT.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the PROJECT project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-09-20 11:29+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:2
+msgid "ADC Implementation Mapping"
+msgstr "ADC Implementierungszuordnung"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:4
+msgid "Real implementation artifacts that materially satisfy accepted Requirements."
+msgstr "Reale Implementierungsartefakte, die akzeptierte Anforderungen materiell erfüllen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:6
+msgid "Each object below was verified by reading the actual source referenced, not inferred from filenames. Where a Requirement's full obligation is only partially realized by existing code, no IMPL object is created for it here — that Requirement remains an honest gap (see the coverage dashboard)."
+msgstr "Jedes der folgenden Objekte wurde durch Lesen des tatsächlich referenzierten Quellcodes verifiziert, nicht aus Dateinamen abgeleitet. Wo die vollständige Verpflichtung einer Anforderung durch vorhandenen Code nur teilweise erfüllt wird, wird hier kein IMPL-Objekt dafür erzeugt — diese Anforderung bleibt eine ehrliche Lücke (siehe Abdeckungs-Dashboard)."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:16
+msgid "``CommonRequest`` (a frozen dataclass with no mutation methods) is the adapter-neutral external-entry artifact. It structurally cannot select a technical solution, toolchain, or execute setup, and preserves the user's request unchanged."
+msgstr "``CommonRequest`` (eine frozen Dataclass ohne Mutationsmethoden) ist das adapterneutrale externe Einstiegsartefakt. Es kann strukturell keine technische Lösung oder Toolchain auswählen und kein Setup ausführen, und bewahrt die Benutzeranfrage unverändert."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:21
+msgid "Location: app/common_request.py, class CommonRequest"
+msgstr "Ort: app/common_request.py, Klasse CommonRequest"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:28
+msgid "``AIRequirementDiscovery`` → ``RequirementValidator`` → ``RequirementPreflight`` produce Requirement objects with stable, generated IDs and carry no technical-solution-selection or setup-execution capability; downstream S2.3 admissibility rejects any candidate whose requirement_ref does not match a real, preserved ID from this pipeline (ID loss/drift/duplication never silently enters the Council handoff)."
+msgstr "``AIRequirementDiscovery`` → ``RequirementValidator`` → ``RequirementPreflight`` erzeugen Requirement-Objekte mit stabilen, generierten IDs und besitzen keine Fähigkeit zur technischen Lösungsauswahl oder Setup-Ausführung; die nachgelagerte S2.3-Zulässigkeit lehnt jeden Kandidaten ab, dessen requirement_ref nicht mit einer echten, bewahrten ID aus dieser Pipeline übereinstimmt (ID-Verlust/-Drift/-Duplizierung geht niemals stillschweigend in die Council-Übergabe ein)."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:36
+msgid "Location: app/ai_requirement_discovery.py class AIRequirementDiscovery; app/requirement_validator.py class RequirementValidator; app/requirement_preflight.py class RequirementPreflight"
+msgstr "Ort: app/ai_requirement_discovery.py Klasse AIRequirementDiscovery; app/requirement_validator.py Klasse RequirementValidator; app/requirement_preflight.py Klasse RequirementPreflight"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:45
+msgid "Phase 1 (``_phase1_independent_proposals``) generates independent per-agent proposals; Phase 2 (``_phase2_cross_review``) collects cross-review evidence for each before any recommendation is produced. Neither phase selects a final recommendation or decides admissibility."
+msgstr "Phase 1 (``_phase1_independent_proposals``) erzeugt unabhängige Vorschläge je Agent; Phase 2 (``_phase2_cross_review``) sammelt für jeden Cross-Review-Evidenz, bevor eine Empfehlung erzeugt wird. Keine der beiden Phasen wählt eine finale Empfehlung aus oder entscheidet über Zulässigkeit."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:50
+msgid "Location: app/engineering_council.py, functions _phase1_independent_proposals, _phase2_cross_review"
+msgstr "Ort: app/engineering_council.py, Funktionen _phase1_independent_proposals, _phase2_cross_review"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:58
+msgid "``_phase3_chairman_synthesis`` synthesizes cross-reviewed proposals into a recommendation, including exactly one bounded targeted repair attempt on a structurally rejected synthesis; it exercises no independent admissibility policy of its own."
+msgstr "``_phase3_chairman_synthesis`` synthetisiert gegengeprüfte Vorschläge zu einer Empfehlung, einschließlich genau eines begrenzten gezielten Reparaturversuchs bei strukturell abgelehnter Synthese; es wendet keine eigenständige Zulässigkeitsrichtlinie an."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:63
+msgid "Note: this same code also produces the final Chairman-candidate artifact IF_REQ_008 is about, but no existing test genuinely exercises a multi-source Chairman merge with correctly-derived ``merged_from``/``origin_agents`` feeding ``validate_candidates()`` — IF_REQ_008 is therefore intentionally left without an IMPL link here (reported as IMPLEMENTATION_GAP for the merge-lineage-fidelity clause specifically, not a blanket claim that Chairman synthesis is unimplemented)."
+msgstr "Hinweis: derselbe Code erzeugt auch das finale Chairman-Kandidatenartefakt, um das es bei IF_REQ_008 geht, aber kein bestehender Test übt tatsächlich einen Multi-Source-Chairman-Merge mit korrekt abgeleiteten ``merged_from``/``origin_agents`` aus, die in ``validate_candidates()`` einfließen — IF_REQ_008 bleibt daher hier absichtlich ohne IMPL-Verknüpfung (als IMPLEMENTATION_GAP speziell für die Merge-Lineage-Treue-Klausel gemeldet, keine pauschale Behauptung, dass die Chairman-Synthese unimplementiert sei)."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:72
+msgid "Location: app/engineering_council.py, function _phase3_chairman_synthesis"
+msgstr "Ort: app/engineering_council.py, Funktion _phase3_chairman_synthesis"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:80
+msgid "``validate_variants``/``validate_candidates`` is the sole technical admissibility authority, producing ``CandidateValidation`` with admissible/reasons per candidate; it is invoked independently of, and never infers admissibility from, the Chairman recommendation."
+msgstr "``validate_variants``/``validate_candidates`` ist die alleinige Autorität für technische Zulässigkeit und erzeugt ``CandidateValidation`` mit zulässig/Gründen je Kandidat; sie wird unabhängig von der Chairman-Empfehlung aufgerufen und leitet Zulässigkeit niemals aus ihr ab."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:85
+msgid "Note: the Requirement's full \"structured rejection category\" obligation (IF_REQ_009: distinct missing-reference / type / technical-identity / semantic / version-mismatch / verification- contract-gap categories) is only partially exposed by the current ``CandidateValidation`` fields (4 coarse dimensions: missing_binding_requirement_ids, platform_conflict, unmaterializable_items, verification_feasibility_gap_ids) — IF_REQ_009 is intentionally left unmapped (IMPLEMENTATION_GAP), not claimed as fully satisfied by this partial implementation."
+msgstr "Hinweis: Die vollständige Verpflichtung der Anforderung zu „strukturierten Ablehnungskategorien“ (IF_REQ_009: unterschiedliche Kategorien für fehlende Referenz / Typ / technische Identität / Semantik / Versionsabweichung / Verifikationsvertragslücke) wird von den aktuellen ``CandidateValidation``-Feldern nur teilweise abgedeckt (4 grobe Dimensionen: missing_binding_requirement_ids, platform_conflict, unmaterializable_items, verification_feasibility_gap_ids) — IF_REQ_009 bleibt absichtlich unverknüpft (IMPLEMENTATION_GAP), ohne den Anspruch, durch diese teilweise Implementierung vollständig erfüllt zu sein."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:95
+msgid "Location: app/engineering_decision.py, functions validate_variants, validate_candidates; class CandidateValidation"
+msgstr "Ort: app/engineering_decision.py, Funktionen validate_variants, validate_candidates; Klasse CandidateValidation"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:103
+msgid "``EngineeringReworkRequest.from_validation()`` builds rework feedback directly from a ``CandidateValidation``, distinguishing repairable (identity_conflict/install_method_conflict) from non-repairable (materializability_conflict) causes; never repairs a candidate or picks an alternative winner itself."
+msgstr "``EngineeringReworkRequest.from_validation()`` baut Nacharbeits-Feedback direkt aus einer ``CandidateValidation`` auf und unterscheidet reparierbare (identity_conflict/install_method_conflict) von nicht reparierbaren (materializability_conflict) Ursachen; repariert niemals selbst einen Kandidaten und wählt keinen alternativen Gewinner."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:109
+msgid "Location: app/engineering_decision.py, class EngineeringReworkRequest, method from_validation"
+msgstr "Ort: app/engineering_decision.py, Klasse EngineeringReworkRequest, Methode from_validation"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:117
+msgid "``resolve_human_engineering_selection`` consumes only already- technically-evaluated ``CandidateValidationSet`` results; zero eligible candidates raises ``NoEligibleEngineeringCandidateError`` rather than silently proceeding."
+msgstr "``resolve_human_engineering_selection`` konsumiert nur bereits technisch bewertete ``CandidateValidationSet``-Ergebnisse; null zulässige Kandidaten lösen ``NoEligibleEngineeringCandidateError`` aus, statt stillschweigend fortzufahren."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:122
+msgid "Location: app/engineering_decision.py, function resolve_human_engineering_selection; class EngineeringVariantSelection"
+msgstr "Ort: app/engineering_decision.py, Funktion resolve_human_engineering_selection; Klasse EngineeringVariantSelection"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:130
+msgid "``select_engineering_variant`` resolves the human's choice against an existing admissible candidate; produces no hidden EngineeringDecision on reject/defer/rework and no default winner on unresolved selection."
+msgstr "``select_engineering_variant`` löst die menschliche Wahl gegen einen existierenden zulässigen Kandidaten auf; erzeugt bei Ablehnung/Zurückstellung/Nacharbeit keine verdeckte EngineeringDecision und bei ungelöster Auswahl keinen Standardgewinner."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:134
+msgid "Location: app/engineering_decision.py, function select_engineering_variant"
+msgstr "Ort: app/engineering_decision.py, Funktion select_engineering_variant"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:142
+msgid "``build_engineering_decision`` produces the single ``EngineeringDecision`` artifact preserving exact candidate identity, selection authority, and validation provenance across the S2→S3 boundary."
+msgstr "``build_engineering_decision`` erzeugt das einzige ``EngineeringDecision``-Artefakt und bewahrt exakte Kandidatenidentität, Auswahlautorität und Validierungs-Provenienz über die S2→S3-Grenze hinweg."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:146
+msgid "Location: app/engineering_decision.py, function build_engineering_decision; class EngineeringDecision"
+msgstr "Ort: app/engineering_decision.py, Funktion build_engineering_decision; Klasse EngineeringDecision"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:154
+msgid "``ToolchainMaterializer.materialize_decision()`` materializes the already-chosen EngineeringDecision into a classified SetupPlan (already_satisfied / materializable / manual_review / deferred / provided via ``_classify_item_baseline``) without executing, approving, or reopening the S2 selection."
+msgstr "``ToolchainMaterializer.materialize_decision()`` materialisiert die bereits gewählte EngineeringDecision über ``_classify_item_baseline`` in einen klassifizierten SetupPlan (already_satisfied / materializable / manual_review / deferred / provided), ohne die S2-Auswahl auszuführen, freizugeben oder neu aufzurollen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:160
+msgid "Location: app/toolchain_materializer.py, class ToolchainMaterializer, methods materialize_decision, _classify_item_baseline"
+msgstr "Ort: app/toolchain_materializer.py, Klasse ToolchainMaterializer, Methoden materialize_decision, _classify_item_baseline"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:168
+msgid "``SetupApproval`` is a narrow state-transition class with no planning or execution capability; binds approval to exact plan content and excludes manual_review steps from being marked approved."
+msgstr "``SetupApproval`` ist eine eng gefasste Zustandsübergangsklasse ohne Planungs- oder Ausführungsfähigkeit; bindet die Freigabe an den exakten Planinhalt und schließt aus, dass manual_review-Schritte als freigegeben markiert werden."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:172
+msgid "Location: app/setup_approval.py, class SetupApproval, methods approve, reject"
+msgstr "Ort: app/setup_approval.py, Klasse SetupApproval, Methoden approve, reject"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:180
+msgid "``execute_controlled``/``validate_request`` require an active registered ``CapabilityRegistration``, an allowed operation type, complete approval provenance for mutating operations, matching executable identity, and reject dangerous argument patterns before any mutation proceeds. Toolchain-specific behavior is delegated entirely to registered capabilities/adapters, never embedded in this central boundary — the same generic mechanism realizes the technology-neutral vocabulary requirement and the \"executability proof precedes mutation\" requirement."
+msgstr "``execute_controlled``/``validate_request`` erfordern eine aktive registrierte ``CapabilityRegistration``, einen erlaubten Operationstyp, vollständige Freigabe-Provenienz für mutierende Operationen, passende ausführbare Identität, und lehnen gefährliche Argumentmuster ab, bevor eine Mutation fortfährt. Toolchain-spezifisches Verhalten wird vollständig an registrierte Capabilities/Adapter delegiert, niemals in diese zentrale Grenze eingebettet — derselbe generische Mechanismus realisiert die Anforderung des technologieneutralen Vokabulars und die Anforderung „Ausführbarkeitsnachweis vor Mutation“."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:190
+msgid "Location: app/execution.py, functions execute_controlled, validate_request; class CapabilityRegistry"
+msgstr "Ort: app/execution.py, Funktionen execute_controlled, validate_request; Klasse CapabilityRegistry"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:198
+msgid "``execute_controlled`` classifies a request as a software installation centrally and deterministically via ``is_software_installation_request`` (``ExecutionRequest.operation_type == \"install\"``, the same structured field ``_MUTATING_OPERATION_TYPES`` already treats as mutating; never inferred from command text) and, only for that classification, routes execution through ``InteractiveTerminalLauncher`` instead of the direct ``subprocess.run`` call used for every other operation type. ``InteractiveTerminalLauncher`` depends only on a ``TerminalProvider`` abstraction, never one hard-coded desktop terminal program; ``DesktopTerminalProvider`` is the production provider, trying an ordered, extensible list of common Linux terminal emulators and using whichever is first found on ``PATH``. The wrapped installation command runs with its stdin/stdout/stderr owned entirely by the terminal emulator's own PTY -- this Python process never reads or forwards them, which is what structurally guarantees ADC can never receive a sudo password as application data. The real exit code is obtained via a private, per-run status file a small wrapper script writes only after the wrapped command (invoked via ``\"$@\"``, never re-quoted through a shell string) actually returns; its absence -- terminal unavailable, launch failure, or the window closing/timing out first -- always raises ``InteractiveTerminalError`` with a structured cause (``INTERACTIVE_TERMINAL_UNAVAILABLE`` / ``INTERACTIVE_TERMINAL_LAUNCH_FAILED`` / ``INTERACTIVE_TERMINAL_CANCELLED``), never a synthesized success."
+msgstr "``execute_controlled`` klassifiziert eine Anfrage zentral und deterministisch über ``is_software_installation_request`` als Software-Installation (``ExecutionRequest.operation_type == \"install\"``, dasselbe strukturierte Feld, das ``_MUTATING_OPERATION_TYPES`` bereits als mutierend behandelt; niemals aus Befehlstext abgeleitet) und leitet die Ausführung nur bei dieser Klassifizierung über ``InteractiveTerminalLauncher`` statt über den direkten ``subprocess.run``-Aufruf, der für jeden anderen Operationstyp verwendet wird. ``InteractiveTerminalLauncher`` hängt nur von einer ``TerminalProvider``-Abstraktion ab, niemals von einem fest codierten Desktop-Terminalprogramm; ``DesktopTerminalProvider`` ist der Produktions-Provider, der eine geordnete, erweiterbare Liste gängiger Linux-Terminalemulatoren durchprobiert und denjenigen verwendet, der zuerst im ``PATH`` gefunden wird. Der umschlossene Installationsbefehl läuft mit seiner stdin/stdout/stderr vollständig im Besitz des PTY des Terminal-Emulators -- dieser Python-Prozess liest oder leitet sie niemals weiter, was strukturell garantiert, dass ADC niemals ein sudo-Passwort als Anwendungsdaten erhalten kann. Der reale Exit-Code wird über eine private, laufspezifische Statusdatei ermittelt, die ein kleines Wrapper-Skript erst schreibt, nachdem der umschlossene Befehl (aufgerufen über ``\"$@\"``, niemals über eine Shell-Zeichenkette neu zitiert) tatsächlich zurückkehrt; ihr Fehlen -- Terminal nicht verfügbar, Startfehler oder Schließen/Zeitüberschreitung des Fensters zuerst -- löst immer ``InteractiveTerminalError`` mit einer strukturierten Ursache aus (``INTERACTIVE_TERMINAL_UNAVAILABLE`` / ``INTERACTIVE_TERMINAL_LAUNCH_FAILED`` / ``INTERACTIVE_TERMINAL_CANCELLED``), niemals einen vorgetäuschten Erfolg."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:224
+msgid "Location: app/interactive_terminal.py, classes InteractiveTerminalLauncher, DesktopTerminalProvider, InteractiveTerminalError; app/execution.py, function is_software_installation_request and the routing branch inside execute_controlled"
+msgstr "Ort: app/interactive_terminal.py, classes InteractiveTerminalLauncher, DesktopTerminalProvider, InteractiveTerminalError; app/execution.py, function is_software_installation_request and the routing branch inside execute_controlled"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:235
+msgid "``SetupExecutionStateStore`` persists execution identity/state per setup step bound to a content fingerprint (``setup_step_content_snapshot``); known-success content may be reused, changed content forces new generation, unknown/recovery state fails closed; cross-process safe via file locking."
+msgstr "``SetupExecutionStateStore`` persistiert Ausführungsidentität/-zustand je Setup-Schritt, gebunden an einen Content-Fingerprint (``setup_step_content_snapshot``); bekannt erfolgreicher Inhalt darf wiederverwendet werden, geänderter Inhalt erzwingt neue Erzeugung, unbekannter/Wiederherstellungszustand geht Fail-Closed; prozessübergreifend sicher durch Dateisperren."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:241
+msgid "Location: app/setup_execution_state.py, class SetupExecutionStateStore, function setup_step_content_snapshot"
+msgstr "Ort: app/setup_execution_state.py, Klasse SetupExecutionStateStore, Funktion setup_step_content_snapshot"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:249
+msgid "``ProjectSetupApplicationService``'s prepare/decide/execute missing-toolchain methods plus ``retry_missing_toolchain_verification`` convert generic TOOL_UNAVAILABLE evidence into a bounded, approval-bound recovery reusing S3.1/S3.2/S3.3 authorities, never reopening the already-selected EngineeringDecision, and re-executing only the persisted VerificationPlan afterward — this is also the concrete realization of the cross-subsystem \"S5→S3 boundary allows only bounded missing-toolchain recovery\" sequencing constraint."
+msgstr "Die prepare-/decide-/execute-Methoden für fehlende Toolchains von ``ProjectSetupApplicationService`` sowie ``retry_missing_toolchain_verification`` überführen generische TOOL_UNAVAILABLE-Evidenz in eine begrenzte, freigabegebundene Wiederherstellung unter Wiederverwendung der S3.1/S3.2/S3.3-Autoritäten, ohne die bereits gewählte EngineeringDecision jemals neu aufzurollen, und führen danach nur den persistierten VerificationPlan erneut aus — dies ist zugleich die konkrete Realisierung der subsystemübergreifenden Reihenfolgebeschränkung „S5→S3-Grenze erlaubt nur begrenzte Wiederherstellung bei fehlender Toolchain“."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:258
+msgid "Location: app/project_setup_application.py, class ProjectSetupApplicationService, methods prepare_missing_toolchain_setup, decide_missing_toolchain_setup, execute_missing_toolchain_setup, retry_missing_toolchain_verification, route_tool_unavailable_to_recovery; app/missing_toolchain_setup.py, classes MissingToolchainSetupRequest, MissingToolchainSetupResult, StructuredInstallerRegistry, function correlate_provisioning_requirement; app/execution.py, function resolve_structured_installer_identity; app/python_package_executor.py, function resolve_python_package_installer_identity"
+msgstr "Ort: app/project_setup_application.py, Klasse ProjectSetupApplicationService, Methoden prepare_missing_toolchain_setup, decide_missing_toolchain_setup, execute_missing_toolchain_setup, retry_missing_toolchain_verification, route_tool_unavailable_to_recovery; app/missing_toolchain_setup.py, Klassen MissingToolchainSetupRequest, MissingToolchainSetupResult, StructuredInstallerRegistry, Funktion correlate_provisioning_requirement; app/execution.py, Funktion resolve_structured_installer_identity; app/python_package_executor.py, Funktion resolve_python_package_installer_identity"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:270
+msgid "``execute_approved_and_run_development`` requires setup execution to have fully succeeded before development/testing is ever started; unapproved or failed setup raises before the development stage runs (verified: the mocked development-testing stage's ``run`` is never called in either failure case)."
+msgstr "``execute_approved_and_run_development`` erfordert, dass die Setup-Ausführung vollständig erfolgreich war, bevor Entwicklung/Test überhaupt startet; nicht freigegebenes oder fehlgeschlagenes Setup löst aus, bevor die Entwicklungsstufe läuft (verifiziert: das ``run`` der gemockten Development-Testing-Stufe wird in beiden Fehlerfällen nie aufgerufen)."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:276
+msgid "Location: app/dev_workflow.py, method execute_approved_and_run_development"
+msgstr "Ort: app/dev_workflow.py, Methode execute_approved_and_run_development"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:284
+msgid "``DeveloperAgent`` generates structured developer changes; an empty development change set fails at the application boundary rather than being silently accepted as a no-op (S4.1 has no no-op authority of its own)."
+msgstr "``DeveloperAgent`` erzeugt strukturierte Entwickler-Änderungen; eine leere Entwicklungsänderungsmenge schlägt an der Anwendungsgrenze fehl, statt stillschweigend als No-Op akzeptiert zu werden (S4.1 hat keine eigene No-Op-Autorität)."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:289
+msgid "Location: app/development_stage.py, class DeveloperAgent; app/structured_change_generation.py"
+msgstr "Ort: app/development_stage.py, Klasse DeveloperAgent; app/structured_change_generation.py"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:297
+msgid "``TestChangeGenerator`` requires an explicit ``disposition=\"no_changes_required\"`` with a non-empty reason for a valid no-op; a bare empty changes array alone is rejected as not a no-op."
+msgstr "``TestChangeGenerator`` erfordert für einen gültigen No-Op eine explizite ``disposition=\"no_changes_required\"`` mit nicht leerer Begründung; ein bloßes leeres Änderungs-Array allein wird als kein No-Op abgelehnt."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:302
+msgid "Location: app/test_change_generator.py, class TestChangeGenerator"
+msgstr "Ort: app/test_change_generator.py, Klasse TestChangeGenerator"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:309
+msgid "``ChangeApplicationService`` is the single path from generated content to disk, delegating path resolution to ``resolve_safe_path()`` (the one authoritative scope-safety policy); traversal/absolute-path/symlink- escape attempts fail closed as unsafe_path, and partial/skipped application is classified apply_failed rather than appearing successful."
+msgstr "``ChangeApplicationService`` ist der einzige Pfad von erzeugtem Inhalt zur Festplatte und delegiert die Pfadauflösung an ``resolve_safe_path()`` (die eine autoritative Bereichs-Sicherheitsrichtlinie); Traversal-/Absolutpfad-/Symlink-Escape-Versuche gehen als unsafe_path Fail-Closed, und partielle/übersprungene Anwendung wird als apply_failed klassifiziert, statt erfolgreich zu erscheinen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:316
+msgid "Location: app/change_application.py, class ChangeApplicationService; app/developer_file_applier.py; app/safe_project_path.py, function resolve_safe_path"
+msgstr "Ort: app/change_application.py, Klasse ChangeApplicationService; app/developer_file_applier.py; app/safe_project_path.py, Funktion resolve_safe_path"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:325
+msgid "``RunChangeProvenance`` captures baseline-before and event-after provenance with run/phase attribution, consuming (never competing with) S4.3's own path-safety policy."
+msgstr "``RunChangeProvenance`` erfasst Baseline-Vorher- und Ereignis-Nachher-Provenienz mit Lauf-/Phasenzuordnung und nutzt (konkurriert niemals mit) die eigene Pfad-Sicherheitsrichtlinie von S4.3."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:329
+msgid "Location: app/change_provenance.py, class RunChangeProvenance"
+msgstr "Ort: app/change_provenance.py, Klasse RunChangeProvenance"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:336
+msgid "``DevelopmentTestingStage.run`` requires the development mutation to have succeeded, and the test mutation to have succeeded whenever disposition is \"changes\" (never required for a valid explicit no-op), before verification is allowed to begin."
+msgstr "``DevelopmentTestingStage.run`` erfordert, dass die Entwicklungsmutation erfolgreich war und die Teständerungsmutation erfolgreich war, wann immer die Disposition „changes“ ist (bei einem gültigen expliziten No-Op nie erforderlich), bevor die Verifikation beginnen darf."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:341
+msgid "Location: app/development_testing_stage.py, class DevelopmentTestingStage, method run"
+msgstr "Ort: app/development_testing_stage.py, Klasse DevelopmentTestingStage, Methode run"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:349
+msgid "``build_verification_plan`` derives a structured VerificationPlan from project requirements and the detected toolchain; planning itself never executes verification, and central orchestration contains no ecosystem-specific special-casing."
+msgstr "``build_verification_plan`` leitet einen strukturierten VerificationPlan aus Projektanforderungen und der erkannten Toolchain ab; die Planung selbst führt niemals Verifikation aus, und die zentrale Orchestrierung enthält keine ökosystemspezifischen Sonderfälle."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:354
+msgid "Location: app/verification.py, function build_verification_plan"
+msgstr "Ort: app/verification.py, Funktion build_verification_plan"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:361
+msgid "``ControlledRunnerRegistry`` dispatches verification steps to registered runners by structured capability contract; every ``VerificationStepResult`` preserves status, return code, timeout, diagnostics, and runner identity, and toolchain-specific logic stays runner-local rather than central."
+msgstr "``ControlledRunnerRegistry`` verteilt Verifikationsschritte über einen strukturierten Capability-Vertrag an registrierte Runner; jedes ``VerificationStepResult`` bewahrt Status, Rückgabecode, Timeout, Diagnostik und Runner-Identität, und Toolchain-spezifische Logik bleibt Runner-lokal statt zentral."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:367
+msgid "Location: app/verification.py, class ControlledRunnerRegistry, class VerificationStepResult"
+msgstr "Ort: app/verification.py, Klasse ControlledRunnerRegistry, Klasse VerificationStepResult"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:375
+msgid "``_execute_verification_isolated`` executes every controlled verification runner against a disposable shadow copy of the real target workspace, never the real one, so a runner's own incidental filesystem side effects land only in the shadow copy and are discarded with it; the real target workspace is additionally snapshotted before and after as deterministic, attributable proof, identified per path by ``_entry_fingerprint`` -- a cryptographic content hash for a regular file, or a symlink's own raw target string, never a followed/dereferenced read, and never size or mtime alone (a same-size or mtime-preserving content rewrite is still detected). Any new, modified, or removed path in the real target workspace forces the step's status to ``WORKSPACE_INTEGRITY_VIOLATION`` regardless of the runner's own reported exit code, and no pre-existing or newly observed path is ever deleted, reverted, or silently absorbed. Wired transparently into ``ControlledRunnerRegistry.execute_step`` so no individual runner (ESPHome, CMake, PlatformIO, pytest, unittest, or any future registered runner) needs its own workspace-isolation logic."
+msgstr "``_execute_verification_isolated`` führt jeden kontrollierten Verifikations-Runner gegen eine wegwerfbare Schattenkopie des realen Ziel-Arbeitsbereichs aus, niemals gegen den realen selbst, sodass die eigenen beiläufigen Dateisystem-Seiteneffekte eines Runners nur in der Schattenkopie landen und mit ihr verworfen werden; der reale Ziel-Arbeitsbereich wird zusätzlich vorher und nachher als deterministischer, zuordenbarer Nachweis erfasst, je Pfad identifiziert durch ``_entry_fingerprint`` -- ein kryptografischer Inhalts-Hash für eine reguläre Datei oder die rohe Zielzeichenkette eines Symlinks selbst, niemals ein verfolgtes/dereferenziertes Lesen, und niemals allein Größe oder mtime (eine größen- oder mtime-erhaltende Inhaltsänderung wird weiterhin erkannt). Jeder neue, geänderte oder entfernte Pfad im realen Ziel-Arbeitsbereich erzwingt den Status ``WORKSPACE_INTEGRITY_VIOLATION`` für den Schritt, unabhängig vom eigenen gemeldeten Exit-Code des Runners, und kein vorhandener oder neu beobachteter Pfad wird jemals gelöscht, zurückgesetzt oder stillschweigend absorbiert. Transparent eingebunden in ``ControlledRunnerRegistry.execute_step``, sodass kein einzelner Runner (ESPHome, CMake, PlatformIO, pytest, unittest oder ein künftig registrierter Runner) eine eigene Arbeitsbereich-Isolationslogik benötigt."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:394
+msgid "Location: app/verification.py, function _execute_verification_isolated, class ControlledRunnerRegistry, method execute_step"
+msgstr "Ort: app/verification.py, function _execute_verification_isolated, class ControlledRunnerRegistry, method execute_step"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:403
+msgid "``_test_result_from_verification``/``_step_failure_evidence`` aggregate per-step results while preserving each failing step's own evidence individually rather than collapsing multiple failures into a single misleading generic result."
+msgstr "``_test_result_from_verification``/``_step_failure_evidence`` aggregieren Ergebnisse je Schritt und bewahren dabei die Evidenz jedes fehlschlagenden Schritts individuell, statt mehrere Fehlschläge zu einem einzigen irreführenden generischen Ergebnis zusammenzufassen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:408
+msgid "Location: app/development_testing_stage.py, functions _test_result_from_verification, _step_failure_evidence"
+msgstr "Ort: app/development_testing_stage.py, Funktionen _test_result_from_verification, _step_failure_evidence"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:416
+msgid "``format_test_result_evidence`` deterministically formats already-produced verification evidence; it does not mutate the underlying TestResult, does not decide acceptance/rework, and makes no LLM call of its own."
+msgstr "``format_test_result_evidence`` formatiert bereits erzeugte Verifikationsevidenz deterministisch; es mutiert nicht das zugrunde liegende TestResult, entscheidet nicht über Akzeptanz/Nacharbeit und macht keinen eigenen LLM-Aufruf."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:421
+msgid "Location: app/diagnostic_evidence.py, function format_test_result_evidence"
+msgstr "Ort: app/diagnostic_evidence.py, Funktion format_test_result_evidence"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:429
+msgid "``DiagnosisReviewer`` interprets diagnostic evidence into an accepted/ rework-required decision; a malformed or infrastructure-failing review fails closed rather than being silently treated as acceptance, and reviewer interpretation alone can never accept a real deterministic failure."
+msgstr "``DiagnosisReviewer`` interpretiert diagnostische Evidenz zu einer Entscheidung akzeptiert/Nacharbeit-erforderlich; ein fehlerhaftes oder infrastrukturell fehlschlagendes Review geht Fail-Closed, statt stillschweigend als Akzeptanz behandelt zu werden, und die Reviewer-Interpretation allein kann einen realen deterministischen Fehlschlag niemals akzeptieren."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:435
+msgid "Location: app/testing_stage.py, class DiagnosisReviewer"
+msgstr "Ort: app/testing_stage.py, Klasse DiagnosisReviewer"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:442
+msgid "``TestingStage.run`` forces rework whenever the real test result is a real failure, regardless of the reviewer's interpretation; a timeout without a real failure uses the one bounded rework only when the reviewer identifies a source-correctable cause and otherwise ends as verification_timeout; an execution error without a real failure ends as verification_execution_error without rework; a reviewer-infrastructure exception is never silently accepted as success."
+msgstr "``TestingStage.run`` erzwingt Nacharbeit, wann immer das reale Testergebnis ein realer Fehlschlag ist, unabhängig von der Reviewer-Interpretation; ein Timeout ohne realen Fehlschlag nutzt die eine begrenzte Nacharbeit nur, wenn der Reviewer eine im Quellcode behebbare Ursache feststellt, und endet sonst als verification_timeout; ein Ausführungsfehler ohne realen Fehlschlag endet ohne Nacharbeit als verification_execution_error; eine Reviewer-Infrastrukturausnahme wird niemals stillschweigend als Erfolg akzeptiert."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:446
+msgid "Location: app/testing_stage.py, class TestingStage, method run"
+msgstr "Ort: app/testing_stage.py, Klasse TestingStage, Methode run"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:453
+msgid "``ControlledReworkStage`` orchestrates exactly one bounded rework cycle triggered by the S5 verification verdict; original failure evidence remains attributable into the rework request, and a second failure never creates a third cycle."
+msgstr "``ControlledReworkStage`` orchestriert genau einen begrenzten Nacharbeitszyklus, ausgelöst durch das S5-Verifikationsurteil; die ursprüngliche Fehlschlag-Evidenz bleibt in die Nacharbeitsanfrage zuordenbar, und ein zweiter Fehlschlag erzeugt niemals einen dritten Zyklus."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:458
+msgid "Location: app/controlled_rework_stage.py, class ControlledReworkStage"
+msgstr "Ort: app/controlled_rework_stage.py, Klasse ControlledReworkStage"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:465
+msgid "``ControlledGitStage`` commits only after development is accepted and final approval is granted; foreign/unaccounted working-tree changes (pre-existing or newly introduced during the run) block the commit via content-hash comparison against a captured baseline; no destructive Git operation (reset/stash/clean/rebase/force-push) exists anywhere in the module."
+msgstr "``ControlledGitStage`` committet erst, nachdem die Entwicklung akzeptiert und Final Approval erteilt wurde; fremde/nicht erfasste Änderungen im Arbeitsverzeichnis (vorbestehend oder während des Laufs neu eingeführt) blockieren den Commit über Content-Hash-Vergleich gegen eine erfasste Baseline; im gesamten Modul existiert keine destruktive Git-Operation (reset/stash/clean/rebase/force-push)."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:472
+msgid "Location: app/controlled_git_stage.py, class ControlledGitStage"
+msgstr "Ort: app/controlled_git_stage.py, Klasse ControlledGitStage"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:479
+msgid "``ControlledPublishStage`` requires a successful, committed Git result plus a separate, distinct publish approval before pushing the exact persisted branch-tip commit; a missing commit basis never pushes. ``FinalApprovalResult`` and publish approval are structurally distinct artifacts from the Git commit result, realizing \"final approval remains distinct from verification\" and \"local delivery state remains distinct from publish.\""
+msgstr "``ControlledPublishStage`` erfordert ein erfolgreiches, committetes Git-Ergebnis plus eine separate, gesonderte Publish-Freigabe, bevor der exakte persistierte Branch-Tip-Commit gepusht wird; eine fehlende Commit-Basis pusht niemals. ``FinalApprovalResult`` und Publish-Freigabe sind strukturell eigenständige Artefakte gegenüber dem Git-Commit-Ergebnis und realisieren „Final Approval bleibt von der Verifikation unterschieden“ und „lokaler Auslieferungszustand bleibt vom Publish unterschieden“."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:487
+msgid "Location: app/controlled_publish_stage.py, class ControlledPublishStage; app/final_approval.py; app/publish_approval.py"
+msgstr "Ort: app/controlled_publish_stage.py, Klasse ControlledPublishStage; app/final_approval.py; app/publish_approval.py"
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:495
+msgid "``DiagnosticTrace``/``DiagnosticTraceStore`` persist structured, correlated trace events; secret/token/credential redaction is applied to both structured fields and free text; trace content cannot approve or release any publish/approval gate."
+msgstr "``DiagnosticTrace``/``DiagnosticTraceStore`` persistieren strukturierte, korrelierte Trace-Ereignisse; Geheimnis-/Token-/Zugangsdaten-Redaktion wird sowohl auf strukturierte Felder als auch auf Freitext angewendet; Trace-Inhalt kann kein Publish-/Freigabe-Gate freigeben oder auslösen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/implementation/implementation.rst:500
+msgid "Location: app/diagnostic_trace.py, classes DiagnosticTrace, DiagnosticTraceStore"
+msgstr "Ort: app/diagnostic_trace.py, Klassen DiagnosticTrace, DiagnosticTraceStore"
+
+
+# KIA-ADC-CAPABILITY-AUTH-TERMINAL-BOUNDARY-FIX-001
+msgid "The controlled boundary supplies validated argv, resolved cwd and the controlled child environment to the execution surface. IMPL_032 preserves this contract across the additional terminal process boundary for installations."
+msgstr "Die kontrollierte Grenze übergibt validierte argv, das aufgelöste cwd und die kontrollierte Kindprozessumgebung an die Ausführungsoberfläche. IMPL_032 bewahrt diesen Vertrag bei Installationen über die zusätzliche Terminal-Prozessgrenze hinweg."
+
+# KIA-ADC-CAPABILITY-AUTH-TERMINAL-BOUNDARY-FIX-001
+msgid "DesktopTerminalProvider adds only explicitly listed desktop/session connectivity variables to the emulator environment. The wrapper invokes /usr/bin/env with -i and separate assignment/argv elements to replace any inherited terminal-server environment with exactly the supplied controlled child environment before executing the command. No shell-string concatenation or additional installation launch is introduced; cwd, terminal-owned stdio and the existing exit-status protocol are preserved."
+msgstr "DesktopTerminalProvider ergänzt die Emulatorumgebung nur um ausdrücklich aufgelistete Variablen für die Desktop-/Sitzungsverbindung. Der Wrapper ruft /usr/bin/env mit -i und getrennten Zuweisungs-/argv-Elementen auf, um eine geerbte Terminalserver-Umgebung vor der Befehlsausführung durch genau die bereitgestellte kontrollierte Kindprozessumgebung zu ersetzen. Es werden weder Shell-Befehlszeichenketten zusammengesetzt noch zusätzliche Installationen gestartet; cwd, die terminaleigenen Standarddatenströme und das bestehende Exit-Status-Protokoll bleiben erhalten."
+
+
+# CLAUDE-ADC-REQUIREMENTS-NONSEMANTIC-RECONCILIATION-001
+msgid "An approved SetupPlan is persisted via ``persist_setup_plan()`` (plan plus Council provenance), human-approved via ``approve_setup_plan()`` through the central S3.2 approval authority, and executed later via ``execute_approved_plan_from_store()`` — the same central lifecycle Web and MCP adapters use. The stored approved plan, its project-root association, and the ``authorize_setup_plan_targets()`` → ``register_setup_step_targets()`` capability/approval-provenance chain are resolved from the persisted store at execution time, never from ad-hoc caller state."
+msgstr "Ein genehmigter SetupPlan wird über ``persist_setup_plan()`` (Plan samt Council-Provenienz) persistiert, über ``approve_setup_plan()`` durch die zentrale S3.2-Genehmigungsautorität freigegeben und später über ``execute_approved_plan_from_store()`` ausgeführt — derselbe zentrale Lebenszyklus, den auch die Web- und MCP-Adapter nutzen. Der gespeicherte genehmigte Plan, seine Projekt-Wurzelzuordnung und die Kette aus ``authorize_setup_plan_targets()`` → ``register_setup_step_targets()`` (Capability-/Genehmigungsprovenienz) werden zur Ausführungszeit aus dem persistierten Speicher aufgelöst, niemals aus ad-hoc-Aufruferzustand."
+msgid "Location: app/project_setup_application.py, functions persist_setup_plan, approve_setup_plan, execute_approved_plan_from_store; app/workflow_plan_store.py, class WorkflowPlanStore; app/execution.py, functions authorize_setup_plan_targets, register_setup_step_targets"
+msgstr "Ort: app/project_setup_application.py, Funktionen persist_setup_plan, approve_setup_plan, execute_approved_plan_from_store; app/workflow_plan_store.py, Klasse WorkflowPlanStore; app/execution.py, Funktionen authorize_setup_plan_targets, register_setup_step_targets"
+msgid "Every incoming request carries a structured identity (``CommonRequest`` with project_id/intent/source_interface) and is assigned a run correlation id (``run_id``, defaulting to the project id when no explicit run id is supplied). All run-scoped records — DiagnosticTrace events, final-approval and publish-approval records, change-provenance baselines and events — are stored and retrieved keyed by this run id, enabling unique assignment across the entire ADC run without the adapter reinterpreting the request."
+msgstr "Jede eingehende Anfrage trägt eine strukturierte Identität (``CommonRequest`` mit project_id/intent/source_interface) und erhält eine Laufkorrelations-ID (``run_id``, Vorgabe ist die Projekt-ID, wenn keine explizite Lauf-ID übergeben wird). Alle laufbezogenen Datensätze — DiagnosticTrace-Ereignisse, Final-Approval- und Publish-Approval-Einträge, Change-Provenienz-Baselines und -Ereignisse — werden unter dieser Lauf-ID gespeichert und abgerufen, sodass eine eindeutige Zuordnung über den gesamten ADC-Lauf möglich ist, ohne dass der Adapter die Anfrage neu interpretiert."
+msgid "Location: app/common_request.py, class CommonRequest; app/project_setup_application.py (run_id resolution at plan entry); app/diagnostic_trace.py, get_trace(run_id) filtering; app/workflow_manager.py, per-run-id record stores"
+msgstr "Ort: app/common_request.py, Klasse CommonRequest; app/project_setup_application.py (run_id-Auflösung beim Planeinstieg); app/diagnostic_trace.py, get_trace(run_id)-Filterung; app/workflow_manager.py, Laufdaten-Speicher je run_id"
+
+
+# CLAUDE-ADC-RSE033-INSTALLER-RECOVERY-REQ-CODE-FIX-001
+msgid "``route_tool_unavailable_to_recovery`` is the production S5→S3.5 seam: it consumes the real S5 TOOL_UNAVAILABLE result and the planning result's EngineeringDecision, correlates the runner-reported ``unavailable_tool`` to its provisioning requirement through ``correlate_provisioning_requirement``, and stops at pending human approval. ``StructuredInstallerRegistry.resolve`` selects the installer through the central ``resolve_structured_installer_identity`` contract, which reuses the controlled executor's own install-method parser."
+msgstr "``route_tool_unavailable_to_recovery`` ist die produktive S5→S3.5-Naht: Sie verarbeitet das reale S5-TOOL_UNAVAILABLE-Ergebnis und die EngineeringDecision des Planungsergebnisses, korreliert das vom Runner gemeldete ``unavailable_tool`` über ``correlate_provisioning_requirement`` mit seiner bereitstellenden Anforderung und hält bei ausstehender menschlicher Freigabe an. ``StructuredInstallerRegistry.resolve`` wählt den Installer über den zentralen Vertrag ``resolve_structured_installer_identity``, der den eigenen Install-Method-Parser des kontrollierten Executors wiederverwendet."
+
+
+# CODEX-ADC-FIX029-NATIVE-REVERIFY-030
+msgid "Observed implementation at product commit 1ec0f33a: counted run threads, transport handover gates, diagnosis reservations, persistence writer and serial notification lanes. The development workflow records the critical lifecycle projection for public retrieval. This association identifies code responsibility and does not claim contract acceptance."
+msgstr "Beobachtete Implementierung am Produktcommit 1ec0f33a: bilanzierte Lauf-Threads, Transportübergabesperren, Diagnosereservierungen, Persistenzschreiber und serielle Benachrichtigungsspuren. Der Entwicklungsworkflow speichert die kritische Lifecycle-Projektion für den öffentlichen Abruf. Diese Zuordnung benennt die Codeverantwortung und behauptet keine Vertragserfüllung."
+
+
+# CODEX-ADC-FIX029-NATIVE-REVERIFY-030
+msgid "Native verification 030 reproduces uncharged retained protocols and Web results, leaked reservations on run-thread start failure, and non-atomic same-instance admission. HTTP/TLS/proxy evidence remains blocked by socket permissions. Operating and shutdown profiles remain provisional."
+msgstr "Die native Verifikation 030 reproduziert ungebuchte aufbewahrte Protokolle und Web-Ergebnisse, verlorene Reservierungen bei fehlgeschlagenem Lauf-Thread-Start und nicht atomare Zulassung derselben Instanz. HTTP-/TLS-/Proxy-Nachweise bleiben durch Socket-Berechtigungen blockiert. Betriebs- und Shutdown-Profile bleiben vorläufig."
+
+
+# CLAUDE-ADC-RESOURCE-OWNERSHIP-ADMISSION-FIX-031
+msgid "Product fix 031 assigns every retained object an owner: a run's diagnosis envelope stays charged after retention while its call records or a fail-closed result are still held; handed-out results are charged for their lifetime; queued and in-flight notifications are charged for their payload; a failed run-thread start returns all admission reservations; same-instance admission is atomic and refuses overlap without a service-wide limit. Independent verification is pending."
+msgstr "Der Produktfix 031 ordnet jedem aufbewahrten Objekt einen Besitzer zu: Der Diagnoseumschlag eines Laufs bleibt nach Ablauf der Aufbewahrung gebucht, solange seine Aufrufprotokolle oder ein Fail-closed-Ergebnis noch gehalten werden; ausgegebene Ergebnisse sind für ihre Lebensdauer gebucht; eingereihte und laufende Benachrichtigungen sind mit ihrer Nutzlast gebucht; ein fehlgeschlagener Lauf-Thread-Start gibt alle Zulassungsreservierungen zurück; die Zulassung derselben Instanz ist atomar und weist Überlappung ohne dienstweite Beschränkung ab. Die unabhängige Prüfung steht aus."
+
+
+# CLAUDE-ADC-PROJECT-IDENTITY-INPUT-CHARGE-FIX-036
+msgid "Product fix 036 bounds the project identity to 255 UTF-8 bytes with one rule for Web start and the public Council call: a longer identity is refused visibly (HTTP 400 before any session; a fail-closed Council result without identity and before provider handover), never shortened. An admitted input is charged while any service-side owner holds it (public call, run body, a propagated exception and its traceback); an input the pool cannot take is recorded as not chargeable and dropped from the service's finished traceback frames. Independent verification is pending."
+msgstr "Der Produktfix 036 begrenzt die Projektidentität mit einer Regel für den Web-Start und den öffentlichen Council-Aufruf auf 255 UTF-8-Bytes: Eine längere Identität wird sichtbar abgewiesen (HTTP 400 vor jeder Sitzung; ein Fail-closed-Council-Ergebnis ohne Identität und vor der Provider-Übergabe), nie gekürzt. Eine zugelassene Eingabe ist gebucht, solange ein dienstseitiger Besitzer sie hält (öffentlicher Aufruf, Lauf-Body, eine propagierte Ausnahme und ihr Traceback); eine Eingabe, die der Pool nicht aufnehmen kann, wird als nicht buchbar vermerkt und aus den beendeten Traceback-Frames des Dienstes entfernt. Die unabhängige Prüfung steht aus."
+
+
+# CLAUDE-ADC-RESOURCE-CONTRACT-CLOSURE-037
+msgid "Product fix 037 replaces that continuation: no Council work runs with unbooked data. A run ledger books the admitted input, every invocation prompt and every provider response before they are used, and is owned by the public call, the run body, every invocation (a quarantined worker included) and every propagated exception; it is released only when the last owner is actually gone. An input the pool cannot take refuses admission with a bounded resource error before any provider handover; an unbookable prompt starts no invocation; an unbookable response is dropped and fails its invocation visibly. A pending persistence payload stays charged until the writer has dropped it. Independent verification is pending."
+msgstr "Der Produktfix 037 ersetzt diese Fortsetzung: Keine Council-Arbeit läuft mit ungebuchten Daten. Ein Lauf-Hauptbuch bucht die zugelassene Eingabe, jeden Aufruf-Prompt und jede Provider-Antwort, bevor sie verwendet werden, und gehört dem öffentlichen Aufruf, dem Lauf-Body, jedem Aufruf (einschließlich eines isolierten Workers) und jeder propagierten Ausnahme; es wird erst freigegeben, wenn der letzte Besitzer tatsächlich weg ist. Eine Eingabe, die der Pool nicht aufnehmen kann, weist die Zulassung mit einem begrenzten Ressourcenfehler vor jeder Provider-Übergabe ab; ein nicht buchbarer Prompt startet keinen Aufruf; eine nicht buchbare Antwort wird verworfen und lässt ihren Aufruf sichtbar fehlschlagen. Eine ausstehende Persistenz-Nutzlast bleibt gebucht, bis der Schreiber sie freigegeben hat. Die unabhängige Prüfung steht aus."
+
+
+# CODEX-ADC-FIX029-NATIVE-REVERIFY-030 (location extended by FIX-036)
+msgid "Location: app/engineering_council.py, app/council_lifecycle.py, app/council_models.py, app/web_api.py, app/dev_workflow.py, app/diagnostic_trace.py."
+msgstr "Ort: app/engineering_council.py, app/council_lifecycle.py, app/council_models.py, app/web_api.py, app/dev_workflow.py, app/diagnostic_trace.py."
+
+
+# CLAUDE-ADC-TARGET-ENV-SOURCE-IMPLEMENTATION-048
+msgid "After approved setup has realized the environment and before any source is generated, the S3→S4 handoff in ``DevelopmentWorkflow.execute_approved_and_run_development`` establishes the intended target environment (``establish_target_environment``): observed version of each plan step's execution target and of each planned component, probed only through the central controlled execution boundary and dispatched by the step's own ``setup_effect`` through a registry, plus the detected project conventions from Project Intelligence. The result (``TargetEnvironmentContext``) travels on the existing ``DevelopmentRequest`` (also through ``ReworkDevelopmentRequest``) and ``DeveloperAgent`` appends it to the generator task together with the instruction to preserve the user's technology choice and project conventions. A property that cannot be observed — failed or timed-out probe, unavailable target, or a setup effect without a registered probe — stays explicitly ``unknown``; the context's overall state is ``established``/``partial``/``unknown`` and its ``compatibility`` is always ``unknown`` because no generated source has been checked at that point. The state is recorded as redacted S4.1 generation evidence (``target_environment_state``). A request without a context is passed on unchanged and claims nothing. No language, toolchain or platform is preferred. This association identifies code responsibility and does not claim contract acceptance."
+msgstr "Nachdem das genehmigte Setup die Umgebung hergestellt hat und bevor Quelltext generiert wird, stellt die S3→S4-Übergabe in ``DevelopmentWorkflow.execute_approved_and_run_development`` die vorgesehene Zielumgebung fest (``establish_target_environment``): die beobachtete Version des Ausführungsziels jedes Planschritts und jeder geplanten Komponente, ausschließlich über die zentrale kontrollierte Ausführungsgrenze geprüft und anhand des eigenen ``setup_effect`` des Schritts über eine Registry zugeordnet, dazu die erkannten Projektkonventionen aus der Project Intelligence. Das Ergebnis (``TargetEnvironmentContext``) wird über den vorhandenen ``DevelopmentRequest`` (auch über ``ReworkDevelopmentRequest``) geführt, und ``DeveloperAgent`` hängt es an die Generator-Aufgabe an, zusammen mit der Anweisung, die Technologiewahl des Nutzers und die Projektkonventionen zu bewahren. Eine nicht beobachtbare Eigenschaft – fehlgeschlagene oder zeitüberschrittene Prüfung, nicht verfügbares Ziel oder ein Setup-Effekt ohne registrierte Prüfung – bleibt ausdrücklich ``unknown``; der Gesamtzustand des Kontexts ist ``established``/``partial``/``unknown``, seine ``compatibility`` ist immer ``unknown``, weil zu diesem Zeitpunkt noch kein generierter Quelltext geprüft wurde. Der Zustand wird als redigierte S4.1-Generierungsevidenz (``target_environment_state``) erfasst. Eine Anfrage ohne Kontext wird unverändert weitergereicht und behauptet nichts. Keine Sprache, Toolchain oder Plattform wird bevorzugt. Diese Zuordnung benennt die Code-Verantwortung und behauptet keine Vertragserfüllung."
+
+
+msgid "Location: app/target_environment.py, functions establish_target_environment, class TargetEnvironmentContext; app/development_stage.py, classes DevelopmentRequest, DeveloperAgent, DevelopmentStage; app/controlled_rework_stage.py, class ReworkDevelopmentRequest; app/dev_workflow.py, method _with_target_environment"
+msgstr "Ort: app/target_environment.py, Funktionen establish_target_environment, Klasse TargetEnvironmentContext; app/development_stage.py, Klassen DevelopmentRequest, DeveloperAgent, DevelopmentStage; app/controlled_rework_stage.py, Klasse ReworkDevelopmentRequest; app/dev_workflow.py, Methode _with_target_environment"
+
+
+# CLAUDE-ADC-TARGET-ENV-S5-FORMAL-ACCEPTANCE-060
+msgid "S5 verifies in the target environment established before generation. ``DevelopmentTestingStage`` takes the verification target from the request's ``TargetEnvironmentContext.verification_target``: the environment target selected by the approved plan (``SetupPlan.environment_target_executable``, resolved once by ``ToolchainMaterializer`` through the central environment resolver and persisted by ``WorkflowPlanStore``) when it was observed, otherwise the single observed target. A plan-selected target that could not be observed is never replaced by another one, and several different observed targets are treated as ambiguous. Without a usable target no verification runs: the cycle ends as ``target_unconfirmed`` (never rework, no fabricated test result). With a target, ``verification_target()`` scopes the ``ControlledRunnerRegistry`` so Python runners execute through the target executable and tool-resolving runners look only in the target's own tool directory; a runner that does not execute through the target is reported TOOL_UNAVAILABLE instead of running on a substitute environment. This association identifies code responsibility and does not claim contract acceptance."
+msgstr "S5 verifiziert in der vor der Generierung festgestellten Zielumgebung. ``DevelopmentTestingStage`` übernimmt das Verifikationsziel aus ``TargetEnvironmentContext.verification_target`` der Anfrage: das vom freigegebenen Plan gewählte Umgebungsziel (``SetupPlan.environment_target_executable``, einmal vom ``ToolchainMaterializer`` über den zentralen Umgebungsresolver aufgelöst und vom ``WorkflowPlanStore`` persistiert), wenn es beobachtet wurde, sonst das einzige beobachtete Ziel. Ein vom Plan gewähltes Ziel, das nicht beobachtet werden konnte, wird nie durch ein anderes ersetzt, und mehrere verschiedene beobachtete Ziele gelten als mehrdeutig. Ohne nutzbares Ziel läuft keine Verifikation: Der Zyklus endet als ``target_unconfirmed`` (nie Rework, kein fabriziertes Testergebnis). Mit Ziel begrenzt ``verification_target()`` die ``ControlledRunnerRegistry`` so, dass Python-Runner über das Zielprogramm laufen und werkzeugauflösende Runner nur im eigenen Werkzeugverzeichnis des Ziels suchen; ein Runner, der nicht über das Ziel läuft, wird als TOOL_UNAVAILABLE gemeldet, statt in einer Ersatzumgebung zu laufen. Diese Zuordnung benennt die Code-Verantwortung und behauptet keine Vertragserfüllung."
+
+
+msgid "Location: app/verification.py, function verification_target and class ControlledRunnerRegistry; app/development_testing_stage.py, class DevelopmentTestingStage; app/target_environment.py, property TargetEnvironmentContext.verification_target; app/requirement_model.py, field SetupPlan.environment_target_executable; app/toolchain_materializer.py; app/workflow_plan_store.py; app/dev_workflow.py, diagnosis projection of target_unconfirmed"
+msgstr "Ort: app/verification.py, Funktion verification_target und Klasse ControlledRunnerRegistry; app/development_testing_stage.py, Klasse DevelopmentTestingStage; app/target_environment.py, Property TargetEnvironmentContext.verification_target; app/requirement_model.py, Feld SetupPlan.environment_target_executable; app/toolchain_materializer.py; app/workflow_plan_store.py; app/dev_workflow.py, Diagnose-Projektion von target_unconfirmed"

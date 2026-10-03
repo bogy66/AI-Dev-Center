@@ -1,0 +1,65 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 
+# This file is distributed under the same license as the AI-Dev-Center Requirements package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: AI-Dev-Center Requirements \n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-19 08:28+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/requirement_status.rst:2
+msgid "Requirement Implementation Status"
+msgstr "Implementierungsstatus der Anforderungen"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/requirement_status.rst:8
+msgid ":red:`RED` — Not implemented"
+msgstr ":red:`ROT` — Nicht implementiert"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/requirement_status.rst:9
+msgid "The Requirement is not fully implemented."
+msgstr "Die Anforderung ist nicht vollständig implementiert."
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/requirement_status.rst:11
+msgid ":yellow:`YELLOW` — Implemented, verification not proven"
+msgstr ":yellow:`GELB` — Implementiert, Verifikation nicht nachgewiesen"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/requirement_status.rst:12
+msgid "The Requirement is implemented from an implementation-coverage perspective, but successful verification is not yet proven."
+msgstr "Die Anforderung ist aus Sicht der Implementierungsabdeckung implementiert, aber erfolgreiche Verifikation ist noch nicht nachgewiesen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/requirement_status.rst:15
+msgid ":green:`GREEN` — Implemented and verified"
+msgstr ":green:`GRÜN` — Implementiert und verifiziert"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/requirement_status.rst:16
+msgid "The Requirement is fully implemented and successful verification is proven."
+msgstr "Die Anforderung ist vollständig implementiert, und erfolgreiche Verifikation ist nachgewiesen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/requirement_status.rst:21
+msgid "Status is derived automatically from the traceability graph. It is never manually entered on Requirement directives."
+msgstr "Der Status wird automatisch aus dem Nachverfolgbarkeitsgraphen abgeleitet. Er wird niemals manuell in Requirement-Direktiven eingetragen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/requirement_status.rst:24
+msgid "---"
+msgstr "---"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/requirement_status.rst:27
+msgid "Red — Not implemented"
+msgstr "Rot — Nicht implementiert"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/requirement_status.rst:38
+msgid "Yellow — Implemented / Verification NIO"
+msgstr "Gelb — Implementiert / Verifikation NIO"
+
+#: ../../home/udo/AI-Dev-Center/requirements/dashboard/requirement_status.rst:49
+msgid "Green — Implemented / Verification IO"
+msgstr "Grün — Implementiert / Verifikation IO"

@@ -1,0 +1,708 @@
+"""Controlled execution boundary tests — Docker-free, no tool instals."""
+import os
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+import pytest
+
+from app.execution import (
+    ExecutionRequest, validate_request, execute_controlled,
+    execute_step_controlled, _controlled_env,
+    ApprovalProvenance, CapabilityRegistration, CapabilityRegistry,
+    _DENIED_ARGS,
+)
+from app.verification import (
+    INVALID_PLAN, UNSUPPORTED, TOOL_UNAVAILABLE, PASS, FAIL, BLOCKED,
+    VerificationStep, VerificationStepResult,
+)
+
+
+def _step(runner="pytest", kind="test", wd="."):
+    return VerificationStep(
+        step_id="step-1", area=".", working_directory=wd,
+        verification_kind=kind, test_system="pytest",
+        runner_type=runner, policy="controlled_execution",
+    )
+
+
+# ============================================================================
+# Execution validation
+# ============================================================================
+
+class TestExecutionRequest:
+    def test_valid_request_passes_validation(self, tmp_path):
+        req = ExecutionRequest(
+            args=("python", "-c", "print(1)"),
+            cwd=str(tmp_path), timeout=10, tool_name="python",
+        )
+        err = validate_request(req, tmp_path)
+        assert err is None
+
+    def test_cwd_outside_project_root_is_blocked(self, tmp_path):
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        req = ExecutionRequest(
+            args=("python", "-c", "print(1)"),
+            cwd=str(outside), timeout=10, tool_name="python",
+        )
+        # cwd is outside tmp_path
+        err = validate_request(req, tmp_path / "nested")
+        assert err is not None
+        assert err.status == INVALID_PLAN.value
+
+    def test_unknown_tool_is_unsupported(self, tmp_path):
+        req = ExecutionRequest(
+            args=("nmap", "-sP", "localhost"),
+            cwd=str(tmp_path), timeout=10, tool_name="nmap",
+        )
+        err = validate_request(req, tmp_path)
+        assert err is not None
+        assert err.status == UNSUPPORTED.value
+
+    def test_missing_tool_is_tool_unavailable(self, tmp_path):
+        req = ExecutionRequest(
+            args=("nonexistent_tool_xyz", "--help"),
+            cwd=str(tmp_path), timeout=10, tool_name="nonexistent_tool_xyz",
+        )
+        err = validate_request(req, tmp_path)
+        assert err is not None
+
+    def test_tool_identity_must_match_executable(self, tmp_path):
+        req = ExecutionRequest(
+            args=("sh", "-c", "true"), cwd=str(tmp_path), timeout=10,
+            tool_name="python",
+        )
+        err = validate_request(req, tmp_path)
+        assert err is not None
+        assert err.status == INVALID_PLAN.value
+
+    def test_sibling_with_project_prefix_is_rejected(self, tmp_path):
+        root = tmp_path / "project"
+        sibling = tmp_path / "project-escape"
+        root.mkdir()
+        sibling.mkdir()
+        req = ExecutionRequest(("python", "--version"), str(sibling), 10, "python")
+        err = validate_request(req, root)
+        assert err is not None
+        assert err.status == INVALID_PLAN.value
+
+    def test_future_capability_name_can_be_registered(self, tmp_path, monkeypatch):
+        registry = CapabilityRegistry()
+        registry.register_approved(CapabilityRegistration(
+            capability="future-compiler",
+            executable_names=("futurecc",),
+            allowed_operations=("compile",),
+            approval_provenance=ApprovalProvenance(
+                project_intelligence_ref=str(tmp_path),
+                engineering_council_ref="council-1",
+                chairman_approval_ref="chairman-1",
+                human_approval_ref="human-1",
+            ),
+            project_scope=str(tmp_path),
+        ))
+        monkeypatch.setattr("app.execution._find_executable", lambda name: "/bin/true" if name == "futurecc" else None)
+        req = ExecutionRequest(
+            ("futurecc", "--check"), str(tmp_path), 10,
+            "future-compiler", "compile",
+        )
+        assert validate_request(req, tmp_path, registry) is None
+
+    def test_dynamic_registration_requires_complete_provenance(self):
+        registry = CapabilityRegistry()
+        registration = CapabilityRegistration(
+            capability="future-compiler",
+            executable_names=("futurecc",),
+            allowed_operations=("compile",),
+            approval_provenance=None,
+            project_scope="/approved/project",
+        )
+        with pytest.raises(ValueError, match="provenance"):
+            registry.register_approved(registration)
+
+    def test_registered_operation_and_project_scope_are_enforced(self, tmp_path, monkeypatch):
+        project = tmp_path / "approved"
+        other = tmp_path / "other"
+        project.mkdir()
+        other.mkdir()
+        registry = CapabilityRegistry()
+        registry.register_approved(CapabilityRegistration(
+            capability="future-compiler",
+            executable_names=("futurecc",),
+            allowed_operations=("compile",),
+            approval_provenance=ApprovalProvenance(str(project), "council", "chairman", "human"),
+            project_scope=str(project),
+        ))
+        monkeypatch.setattr("app.execution._find_executable", lambda name: "/bin/true")
+        wrong_operation = ExecutionRequest(("futurecc",), str(project), 10, "future-compiler", "test")
+        wrong_scope = ExecutionRequest(("futurecc",), str(other), 10, "future-compiler", "compile")
+        assert validate_request(wrong_operation, project, registry).status == INVALID_PLAN.value
+        assert validate_request(wrong_scope, other, registry).status == UNSUPPORTED.value
+
+    def test_revoked_registration_cannot_execute(self, tmp_path):
+        registry = CapabilityRegistry()
+        registry.register_approved(CapabilityRegistration(
+            capability="future-compiler",
+            executable_names=("futurecc",),
+            allowed_operations=("compile",),
+            approval_provenance=ApprovalProvenance(str(tmp_path), "council", "chairman", "human"),
+            project_scope=str(tmp_path),
+        ))
+        registry.set_status("future-compiler", "revoked", tmp_path)
+        request = ExecutionRequest(("futurecc",), str(tmp_path), 10, "future-compiler", "compile")
+        assert validate_request(request, tmp_path, registry).status == UNSUPPORTED.value
+
+
+class TestExecuteControlled:
+    def test_execute_controlled_runs_python(self, tmp_path):
+        req = ExecutionRequest(
+            args=("python", "-c", "print('hello')"),
+            cwd=str(tmp_path), timeout=10, tool_name="python",
+        )
+        result = execute_controlled(req, tmp_path)
+        assert result is not None
+        assert result.returncode == 0
+        assert "hello" in result.stdout
+
+    def test_execute_controlled_captures_stderr(self, tmp_path):
+        req = ExecutionRequest(
+            args=("python", "-c", "import sys; sys.stderr.write('err')"),
+            cwd=str(tmp_path), timeout=10, tool_name="python",
+        )
+        result = execute_controlled(req, tmp_path)
+        assert result is not None
+        assert "err" in result.stderr
+
+    def test_execute_controlled_rejects_mismatched_executable(self, tmp_path):
+        req = ExecutionRequest(
+            args=("/nonexistent/binary",),
+            cwd=str(tmp_path), timeout=10, tool_name="python",
+        )
+        with pytest.raises(ValueError, match="Executable"):
+            execute_controlled(req, tmp_path)
+
+    def test_validation_cannot_be_bypassed_at_subprocess_entry(self, tmp_path, monkeypatch):
+        run = Mock(side_effect=AssertionError("subprocess must not run"))
+        monkeypatch.setattr("app.execution.subprocess.Popen", run)
+        req = ExecutionRequest(("sh", "-c", "true"), str(tmp_path), 10, "python")
+        with pytest.raises(ValueError, match="does not match"):
+            execute_controlled(req, tmp_path)
+        run.assert_not_called()
+
+    def test_unknown_arbitrary_tool_cannot_execute(self, tmp_path, monkeypatch):
+        run = Mock(side_effect=AssertionError("subprocess must not run"))
+        monkeypatch.setattr("app.execution.subprocess.Popen", run)
+        req = ExecutionRequest(("sh", "-c", "true"), str(tmp_path), 10, "arbitrary")
+        with pytest.raises(ValueError, match="not registered"):
+            execute_controlled(req, tmp_path)
+        run.assert_not_called()
+
+
+def sys_executable():
+    import sys
+    return sys.executable
+
+
+def _install_registry(tmp_path, capability="python", executable_names=None):
+    from app.execution import ApprovalProvenance, CapabilityRegistration, CapabilityRegistry
+    if executable_names is None:
+        executable_names = (sys_executable(),)
+    registry = CapabilityRegistry()
+    registry.register_approved(CapabilityRegistration(
+        capability=capability,
+        executable_names=executable_names,
+        allowed_operations=("install", "verification"),
+        approval_provenance=ApprovalProvenance(str(tmp_path), "council-1", "chairman-1", "human-1"),
+        project_scope=str(tmp_path),
+    ))
+    return registry
+
+
+class _SpyTerminalLauncher:
+    """Records every call; returns a fixed CompletedProcess unless told
+    to raise (simulating an unavailable/cancelled real terminal)."""
+
+    def __init__(self, returncode=0, raises=None):
+        self.calls = []
+        self._returncode = returncode
+        self._raises = raises
+
+    def run(self, argv, cwd, env, timeout):
+        self.calls.append({"argv": argv, "cwd": cwd, "env": env, "timeout": timeout})
+        if self._raises is not None:
+            raise self._raises
+        import subprocess
+        return subprocess.CompletedProcess(list(argv), self._returncode, "", "")
+
+
+# ============================================================================
+# CLAUDE-ADC-VISIBLE-TERMINAL-FOR-SOFTWARE-INSTALLATION-001:
+# software installation is routed through a visible interactive terminal.
+# ============================================================================
+
+class TestSoftwareInstallationRoutesThroughVisibleTerminal:
+    # --- A. installation routing ------------------------------------------
+
+    def test_pip_style_install_invokes_interactive_terminal_launcher(self, tmp_path):
+        registry = _install_registry(tmp_path)
+        spy = _SpyTerminalLauncher(returncode=0)
+        req = ExecutionRequest(
+            (sys_executable(), "-m", "pip", "install", "esphome"),
+            str(tmp_path), 30, "python", "install",
+        )
+        result = execute_controlled(req, tmp_path, registry, terminal_launcher=spy)
+        assert len(spy.calls) == 1
+        assert result.returncode == 0
+
+    def test_venv_pip_install_invokes_interactive_terminal_launcher(self, tmp_path):
+        """A venv-target python executable is just a different
+        target_executable value -- the SAME classification and routing
+        applies, never special-cased per Python identity."""
+        venv_python = tmp_path / "venv_python_stub"
+        venv_python.write_text("#!/bin/sh\nexit 0\n")
+        venv_python.chmod(0o700)
+        registry = _install_registry(tmp_path, executable_names=(str(venv_python),))
+        spy = _SpyTerminalLauncher(returncode=0)
+        req = ExecutionRequest(
+            (str(venv_python), "-m", "pip", "install", "pytest"),
+            str(tmp_path), 30, "python", "install",
+        )
+        result = execute_controlled(req, tmp_path, registry, terminal_launcher=spy)
+        assert len(spy.calls) == 1
+        assert result.returncode == 0
+
+    def test_representative_privileged_system_package_install_invokes_launcher(self, tmp_path, monkeypatch):
+        """Proves the routing is ecosystem-neutral, centralized at
+        execute_controlled -- not specific to Python/pip: a
+        hypothetical apt/system-package capability with
+        operation_type="install" is routed exactly the same way."""
+        registry = _install_registry(tmp_path, capability="apt", executable_names=("/usr/bin/apt",))
+        monkeypatch.setattr("app.execution._find_executable", lambda name: "/usr/bin/apt" if name == "apt" else None)
+        spy = _SpyTerminalLauncher(returncode=0)
+        req = ExecutionRequest(("/usr/bin/apt", "install", "some-system-package"), str(tmp_path), 60, "apt", "install")
+        result = execute_controlled(req, tmp_path, registry, terminal_launcher=spy)
+        assert len(spy.calls) == 1
+        assert result.returncode == 0
+
+    def test_installation_is_not_directly_executed_via_hidden_subprocess(self, tmp_path, monkeypatch):
+        run = Mock(side_effect=AssertionError("no hidden subprocess may execute an install"))
+        monkeypatch.setattr("app.execution.subprocess.Popen", run)
+        registry = _install_registry(tmp_path)
+        spy = _SpyTerminalLauncher(returncode=0)
+        req = ExecutionRequest(
+            (sys_executable(), "-m", "pip", "install", "esphome"),
+            str(tmp_path), 30, "python", "install",
+        )
+        execute_controlled(req, tmp_path, registry, terminal_launcher=spy)
+        run.assert_not_called()
+
+    # --- B. every installation opens the terminal, even non-sudo ----------
+
+    def test_non_sudo_install_still_uses_the_terminal_launcher(self, tmp_path):
+        """Nothing in the classification checks whether sudo is needed
+        -- ordinary pip-into-venv installs (no privilege escalation at
+        all) are routed exactly the same as any other install."""
+        registry = _install_registry(tmp_path)
+        spy = _SpyTerminalLauncher(returncode=0)
+        req = ExecutionRequest(
+            (sys_executable(), "-m", "pip", "install", "requests"),
+            str(tmp_path), 30, "python", "install",
+        )
+        execute_controlled(req, tmp_path, registry, terminal_launcher=spy)
+        assert len(spy.calls) == 1
+
+    def test_terminal_launcher_invoked_exactly_once_per_install_step(self, tmp_path):
+        registry = _install_registry(tmp_path)
+        spy = _SpyTerminalLauncher(returncode=0)
+        req = ExecutionRequest(
+            (sys_executable(), "-m", "pip", "install", "esphome"),
+            str(tmp_path), 30, "python", "install",
+        )
+        execute_controlled(req, tmp_path, registry, terminal_launcher=spy)
+        assert len(spy.calls) == 1
+
+    # --- D. terminal lifecycle ----------------------------------------------
+
+    def test_successful_command_yields_successful_result(self, tmp_path):
+        registry = _install_registry(tmp_path)
+        spy = _SpyTerminalLauncher(returncode=0)
+        req = ExecutionRequest((sys_executable(), "-m", "pip", "install", "x"), str(tmp_path), 30, "python", "install")
+        result = execute_controlled(req, tmp_path, registry, terminal_launcher=spy)
+        assert result.returncode == 0
+
+    def test_nonzero_exit_yields_failed_result(self, tmp_path):
+        registry = _install_registry(tmp_path)
+        spy = _SpyTerminalLauncher(returncode=1)
+        req = ExecutionRequest((sys_executable(), "-m", "pip", "install", "x"), str(tmp_path), 30, "python", "install")
+        result = execute_controlled(req, tmp_path, registry, terminal_launcher=spy)
+        assert result.returncode != 0
+
+    def test_cancelled_terminal_is_not_treated_as_success(self, tmp_path):
+        from app.interactive_terminal import InteractiveTerminalError, INTERACTIVE_TERMINAL_CANCELLED
+        registry = _install_registry(tmp_path)
+        spy = _SpyTerminalLauncher(raises=InteractiveTerminalError(INTERACTIVE_TERMINAL_CANCELLED, "closed"))
+        req = ExecutionRequest((sys_executable(), "-m", "pip", "install", "x"), str(tmp_path), 30, "python", "install")
+        with pytest.raises(InteractiveTerminalError):
+            execute_controlled(req, tmp_path, registry, terminal_launcher=spy)
+
+    # --- E. fail-closed -------------------------------------------------
+
+    def test_no_terminal_provider_available_means_installation_does_not_run(self, tmp_path):
+        from app.interactive_terminal import InteractiveTerminalError, INTERACTIVE_TERMINAL_UNAVAILABLE
+        registry = _install_registry(tmp_path)
+        spy = _SpyTerminalLauncher(raises=InteractiveTerminalError(INTERACTIVE_TERMINAL_UNAVAILABLE))
+        req = ExecutionRequest((sys_executable(), "-m", "pip", "install", "x"), str(tmp_path), 30, "python", "install")
+        with pytest.raises(InteractiveTerminalError) as exc_info:
+            execute_controlled(req, tmp_path, registry, terminal_launcher=spy)
+        assert exc_info.value.cause == INTERACTIVE_TERMINAL_UNAVAILABLE
+
+    def test_terminal_launch_failure_does_not_run_silently(self, tmp_path, monkeypatch):
+        from app.interactive_terminal import InteractiveTerminalError, INTERACTIVE_TERMINAL_LAUNCH_FAILED
+        run = Mock(side_effect=AssertionError("must never silently fall back"))
+        monkeypatch.setattr("app.execution.subprocess.Popen", run)
+        registry = _install_registry(tmp_path)
+        spy = _SpyTerminalLauncher(raises=InteractiveTerminalError(INTERACTIVE_TERMINAL_LAUNCH_FAILED))
+        req = ExecutionRequest((sys_executable(), "-m", "pip", "install", "x"), str(tmp_path), 30, "python", "install")
+        with pytest.raises(InteractiveTerminalError):
+            execute_controlled(req, tmp_path, registry, terminal_launcher=spy)
+        run.assert_not_called()
+
+    def test_no_hidden_subprocess_fallback_exists_for_classified_install(self, tmp_path):
+        """There is no code path in execute_controlled that reaches
+        the direct run_contained_process() spawn for an
+        operation_type=="install" request: the install branch
+        unconditionally returns from inside launcher.run(...) before the
+        function's run_contained_process() call
+        is ever reached, and this is proven dynamically (not just by
+        reading the source) by the sibling
+        test_installation_is_not_directly_executed_via_hidden_subprocess,
+        which patches subprocess.Popen to raise and shows it is never
+        called for a classified install."""
+        import inspect
+        src = inspect.getsource(execute_controlled)
+        install_idx = src.index("if is_software_installation_request(request):")
+        subprocess_run_idx = src.index("return run_contained_process(")
+        assert install_idx < subprocess_run_idx
+        install_branch = src[install_idx:subprocess_run_idx]
+        assert "launcher.run(" in install_branch
+        assert "return launcher.run(" in install_branch
+
+    # --- F. non-installation regression -------------------------------
+
+    def test_verification_operation_type_is_not_routed_through_terminal(self, tmp_path):
+        spy = _SpyTerminalLauncher(returncode=0)
+        req = ExecutionRequest(
+            (sys_executable(), "-c", "print('ok')"), str(tmp_path), 10, "python", "verification",
+        )
+        result = execute_controlled(req, tmp_path, terminal_launcher=spy)
+        assert spy.calls == []
+        assert result is not None and "ok" in result.stdout
+
+    def test_test_operation_type_is_not_routed_through_terminal(self, tmp_path):
+        spy = _SpyTerminalLauncher(returncode=0)
+        req = ExecutionRequest(
+            (sys_executable(), "-c", "print('ok')"), str(tmp_path), 10, "python", "test",
+        )
+        result = execute_controlled(req, tmp_path, terminal_launcher=spy)
+        assert spy.calls == []
+        assert result is not None
+
+    def test_build_operation_type_is_not_routed_through_terminal(self, tmp_path):
+        import shutil as _shutil
+        make = _shutil.which("make")
+        if make is None:
+            pytest.skip("make not available in this environment")
+        spy = _SpyTerminalLauncher(returncode=0)
+        req = ExecutionRequest((make, "--version"), str(tmp_path), 10, "make", "build")
+        result = execute_controlled(req, tmp_path, terminal_launcher=spy)
+        assert spy.calls == []
+        assert result is not None
+
+    # --- H. current ESPHome pip SetupStep is covered --------------------
+
+    def test_esphome_pip_setup_step_shape_is_routed_through_terminal(self, tmp_path):
+        """The exact structured shape the RSE uses today: action=install,
+        install_method=pip, package=esphome."""
+        from app.requirement_model import SetupStep
+        step = SetupStep(
+            id="step-esphome", requirement_id="req-esphome", action="install",
+            install_method="pip", package="esphome", is_approved=True,
+            setup_effect="python_package_install", target_executable=sys_executable(),
+        )
+        assert step.action == "install"
+        assert step.install_method == "pip"
+        assert step.package == "esphome"
+
+        registry = _install_registry(tmp_path)
+        spy = _SpyTerminalLauncher(returncode=0)
+        req = ExecutionRequest(
+            (step.target_executable, "-m", "pip", "install", step.package),
+            str(tmp_path), 300, "python", "install",
+        )
+        execute_controlled(req, tmp_path, registry, terminal_launcher=spy)
+        assert len(spy.calls) == 1
+        assert step.package in spy.calls[0]["argv"]
+
+
+class TestControlledEnv:
+    def test_env_filters_sensitive_keys(self):
+        env = _controlled_env()
+        assert "SECRET_KEY" not in env
+        assert "DATABASE_URL" not in env
+        assert "PATH" in env
+
+    def test_env_includes_python(self):
+        env = _controlled_env()
+        assert any(k.startswith("PYTHON") for k in env) or "PATH" in env
+
+
+class TestExecuteStepControlled:
+    def test_full_boundary_pytest_step(self, tmp_path):
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "tests" / "test_x.py").write_text("def test_x(): assert True\n")
+        step = _step(runner="pytest")
+        from app.execution import execute_step_controlled
+        result = execute_step_controlled(
+            step, tmp_path,
+            args=("python", "-m", "pytest", "-q"),
+            tool_name="python", timeout=30,
+        )
+        assert result.status in (PASS.value, FAIL.value, TOOL_UNAVAILABLE.value)
+
+    def test_boundary_blocks_cwd_escape(self, tmp_path):
+        step = _step(wd="../../etc")
+        from app.execution import execute_step_controlled
+        result = execute_step_controlled(
+            step, tmp_path,
+            args=("python", "-c", "pass"),
+            tool_name="python", timeout=10,
+        )
+        assert result.status == INVALID_PLAN.value
+
+    def test_boundary_blocks_unknown_tool(self, tmp_path):
+        step = _step(runner="unknown_tool")
+        from app.execution import execute_step_controlled
+        result = execute_step_controlled(
+            step, tmp_path,
+            args=("unknown_tool", "--help"),
+            tool_name="unknown_tool", timeout=10,
+        )
+        assert result.status in (UNSUPPORTED.value, TOOL_UNAVAILABLE.value)
+
+
+# ============================================================================
+# Execution boundary — no install, no shell, no hardware
+# ============================================================================
+
+class TestNoInstall:
+    def test_execute_controlled_never_installs(self):
+        import inspect
+        src = inspect.getsource(execute_controlled)
+        assert "pip install" not in src
+        assert "apt install" not in src
+        assert "apt-get install" not in src
+        assert "npm install" not in src
+        assert "brew install" not in src
+
+
+class TestNoShell:
+    def test_execute_controlled_has_no_shell(self):
+        import inspect
+        src = inspect.getsource(execute_controlled)
+        assert "shell=True" not in src
+        assert "shell = True" not in src
+
+
+class TestNoHardware:
+    def test_no_device_mounts_or_privileged(self):
+        import inspect
+        src = inspect.getsource(execute_controlled)
+        assert "--device" not in src
+        assert "--privileged" not in src
+        assert "docker" not in src.lower()
+
+
+# ============================================================================
+# Docker configuration tests
+# ============================================================================
+
+class TestDockerConfig:
+    def test_docker_compose_exists(self):
+        root = Path(__file__).parents[1]
+        compose = root / "docker-compose.yml"
+        assert compose.is_file()
+
+    def test_dockerfile_exists(self):
+        root = Path(__file__).parents[1]
+        dockerfile = root / "Dockerfile"
+        assert dockerfile.is_file()
+
+    def test_compose_has_no_privileged(self):
+        root = Path(__file__).parents[1]
+        content = (root / "docker-compose.yml").read_text()
+        assert "privileged: true" not in content
+
+    def test_compose_has_no_docker_socket(self):
+        root = Path(__file__).parents[1]
+        content = (root / "docker-compose.yml").read_text()
+        assert "/var/run/docker.sock" not in content
+
+    def test_compose_has_no_device_mounts(self):
+        root = Path(__file__).parents[1]
+        content = (root / "docker-compose.yml").read_text()
+        assert "/dev/" not in content
+
+    def test_dockerfile_is_non_root(self):
+        root = Path(__file__).parents[1]
+        content = (root / "Dockerfile").read_text()
+        assert "USER ai-dev" in content or "USER 1000" in content
+
+    def test_dockerfile_has_healthcheck(self):
+        root = Path(__file__).parents[1]
+        content = (root / "Dockerfile").read_text()
+        assert "HEALTHCHECK" in content
+
+    def test_dockerfile_exposes_8010(self):
+        root = Path(__file__).parents[1]
+        content = (root / "Dockerfile").read_text()
+        assert "8010" in content
+
+    def test_dockerfile_no_toolchains_preinstalled(self):
+        root = Path(__file__).parents[1]
+        content = (root / "Dockerfile").read_text()
+        # Check installed commands only, not comments
+        lines = [l for l in content.splitlines()
+                 if not l.strip().startswith("#")]
+        joined = " ".join(lines)
+        assert "platformio" not in joined.lower()
+        assert "esphome" not in joined.lower()
+        assert "pip install platformio" not in joined.lower()
+
+
+class TestDockerIgnore:
+    def test_dockerignore_exists(self):
+        root = Path(__file__).parents[1]
+        assert (root / ".dockerignore").is_file()
+
+    def test_dockerignore_excludes_venv(self):
+        root = Path(__file__).parents[1]
+        content = (root / ".dockerignore").read_text()
+        assert "venv" in content or ".venv" in content
+
+    def test_dockerignore_excludes_git(self):
+        root = Path(__file__).parents[1]
+        content = (root / ".dockerignore").read_text()
+        assert ".git" in content
+
+
+# ============================================================================
+# Workflow integration — existing behavior preserved
+# ============================================================================
+
+class TestWorkflowIntegration:
+    def test_verification_plan_still_works(self, tmp_path):
+        _write(tmp_path / "tests" / "test_x.py", "def test_x(): assert True\n")
+        from app.project_intelligence import inspect_project
+        from app.verification import build_verification_plan
+        pi = inspect_project(tmp_path)
+        plan = build_verification_plan(pi, "run")
+        assert len(plan.steps) >= 1
+
+    def test_pytest_runner_still_works(self, tmp_path):
+        _write(tmp_path / "tests" / "test_x.py", "def test_x(): assert True\n")
+        from app.verification import PytestRunner
+        step = VerificationStep(
+            step_id="s1", area=".", working_directory=".",
+            verification_kind="test", test_system="pytest",
+            runner_type="pytest", policy="controlled_execution",
+        )
+        runner = PytestRunner()
+        result = runner.execute(step, tmp_path)
+        assert result.status == PASS.value
+
+    def test_execution_boundary_rejects_disallowed_args(self, tmp_path):
+        req = ExecutionRequest(
+            args=("python", "-c", "print('shell=True')"),
+            cwd=str(tmp_path), timeout=10, tool_name="python",
+        )
+        # The string "shell=True" in args triggers the deny-list
+        err = validate_request(req, tmp_path)
+        assert err is not None
+
+
+class TestControlledSetupEffectCompletenessContract:
+    """CLAUDE-PRE-E2E-009A: the generalized failure class behind
+    CLAUDE-E2E-NIO-008A ("a producer may create an executable SetupStep
+    whose controlled consumer cannot actually execute that artifact")
+    is not specific to python_package_install -- it recurs for ANY
+    currently controlled SetupEffect that lacks its own explicit,
+    registered install_method compatibility validator. Absence of a
+    validator must never be silently treated as proof of compatibility
+    for a controlled effect."""
+
+    def test_every_currently_controlled_setup_effect_has_a_registered_capability_and_validator(self):
+        """No "???" may remain for a currently executable controlled
+        effect: every entry in CONTROLLED_SETUP_EFFECTS must have both
+        a capability/tool_name mapping AND a compatibility validator
+        already registered. Mechanically enumerates the real registries
+        -- never a hand-maintained, driftable duplicate list."""
+        from app.execution import (
+            CONTROLLED_SETUP_EFFECTS, _CAPABILITY_BY_SETUP_EFFECT,
+            _install_method_validators,
+        )
+
+        validators = _install_method_validators()
+        missing_capability = sorted(CONTROLLED_SETUP_EFFECTS - _CAPABILITY_BY_SETUP_EFFECT.keys())
+        missing_validator = sorted(CONTROLLED_SETUP_EFFECTS - validators.keys())
+
+        assert not missing_capability, (
+            f"controlled SetupEffect(s) with no registered capability/tool_name "
+            f"mapping: {missing_capability}"
+        )
+        assert not missing_validator, (
+            f"controlled SetupEffect(s) with no registered install_method "
+            f"compatibility validator: {missing_validator}"
+        )
+
+    def test_a_controlled_effect_without_a_registered_validator_fails_closed_not_open(self, monkeypatch):
+        """CLAUDE-PRE-E2E-009A: simulates the exact future scenario this
+        contract exists to prevent -- a new SetupEffect is added to
+        CONTROLLED_SETUP_EFFECTS (making it genuinely executable)
+        without anyone remembering to also register its compatibility
+        validator. This must never silently default to
+        compatible=True for arbitrary, unchecked install_method text --
+        that is precisely the class of gap Real-System-E2E #4 exposed
+        for python_package_install, generalized to any future
+        controlled effect."""
+        import app.execution as execution_module
+
+        fake_effect = "future_controlled_effect_with_no_validator"
+        monkeypatch.setattr(
+            execution_module, "CONTROLLED_SETUP_EFFECTS",
+            frozenset(execution_module.CONTROLLED_SETUP_EFFECTS | {fake_effect}),
+        )
+
+        assert execution_module.is_controlled_setup_effect(fake_effect) is True
+        assert execution_module.is_install_method_compatible_with_controlled_executor(
+            fake_effect, "literally anything, even a compound shell command", "somepkg",
+        ) is False
+
+    def test_uncontrolled_effect_remains_unconstrained_by_this_check(self):
+        """Uncontrolled/manual-review effects explicitly remain outside
+        this requirement (Part 3): a genuinely non-controlled effect is
+        never blocked by the absence of a validator, since it was never
+        going to become an executable "install" action in the first
+        place."""
+        from app.execution import is_install_method_compatible_with_controlled_executor
+        from app.requirement_model import SetupEffect
+
+        assert is_install_method_compatible_with_controlled_executor(
+            SetupEffect.SYSTEM_PACKAGE_INSTALL, "anything", "somepkg",
+        ) is True
+        assert is_install_method_compatible_with_controlled_executor(
+            None, "anything", "somepkg",
+        ) is True
+
+
+def _write(path, content):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)

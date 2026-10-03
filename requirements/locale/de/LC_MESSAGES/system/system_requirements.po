@@ -1,0 +1,285 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 
+# This file is distributed under the same license as the AI-Dev-Center Requirements package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: AI-Dev-Center Requirements \n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-19 08:28+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:2
+msgid "ADC System Requirements"
+msgstr "ADC Systemanforderungen"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:4
+msgid "Derived exclusively from the accepted ADC Zielbild. Source: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt and zielbild/zielbild.rst"
+msgstr "Ausschließlich aus dem akzeptierten ADC-Zielbild abgeleitet. Quelle: ADC_Zielbild_Ausfuehrliche_Beschreibung.txt und zielbild/zielbild.rst"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:12
+msgid "ADC shall operate as an integrated engineering platform supporting software, firmware, and hardware engineering."
+msgstr "ADC soll als integrierte Engineering-Plattform für Software-, Firmware- und Hardware-Engineering fungieren."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:15
+msgid "Source: ZIEL_001 (§1 Purpose/Mission)"
+msgstr "Quelle: ZIEL_001 (§1 Zweck/Mission)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:22
+msgid "ADC shall provide a complete, traceable, and controlled engineering process covering: understanding project and requirements, making technically founded decisions, controlled materialization of the chosen solution, controlled change implementation, real mechanical verification, controlled delivery, and durable learning from collected evidence."
+msgstr "ADC soll einen vollständigen, nachvollziehbaren und kontrollierten Engineering-Prozess bereitstellen, der Folgendes umfasst: Projekt und Anforderungen verstehen, technisch fundierte Entscheidungen treffen, kontrollierte Materialisierung der gewählten Lösung, kontrollierte Änderungsumsetzung, reale mechanische Verifikation, kontrollierte Auslieferung und dauerhaftes Lernen aus gesammelter Evidenz."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:28
+msgid "Source: ZIEL_002 (§1 Purpose/Mission)"
+msgstr "Quelle: ZIEL_002 (§1 Zweck/Mission)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:35
+msgid "ADC shall support both existing and greenfield projects, with priority for existing project structure, conventions, and toolchains. ADC shall adapt to the project rather than imposing its own structures. Changing toolchain or environment shall require a documented technical reason; \"ADC prefers technology X\" alone is not sufficient."
+msgstr "ADC soll sowohl bestehende als auch neue Projekte unterstützen, mit Vorrang für vorhandene Projektstruktur, Konventionen und Toolchains. ADC soll sich an das Projekt anpassen, statt eigene Strukturen aufzuzwingen. Ein Wechsel von Toolchain oder Umgebung soll einen dokumentierten technischen Grund erfordern; „ADC bevorzugt Technologie X“ allein genügt nicht."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:41
+msgid "Source: ZIEL_003, ZIEL_025, ZIEL_026 (§2, §6)"
+msgstr "Quelle: ZIEL_003, ZIEL_025, ZIEL_026 (§2, §6)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:48
+msgid "ADC shall understand heterogeneous and multi-toolchain projects without artificially unifying them. Projects containing multiple independent technical areas (e.g., backend, frontend, firmware, hardware configuration with distinct languages, build systems, and test systems) shall be understood separately while being brought together in a common engineering context."
+msgstr "ADC soll heterogene und Multi-Toolchain-Projekte verstehen, ohne sie künstlich zu vereinheitlichen. Projekte mit mehreren unabhängigen technischen Bereichen (z. B. Backend, Frontend, Firmware, Hardwarekonfiguration mit eigenen Sprachen, Build-Systemen und Testsystemen) sollen getrennt verstanden und dennoch in einem gemeinsamen Engineering-Kontext zusammengeführt werden."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:54
+msgid "Source: ZIEL_004 (§2 Scope)"
+msgstr "Quelle: ZIEL_004 (§2 Umfang)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:61
+msgid "ADC shall evolve toward an integrated electrical/electronic engineering platform. ADC governance principles — engineering decision before mutation, controlled tool/device capabilities, human approval for physical actions, real verification, traceable evidence, FMEA, and traceable delivery — shall apply equally to firmware, electronics, hardware, and physical-system engineering artifacts."
+msgstr "ADC soll sich zu einer integrierten Elektrik-/Elektronik-Engineering-Plattform entwickeln. Die ADC-Governance-Prinzipien — Engineering-Entscheidung vor Mutation, kontrollierte Werkzeug-/Gerätefähigkeiten, menschliche Freigabe für physische Aktionen, reale Verifikation, nachvollziehbare Evidenz, FMEA und nachvollziehbare Auslieferung — sollen gleichermaßen für Firmware, Elektronik, Hardware und physische Systemtechnik-Artefakte gelten."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:68
+msgid "Source: ZIEL_005, ZIEL_057 (§2 Scope)"
+msgstr "Quelle: ZIEL_005, ZIEL_057 (§2 Umfang)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:75
+msgid "ADC shall understand a user request and inspect an existing project read-only. ADC shall identify and structure requirements, distinguish mandatory from optional requirements, and connect requirements with evidence. ADC shall distinguish observed project reality from deliberately established project decisions and bring them together without silently overwriting contradictory sources."
+msgstr "ADC soll einen Benutzerauftrag verstehen und ein bestehendes Projekt read-only untersuchen. ADC soll Anforderungen identifizieren und strukturieren, Pflicht- von optionalen Anforderungen unterscheiden und Anforderungen mit Evidenz verbinden. ADC soll beobachtete Projektrealität von bewusst getroffenen Projektentscheidungen unterscheiden und sie zusammenführen, ohne widersprüchliche Quellen stillschweigend zu überschreiben."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:82
+msgid "Source: ZIEL_006, ZIEL_041 (§3, §12)"
+msgstr "Quelle: ZIEL_006, ZIEL_041 (§3, §12)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:89
+msgid "ADC shall generate multiple technically sound engineering solution variants rather than enforcing a single predetermined solution. Variants shall be evaluated against real engineering criteria including: requirement fulfillment, project fit, necessary changes, reuse of existing capabilities, risks, reproducibility, materializability, controlled executability, real verifiability, cost/complexity, and introduced dependencies."
+msgstr "ADC soll mehrere technisch sinnvolle Engineering-Lösungsvarianten erzeugen, statt eine einzelne vorbestimmte Lösung durchzusetzen. Varianten sollen anhand realer Engineering-Kriterien bewertet werden, darunter: Anforderungserfüllung, Projektpassung, nötige Änderungen, Wiederverwendbarkeit vorhandener Fähigkeiten, Risiken, Reproduzierbarkeit, Materialisierbarkeit, kontrollierte Ausführbarkeit, reale Verifizierbarkeit, Kosten/Komplexität und eingeführte Abhängigkeiten."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:96
+msgid "Source: ZIEL_007, ZIEL_029 (§3, §8)"
+msgstr "Quelle: ZIEL_007, ZIEL_029 (§3, §8)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:103
+msgid "ADC shall produce a technically justified recommendation and present it to the user in a structured, traceable manner together with alternatives. The presentation shall include: variant name, technical justification, fulfilled requirements, required environment, required changes, risks, verification strategy, expected setup steps, human approval points, and for each alternative: admissibility, advantages/disadvantages, additional effort, additional risks, and verification implications."
+msgstr "ADC soll eine technisch begründete Empfehlung erzeugen und diese dem Benutzer strukturiert und nachvollziehbar zusammen mit Alternativen präsentieren. Die Darstellung soll umfassen: Variantenname, technische Begründung, erfüllte Anforderungen, erforderliche Umgebung, erforderliche Änderungen, Risiken, Verifikationsstrategie, erwartete Setup-Schritte, menschliche Freigabepunkte sowie für jede Alternative: Zulässigkeit, Vor-/Nachteile, zusätzlicher Aufwand, zusätzliche Risiken und Auswirkungen auf die Verifikation."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:111
+msgid "Source: ZIEL_008, ZIEL_044 (§3, §5, §12)"
+msgstr "Quelle: ZIEL_008, ZIEL_044 (§3, §5, §12)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:118
+msgid "ADC shall transfer the chosen engineering solution into a real, usable environment in a controlled manner without reopening the already-made engineering selection."
+msgstr "ADC soll die gewählte Engineering-Lösung kontrolliert in eine reale, nutzbare Umgebung überführen, ohne die bereits getroffene Engineering-Auswahl neu aufzurollen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:122
+msgid "Source: ZIEL_009 (§3, §4)"
+msgstr "Quelle: ZIEL_009 (§3, §4)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:129
+msgid "ADC shall carry out the actual technical change on the project in a controlled manner, within authorized scope, with full change provenance and protection of pre-existing target state."
+msgstr "ADC soll die eigentliche technische Änderung am Projekt kontrolliert durchführen, innerhalb des autorisierten Bereichs, mit vollständiger Änderungs-Provenienz und Schutz des vorbestehenden Zielzustands."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:133
+msgid "Source: ZIEL_010 (§3, §9)"
+msgstr "Quelle: ZIEL_010 (§3, §9)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:140
+msgid "ADC shall mechanically and actually verify whether the technical solution and changes function, using project-specific build and test systems. ADC shall provide multiple clearly separated verification levels from local function/contract checks through component-level checks to real-world integration verification. Real test results shall be authoritative evidence. Toolchain availability shall be detected and verification dependencies mapped. Before source generation, relevant properties of the intended target environment that affect compatibility shall be established and supplied to the generator as context. Generated source shall be checked with the environment intended for that source. If compatibility cannot be reliably established, ADC shall not silently assume it or present it as confirmed. These obligations are technology-neutral and shall not prefer a language, toolchain, platform, or implementation. Failure modes shall be connected with test coverage."
+msgstr "ADC soll mechanisch und real prüfen, ob die technische Lösung und die Änderungen funktionieren, unter Nutzung projektspezifischer Build- und Testsysteme. ADC soll mehrere klar getrennte Verifikationsebenen bereitstellen, von lokalen Funktions-/Vertragsprüfungen über Komponentenprüfungen bis zur realen Integrationsverifikation. Reale Testergebnisse sollen autoritative Evidenz sein. Toolchain-Verfügbarkeit soll erkannt und Verifikationsabhängigkeiten abgebildet werden. Vor der Quellgenerierung sollen relevante Eigenschaften der vorgesehenen Zielumgebung, die die Kompatibilität beeinflussen, festgestellt und dem Generator als Kontext übergeben werden. Erzeugter Source soll mit der für ihn vorgesehenen Umgebung geprüft werden. Lässt sich die Kompatibilität nicht zuverlässig feststellen, darf ADC sie weder stillschweigend voraussetzen noch als bestätigt darstellen. Diese Verpflichtungen sind technologieunabhängig und bevorzugen keine Sprache, Toolchain, Plattform oder Umsetzung. Fehlerarten sollen mit Testabdeckung verknüpft werden."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:148
+msgid "Source: ZIEL_011, ZIEL_037, ZIEL_038 (§3, §10)"
+msgstr "Quelle: ZIEL_011, ZIEL_037, ZIEL_038 (§3, §10)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:155
+msgid "ADC shall deliver a verified and approved result in a controlled manner. Delivery shall not represent unverified or unapproved work as accepted final result. ADC shall not appropriate foreign target state changes not belonging to the current run. Only targets with fully proven provenance shall be transferred to final state. ADC shall not automatically discard, overwrite, undo, or silently absorb pre-existing target state. Where publish applies, it shall be a separate explicit action with its own approval boundary. Version control shall be optional and project-specific."
+msgstr "ADC soll ein verifiziertes und freigegebenes Ergebnis kontrolliert ausliefern. Die Auslieferung darf nicht unverifizierte oder nicht freigegebene Arbeit als akzeptiertes Endergebnis darstellen. ADC soll sich keine fremden Zielzustandsänderungen aneignen, die nicht zum aktuellen Lauf gehören. Nur Ziele mit vollständig nachgewiesener Provenienz sollen in den Endzustand übernommen werden. ADC soll vorbestehenden Zielzustand nicht automatisch verwerfen, überschreiben, rückgängig machen oder stillschweigend absorbieren. Sofern Publish zutrifft, soll es eine separate, explizite Aktion mit eigener Freigabegrenze sein. Versionskontrolle soll optional und projektspezifisch sein."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:164
+msgid "Source: ZIEL_012, ZIEL_045, ZIEL_046, ZIEL_047, ZIEL_048 (§3, §13)"
+msgstr "Quelle: ZIEL_012, ZIEL_045, ZIEL_046, ZIEL_047, ZIEL_048 (§3, §13)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:171
+msgid "ADC shall durably learn from accepted evidence, including from failed outcomes. Learning shall not be artificially coupled to successful delivery. Every locally reproducible, actually observed defect shall be durably transferred into deterministic test coverage — not only the concrete failure case but the generalized failure pattern it represents. A learning shall only be accepted durably after: Observation → Analysis → Test → Evidence → Acceptance → Learning accepted."
+msgstr "ADC soll dauerhaft aus akzeptierter Evidenz lernen, einschließlich aus fehlgeschlagenen Ergebnissen. Das Lernen darf nicht künstlich an eine erfolgreiche Auslieferung gekoppelt sein. Jeder lokal reproduzierbare, tatsächlich beobachtete Defekt soll dauerhaft in deterministische Testabdeckung überführt werden — nicht nur der konkrete Fehlerfall, sondern das verallgemeinerte Fehlermuster, das er repräsentiert. Eine Erkenntnis soll erst dauerhaft akzeptiert werden nach: Beobachtung → Analyse → Test → Evidenz → Akzeptanz → Erkenntnis akzeptiert."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:179
+msgid "Source: ZIEL_013, ZIEL_051, ZIEL_054 (§3, §15)"
+msgstr "Quelle: ZIEL_013, ZIEL_051, ZIEL_054 (§3, §15)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:186
+msgid "ADC shall not enforce the same solution class for identical input. Different project-specific engineering solutions may all be correct. ADC shall not be a deterministic solver — different technically valid recommendations for the same starting situation are permitted. ADC shall enable solution diversity but block technical invalidity early. Every chosen solution shall fulfill binding requirements, violate no constraints, be technically materializable, possess appropriate controlled execution capability, have a defined verification strategy, be secured by deterministic tests, and be presentable to the human before mutating execution."
+msgstr "ADC soll für identischen Input nicht dieselbe Lösungsklasse erzwingen. Unterschiedliche projektspezifische Engineering-Lösungen können alle korrekt sein. ADC soll kein deterministischer Solver sein — unterschiedliche technisch gültige Empfehlungen bei gleicher Ausgangslage sind erlaubt. ADC soll Lösungsvielfalt ermöglichen, aber technische Ungültigkeit früh blockieren. Jede gewählte Lösung soll bindende Anforderungen erfüllen, keine Constraints verletzen, technisch materialisierbar sein, eine passende kontrollierte Ausführungsfähigkeit besitzen, eine definierte Verifikationsstrategie haben, durch deterministische Tests abgesichert sein und dem Menschen vor mutierender Ausführung präsentierbar sein."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:196
+msgid "Source: ZIEL_014, ZIEL_015, ZIEL_030, ZIEL_031 (§3, §8)"
+msgstr "Quelle: ZIEL_014, ZIEL_015, ZIEL_030, ZIEL_031 (§3, §8)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:203
+msgid "ADC shall guarantee the following authority separations: understanding requirements shall not select a technical solution nor execute setup actions; making an engineering decision shall not execute installations nor mutate environments; preparing the environment shall not reopen the already-made engineering selection; a technical recommendation is not an automatic execution authorization; human selection or approval shall never make a technically inadmissible solution admissible."
+msgstr "ADC soll folgende Autoritätstrennungen gewährleisten: Das Verstehen von Anforderungen darf keine technische Lösung auswählen und keine Setup-Aktionen ausführen; das Treffen einer Engineering-Entscheidung darf keine Installationen ausführen und keine Umgebungen mutieren; die Vorbereitung der Umgebung darf die bereits getroffene Engineering-Auswahl nicht neu aufrollen; eine technische Empfehlung ist keine automatische Ausführungsfreigabe; menschliche Auswahl oder Freigabe darf eine technisch unzulässige Lösung niemals zulässig machen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:211
+msgid "Source: ZIEL_016, ZIEL_017, ZIEL_018, ZIEL_019 (§4, §5)"
+msgstr "Quelle: ZIEL_016, ZIEL_017, ZIEL_018, ZIEL_019 (§4, §5)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:218
+msgid "The human shall remain the decisive authority at mutating and safety-relevant boundaries. The system shall clearly separate a technical recommendation from execution approval. The user may accept a recommendation, select another admissible variant, request a change, reject planning, or request a new decision round."
+msgstr "Der Mensch soll die entscheidende Autorität an mutierenden und sicherheitsrelevanten Grenzen bleiben. Das System soll eine technische Empfehlung klar von der Ausführungsfreigabe trennen. Der Benutzer kann eine Empfehlung annehmen, eine andere zulässige Variante auswählen, eine Änderung verlangen, die Planung ablehnen oder eine neue Entscheidungsrunde anfordern."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:224
+msgid "Source: ZIEL_023, ZIEL_024 (§5)"
+msgstr "Quelle: ZIEL_023, ZIEL_024 (§5)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:231
+msgid "ADC shall remain technology-open. No concrete implementation technology shall dominate the central ADC system or become the hidden default. Concrete technologies exist exclusively as replaceable current implementation, project-specific choice, or non-normative example. New technical stacks shall be integrable without fundamentally rebuilding ADC. Various functional areas of ADC may be realized in arbitrary implementation technologies."
+msgstr "ADC soll technologieoffen bleiben. Keine konkrete Implementierungstechnologie soll das zentrale ADC-System dominieren oder zum versteckten Standard werden. Konkrete Technologien existieren ausschließlich als austauschbare aktuelle Implementierung, projektspezifische Wahl oder nicht-normatives Beispiel. Neue technische Stacks sollen integrierbar sein, ohne ADC grundlegend umzubauen. Verschiedene funktionale Bereiche von ADC können in beliebigen Implementierungstechnologien realisiert sein."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:238
+msgid "Source: ZIEL_027, ZIEL_028 (§7)"
+msgstr "Quelle: ZIEL_027, ZIEL_028 (§7)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:245
+msgid "Requirements shall form the technical contract against which solutions are evaluated. A solution shall only be admissible if it fulfills the binding requirements for the concrete operation. Requirements shall possess evidence and be linkable with tests, forming: Requirement → Contract → Verification → Evidence."
+msgstr "Anforderungen sollen den technischen Vertrag bilden, gegen den Lösungen bewertet werden. Eine Lösung soll nur zulässig sein, wenn sie die bindenden Anforderungen für die konkrete Operation erfüllt. Anforderungen sollen Evidenz besitzen und mit Tests verknüpfbar sein: Anforderung → Vertrag → Verifikation → Evidenz."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:251
+msgid "Source: ZIEL_032 (§8)"
+msgstr "Quelle: ZIEL_032 (§8)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:258
+msgid "ADC shall not model changes as a collection of unstructured operation representations. No freely formulated or unstructured analysis result shall automatically become a mutating action. Every environment-altering or project-altering action shall semantically describe WHAT is to be changed and be implemented via structured, controlled mechanisms. Every mutating execution shall run through controlled boundaries checking: capability, executing instance, operation type, authorized scope, approval, argument structure, and operational limits. Creative analysis and synthesis shall contribute exclusively to decision preparation and justification, not to direct uncontrolled mutation. There shall be no general path through which a reasoning system can directly bring unstructured operations to execution."
+msgstr "ADC soll Änderungen nicht als Sammlung unstrukturierter Operationsrepräsentationen modellieren. Kein frei formuliertes oder unstrukturiertes Analyseergebnis soll automatisch zu einer mutierenden Aktion werden. Jede umgebungsverändernde oder projektverändernde Aktion soll semantisch beschreiben, WAS geändert werden soll, und über strukturierte, kontrollierte Mechanismen umgesetzt werden. Jede mutierende Ausführung soll über kontrollierte Grenzen laufen, die prüfen: Fähigkeit, ausführende Instanz, Operationstyp, autorisierten Bereich, Freigabe, Argumentstruktur und Betriebsgrenzen. Kreative Analyse und Synthese sollen ausschließlich zur Vorbereitung und Begründung von Entscheidungen beitragen, nicht zur direkten unkontrollierten Mutation. Es soll keinen allgemeinen Pfad geben, über den ein Analysesystem direkt unstrukturierte Operationen zur Ausführung bringen kann."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:270
+msgid "Source: ZIEL_033, ZIEL_034, ZIEL_035 (§9)"
+msgstr "Quelle: ZIEL_033, ZIEL_034, ZIEL_035 (§9)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:277
+msgid "A real verification result shall not be overridden by any interpretation. A real deterministic test failure shall always force rework, independent of any interpretation. Failure modes shall be connected with test coverage."
+msgstr "Ein reales Verifikationsergebnis darf durch keine Interpretation überschrieben werden. Ein realer deterministischer Testfehlschlag soll immer Nacharbeit erzwingen, unabhängig von jeglicher Interpretation. Fehlerarten sollen mit Testabdeckung verknüpft werden."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:281
+msgid "Source: ZIEL_020, ZIEL_038 (§4, §10)"
+msgstr "Quelle: ZIEL_020, ZIEL_038 (§4, §10)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:288
+msgid "Diagnostic Evidence is Evidence, not Authority. It shall never replace, override, bypass, or synthesize formal decision-authority — including technical admissibility, human selection, approval, verification result, final approval, or publish approval."
+msgstr "Diagnostische Evidenz ist Evidenz, nicht Autorität. Sie darf niemals formale Entscheidungsautorität — einschließlich technischer Zulässigkeit, menschlicher Auswahl, Freigabe, Verifikationsergebnis, finaler Freigabe oder Veröffentlichungsfreigabe — ersetzen, übersteuern, umgehen oder synthetisieren."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:293
+msgid "Source: ZIEL_021 (§4)"
+msgstr "Quelle: ZIEL_021 (§4)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:300
+msgid "Delivery shall be its own engineering step and not a side effect of development."
+msgstr "Die Auslieferung soll ihr eigener Engineering-Schritt sein und keine Nebenwirkung der Entwicklung."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:303
+msgid "Source: ZIEL_022 (§4)"
+msgstr "Quelle: ZIEL_022 (§4)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:310
+msgid "ADC shall contain no unbounded engineering loops. Budgets shall exist for controlled operations including operation, phase, and run time limits, maximum attempts, maximum rework cycles, maximum state revisits, and provider budgets. A workflow shall not pend endlessly between the same states."
+msgstr "ADC soll keine unbegrenzten Engineering-Schleifen enthalten. Für kontrollierte Operationen sollen Budgets bestehen, einschließlich Zeitgrenzen für Operation, Phase und Laufzeit, maximaler Versuchsanzahl, maximaler Nacharbeitszyklen, maximaler Zustandswiederholungen und Provider-Budgets. Ein Workflow soll nicht endlos zwischen denselben Zuständen verharren."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:315
+msgid "Source: ZIEL_036 (§9)"
+msgstr "Quelle: ZIEL_036 (§9)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:322
+msgid "Before any mutating execution, ADC shall be able to prove that execution is actually possible — including a responsible controlled execution capability, a matching structured input, a registered capability, a correct target scope, operation permissibility, required approval, and the ability to verify the result afterward. The system shall operate fail-closed: unproven executability is non-executability."
+msgstr "Vor jeder mutierenden Ausführung soll ADC nachweisen können, dass die Ausführung tatsächlich möglich ist — einschließlich einer zuständigen kontrollierten Ausführungsfähigkeit, einer passenden strukturierten Eingabe, einer registrierten Fähigkeit, eines korrekten Zielbereichs, der Zulässigkeit der Operation, der erforderlichen Freigabe und der Möglichkeit, das Ergebnis anschließend zu verifizieren. Das System soll Fail-Closed arbeiten: nicht nachgewiesene Ausführbarkeit ist Nicht-Ausführbarkeit."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:329
+msgid "Source: ZIEL_039 (§11)"
+msgstr "Quelle: ZIEL_039 (§11)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:336
+msgid "For every important artifact, the following shall be answerable: Who creates it? Who may modify it? Where is it persisted? Who consumes it? Which authority applies? Which evidence proves its state? Which contract version applies?"
+msgstr "Für jedes wichtige Artefakt soll Folgendes beantwortbar sein: Wer erzeugt es? Wer darf es ändern? Wo wird es persistiert? Wer konsumiert es? Welche Autorität gilt? Welche Evidenz belegt seinen Zustand? Welche Vertragsversion gilt?"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:341
+msgid "Source: ZIEL_040 (§12)"
+msgstr "Quelle: ZIEL_040 (§12)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:348
+msgid "ADC shall maintain a technical timeline of its run (Diagnostic Trace): which processing phase was started, which structured inputs were present, which system part processed them, which provider or model was used where known, which structured result was produced, which approval boundary was reached, which error occurred, which evidence is present, and where the workflow ended or was blocked. This trace shall not be a chain-of-thought store and shall contain no internal model thoughts, secrets, tokens, credential dumps, or uncontrolled executable commands."
+msgstr "ADC soll eine technische Zeitlinie seines Laufs führen (Diagnostic Trace): welche Verarbeitungsphase gestartet wurde, welche strukturierten Eingaben vorlagen, welcher Systemteil sie verarbeitet hat, welcher Provider oder welches Modell verwendet wurde (soweit bekannt), welches strukturierte Ergebnis erzeugt wurde, welche Freigabegrenze erreicht wurde, welcher Fehler aufgetreten ist, welche Evidenz vorliegt und wo der Workflow endete oder blockiert wurde. Diese Trace soll kein Speicher für Denkketten sein und soll keine internen Modellgedanken, Geheimnisse, Tokens, Zugangsdaten-Dumps oder unkontrollierten ausführbaren Befehle enthalten."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:357
+msgid "Source: ZIEL_042 (§12)"
+msgstr "Quelle: ZIEL_042 (§12)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:364
+msgid "ADC shall make relevant decisions and transformations traceable. It shall be possible to determine the triggering input or underlying evidence for a relevant result. It shall be possible to identify the responsible processing step or decision context sufficiently for audit and diagnosis. Failure-relevant information shall not silently disappear across processing boundaries."
+msgstr "ADC soll relevante Entscheidungen und Transformationen nachvollziehbar machen. Es soll möglich sein, die auslösende Eingabe oder zugrunde liegende Evidenz für ein relevantes Ergebnis zu bestimmen. Es soll möglich sein, den verantwortlichen Verarbeitungsschritt oder Entscheidungskontext hinreichend für Audit und Diagnose zu identifizieren. Fehlerrelevante Informationen sollen über Verarbeitungsgrenzen hinweg nicht stillschweigend verloren gehen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:371
+msgid "Source: ZIEL_043 (§12)"
+msgstr "Quelle: ZIEL_043 (§12)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:378
+msgid "If a run is interrupted during or after a mutation, a later run shall detect the unsafe or partial state, correlate the current target state with captured provenance, not silently reapply the same change, not silently treat the change as successful, and either go fail-closed or enter a controlled reconciliation path. Successfully completed steps may be reused on known success. Changed content shall force new generation/approval instead of silent reuse. Missing capabilities or tools at runtime shall be transferable into a bounded, approval-bound recovery without reopening the engineering decision and without unbounded repetition. After recovery, previously planned verification shall be re-executed."
+msgstr "Wird ein Lauf während oder nach einer Mutation unterbrochen, soll ein späterer Lauf den unsicheren oder partiellen Zustand erkennen, den aktuellen Zielzustand mit erfasster Provenienz korrelieren, dieselbe Änderung nicht stillschweigend erneut anwenden, die Änderung nicht stillschweigend als erfolgreich behandeln und entweder Fail-Closed gehen oder einen kontrollierten Abgleichspfad einschlagen. Erfolgreich abgeschlossene Schritte dürfen bei bekanntem Erfolg wiederverwendet werden. Geänderter Inhalt soll neue Erzeugung/Freigabe erzwingen statt stillschweigender Wiederverwendung. Fehlende Fähigkeiten oder Werkzeuge zur Laufzeit sollen in eine begrenzte, freigabegebundene Wiederherstellung überführt werden können, ohne die Engineering-Entscheidung erneut zu öffnen und ohne unbegrenzte Wiederholung. Nach der Wiederherstellung soll die zuvor geplante Verifikation erneut ausgeführt werden."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:389
+msgid "Source: ZIEL_049, ZIEL_050 (§14)"
+msgstr "Quelle: ZIEL_049, ZIEL_050 (§14)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:396
+msgid "ADC shall maintain a living engineering FMEA for each project, derived from requirements, architecture, technologies, toolchains, hardware, operating environment, past errors, tests, and real-system evidence, supplemented by a central reusable failure mode library. ADC shall keep different knowledge types separate: Knowledge (current valid project/system contract), Evidence (facts from the current run), Learning Memory (accepted insights from past errors and improvements), Analytic Reasoning (flexible analysis, synthesis, and proposal formation), and Deterministic Contracts (hard, non-negotiable rules). FMEA is part of the engineering learning system, not a static document."
+msgstr "ADC soll für jedes Projekt eine lebende Engineering-FMEA führen, abgeleitet aus Anforderungen, Architektur, Technologien, Toolchains, Hardware, Betriebsumgebung, früheren Fehlern, Tests und Real-System-Evidenz, ergänzt durch eine zentrale, wiederverwendbare Fehlerartenbibliothek. ADC soll unterschiedliche Wissensarten getrennt halten: Wissen (aktuell gültiger Projekt-/Systemvertrag), Evidenz (Fakten aus dem aktuellen Lauf), Lerngedächtnis (akzeptierte Erkenntnisse aus früheren Fehlern und Verbesserungen), Analytisches Schlussfolgern (flexible Analyse, Synthese und Vorschlagsbildung) und Deterministische Verträge (feste, nicht verhandelbare Regeln). FMEA ist Teil des Engineering-Lernsystems, kein statisches Dokument."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:407
+msgid "Source: ZIEL_052, ZIEL_053 (§15)"
+msgstr "Quelle: ZIEL_052, ZIEL_053 (§15)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:414
+msgid "ADC shall possess a cross-cutting supervision and quality capability observing the entire run — timing, loop/retry behavior, evidence quality, project-related FMEA — starting read-only, initially recognizing rather than automatically repairing, later with limited capability to warn, block, or stop. This capability shall never autonomously execute destructive actions or alternative fixes."
+msgstr "ADC soll eine übergreifende Aufsichts- und Qualitätsfähigkeit besitzen, die den gesamten Lauf beobachtet — Timing, Schleifen-/Wiederholungsverhalten, Evidenzqualität, projektbezogene FMEA — zunächst rein lesend, zunächst erkennend statt automatisch reparierend, später mit begrenzter Fähigkeit zu warnen, zu blockieren oder zu stoppen. Diese Fähigkeit soll niemals autonom destruktive Aktionen oder alternative Korrekturen ausführen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:421
+msgid "Source: ZIEL_055 (§15)"
+msgstr "Quelle: ZIEL_055 (§15)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:428
+msgid "ADC shall satisfy the following outcome dependencies: understand the project before making significant technical decisions; sufficiently justify technical decisions before mutations depending on them; obtain required approval before executing mutating actions requiring approval; technically verify results before presenting them as successfully completed; not present unverified or unapproved work as accepted final result."
+msgstr "ADC soll folgende Ergebnisabhängigkeiten erfüllen: das Projekt verstehen, bevor wesentliche technische Entscheidungen getroffen werden; technische Entscheidungen hinreichend begründen, bevor davon abhängige Mutationen erfolgen; erforderliche Freigabe einholen, bevor freigabepflichtige mutierende Aktionen ausgeführt werden; Ergebnisse technisch verifizieren, bevor sie als erfolgreich abgeschlossen dargestellt werden; keine unverifizierte oder nicht freigegebene Arbeit als akzeptiertes Endergebnis darstellen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/system/system_requirements.rst:435
+msgid "Source: ZIEL_056 (§16)"
+msgstr "Quelle: ZIEL_056 (§16)"
+
+msgid "Council-specific budget and diagnostic obligations are approved separately in SUB_REQ_033 through SUB_REQ_040 by CODEX-ADC-COUNCIL-REQUIREMENTS-ADOPTION-026. This adoption does not approve other draft requirements or numeric operating profiles."
+msgstr "Council-spezifische Budget- und Diagnosepflichten sind durch CODEX-ADC-COUNCIL-REQUIREMENTS-ADOPTION-026 gesondert in SUB_REQ_033 bis SUB_REQ_040 freigegeben. Diese Freigabe genehmigt keine anderen Draft-Anforderungen oder numerischen Betriebsprofile."
+
+msgid "ADC shall mechanically and actually verify whether the technical solution and changes function, using project-specific build and test systems. ADC shall provide multiple clearly separated verification levels from local function/contract checks through component-level checks to real-world integration verification. Real test results shall be authoritative evidence. Toolchain availability shall be detected and verification dependencies mapped. Failure modes shall be connected with test coverage."
+msgstr "ADC soll anhand projektspezifischer Build- und Testsysteme mechanisch und tatsächlich verifizieren, ob die technische Lösung und Änderungen funktionieren. ADC soll mehrere klar getrennte Verifikationsebenen von lokalen Funktions-/Vertragsprüfungen über Komponentenprüfungen bis zur Realwelt-Integrationsverifikation bereitstellen. Reale Testergebnisse sind maßgebliche Evidenz. Die Verfügbarkeit von Toolchains ist zu erkennen und Verifikationsabhängigkeiten sind zuzuordnen. Fehlermodi sind mit Testabdeckung zu verbinden."
+
+msgid "Before source generation, ADC shall establish relevant properties of the intended target environment that affect compatibility and provide them to the generator as context. Generated source shall be compatible with that environment. Verification of generated source shall execute in the same intended target environment. Compatibility shall not be assumed or represented as confirmed when it cannot be reliably established, including when verification cannot run in that target environment. This obligation is technology neutral and shall not prefer a language, toolchain, platform, or implementation."
+msgstr "Vor der Quellgenerierung soll ADC relevante Eigenschaften der vorgesehenen Zielumgebung feststellen, die die Kompatibilität beeinflussen, und sie dem Generator als Kontext bereitstellen. Der erzeugte Source muss mit dieser Umgebung kompatibel sein. Die Verifikation des erzeugten Source muss in derselben vorgesehenen Zielumgebung ausgeführt werden. Kompatibilität darf nicht angenommen oder als bestätigt dargestellt werden, wenn sie sich nicht zuverlässig feststellen lässt, auch wenn die Verifikation nicht in dieser Zielumgebung ausgeführt werden kann. Diese Pflicht ist technologieneutral und bevorzugt keine Sprache, Toolchain, Plattform oder Umsetzung."
+
+msgid "Source: ZIEL_003, ZIEL_010 (§2, §3)"
+msgstr "Quelle: ZIEL_003, ZIEL_010 (§2, §3)"

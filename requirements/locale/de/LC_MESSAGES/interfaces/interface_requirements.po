@@ -1,0 +1,389 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 
+# This file is distributed under the same license as the AI-Dev-Center Requirements package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: AI-Dev-Center Requirements \n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-19 08:28+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:2
+msgid "ADC Interface Requirements"
+msgstr "ADC Schnittstellenanforderungen"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:4
+msgid "Normative interface contracts from the ADC Interface Requirements Catalog. Source: ADC_IF_Anforderungskatalog.txt"
+msgstr "Normative Schnittstellenverträge aus dem ADC-Schnittstellenanforderungskatalog. Quelle: ADC_IF_Anforderungskatalog.txt"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:8
+msgid "External Entry Interfaces"
+msgstr "Externe Einstiegsschnittstellen"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:15
+msgid "Every incoming request shall possess a structured identity and correlation enabling unique assignment across the entire ADC run. The user intent shall be preserved unchanged. The adapter shall not reinterpret, restrict, or silently reformulate the user request."
+msgstr "Jede eingehende Anfrage soll eine strukturierte Identität und Korrelation besitzen, die eine eindeutige Zuordnung über den gesamten ADC-Lauf ermöglicht. Die Benutzerabsicht soll unverändert bewahrt werden. Der Adapter darf die Benutzeranfrage nicht neu interpretieren, einschränken oder stillschweigend umformulieren."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:20
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:32
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-000A"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-000A"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:27
+msgid "The external entry adapter shall not select a technical solution, toolchain, environment, build method, or engineering strategy. The adapter is a pure input interface without project, target, or environment mutation authority."
+msgstr "Der externe Einstiegsadapter darf keine technische Lösung, Toolchain, Umgebung, Build-Methode oder Engineering-Strategie auswählen. Der Adapter ist eine reine Eingabeschnittstelle ohne Mutationsautorität für Projekt, Ziel oder Umgebung."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:39
+msgid "The project inspector shall inspect the project exclusively read-only. Every inspection shall be evidence-based and shall deliver observable facts, not assumptions or preferences. The inspector shall not mutate the project, target, or environment."
+msgstr "Der Projektinspektor soll das Projekt ausschließlich read-only untersuchen. Jede Inspektion soll evidenzbasiert sein und beobachtbare Fakten liefern, keine Annahmen oder Präferenzen. Der Inspektor darf Projekt, Ziel oder Umgebung nicht mutieren."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:44
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:56
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-000B"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-000B"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:51
+msgid "Observed project conventions, toolchains, build systems, and test systems shall be respected and documented. ADC shall not silently replace them with ADC defaults. Observation \"project uses toolchain X\" shall not become the silent decision \"ADC shall use toolchain X.\""
+msgstr "Beobachtete Projektkonventionen, Toolchains, Build-Systeme und Testsysteme sollen respektiert und dokumentiert werden. ADC darf sie nicht stillschweigend durch ADC-Standardwerte ersetzen. Die Beobachtung „Projekt nutzt Toolchain X“ darf nicht zur stillschweigenden Entscheidung „ADC soll Toolchain X nutzen“ werden."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:59
+msgid "S1 → S2"
+msgstr "S1 → S2"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:66
+msgid "Every binding requirement shall have a stable technical identity. Requirement ID, type, technical identity, required-status, and relevant activation shall remain uniquely correlatable through S2 evaluation. Activation provenance shall structurally distinguish origins: user input, central default, fallback due to missing input, fallback due to invalid input, and controlled transformation."
+msgstr "Jede bindende Anforderung soll eine stabile technische Identität besitzen. Anforderungs-ID, Typ, technische Identität, Pflichtstatus und relevante Aktivierung sollen über die gesamte S2-Bewertung hinweg eindeutig korrelierbar bleiben. Die Aktivierungs-Provenienz soll Ursprünge strukturell unterscheiden: Benutzereingabe, zentraler Standardwert, Fallback wegen fehlender Eingabe, Fallback wegen ungültiger Eingabe und kontrollierte Transformation."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:73
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:85
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-001"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-001"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:80
+msgid "The S1→S2 boundary shall not carry a technical engineering solution selection or setup execution authority from S1. ID loss, contradictory binding activations, or unresolvable requirement conflicts shall not silently enter a normal council handoff."
+msgstr "Die S1→S2-Grenze darf keine technische Engineering-Lösungsauswahl oder Setup-Ausführungsautorität von S1 tragen. ID-Verlust, widersprüchliche bindende Aktivierungen oder unauflösbare Anforderungskonflikte dürfen nicht stillschweigend in eine normale Council-Übergabe eingehen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:88
+msgid "S2 Internal Boundaries"
+msgstr "S2 interne Grenzen"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:95
+msgid "The S2.1→S2.2 handoff shall transfer all relevant proposal/candidate IDs with complete cross-review evidence and agent/contributor origin. Degraded contributors shall be identifiable. S2.1 shall not determine a final winner; S2.2 shall not treat missing candidates as present."
+msgstr "Die S2.1→S2.2-Übergabe soll alle relevanten Vorschlags-/Kandidaten-IDs mit vollständiger Cross-Review-Evidenz und Agenten-/Beitragenden-Ursprung übertragen. Degradierte Beitragende sollen identifizierbar sein. S2.1 darf keinen finalen Gewinner bestimmen; S2.2 darf fehlende Kandidaten nicht als vorhanden behandeln."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:101
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-002"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-002"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:108
+msgid "The S2.2→S2.3 handoff shall structurally make the transformation chain traceable: source proposal/candidate identity → controlled synthesis/merge relationship → final candidate identity. Relevant requirement references, toolchain items, and verification-relevant fields shall be retained through the transformation. Synthesis completion shall not be interpreted as technical admissibility."
+msgstr "Die S2.2→S2.3-Übergabe soll die Transformationskette strukturell nachvollziehbar machen: Ursprungs-Vorschlags-/Kandidatenidentität → kontrollierte Synthese-/Merge-Beziehung → finale Kandidatenidentität. Relevante Anforderungsreferenzen, Toolchain-Elemente und verifikationsrelevante Felder sollen durch die Transformation erhalten bleiben. Synthese-Abschluss darf nicht als technische Zulässigkeit interpretiert werden."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:115
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:129
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-003"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-003"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:122
+msgid "S2.3 shall structurally distinguish pre-execution verification contract gaps (missing reference, type/technical-identity/semantic/ version mismatch, verification contract gap) from execution/ materialization adequacy gaps (materializability conflict, platform constraint). Verification contract gap addresses the verification strategy, distinct from missing runtime verification evidence."
+msgstr "S2.3 soll Verifikationsvertragslücken vor der Ausführung (fehlende Referenz, Typ-/technische-Identitäts-/semantische/Versionsabweichung, Verifikationsvertragslücke) strukturell von Ausführungs-/Materialisierungsangemessenheitslücken (Materialisierbarkeitskonflikt, Plattformbeschränkung) unterscheiden. Die Verifikationsvertragslücke betrifft die Verifikationsstrategie, unterschieden von fehlender Laufzeit-Verifikationsevidenz."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:136
+msgid "S2.3→S2.2 rework feedback shall include only deterministically determined technical deficits referencing the specific candidate and requirement/constraint. Repairable and non-repairable causes shall remain distinguishable. S2.3 shall not repair candidates or select alternative winners."
+msgstr "Das S2.3→S2.2-Nacharbeits-Feedback soll nur deterministisch ermittelte technische Defizite enthalten, die auf den konkreten Kandidaten und die Anforderung/den Constraint verweisen. Reparierbare und nicht reparierbare Ursachen sollen unterscheidbar bleiben. S2.3 darf keine Kandidaten reparieren oder alternative Gewinner auswählen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:142
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-004"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-004"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:149
+msgid "The S2.3→S2.4 handoff shall transfer technically evaluated candidates with admissible status and structured reasons. Multiple admissible alternatives may remain. S2.4 shall never make an inadmissible candidate technically admissible. Zero eligible candidates means no valid human selection is possible."
+msgstr "Die S2.3→S2.4-Übergabe soll technisch bewertete Kandidaten mit Zulässigkeitsstatus und strukturierten Gründen übertragen. Mehrere zulässige Alternativen können bestehen bleiben. S2.4 darf einen unzulässigen Kandidaten niemals technisch zulässig machen. Null zulässige Kandidaten bedeutet, dass keine gültige menschliche Auswahl möglich ist."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:155
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-005"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-005"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:162
+msgid "The S2.4→S2.5 handoff shall reference an existing admissible candidate, retain selection authority, and produce no hidden EngineeringDecision on reject/defer/rework. No default winner shall be produced on unresolved selection."
+msgstr "Die S2.4→S2.5-Übergabe soll auf einen existierenden zulässigen Kandidaten verweisen, die Auswahlautorität bewahren und bei Ablehnung/Zurückstellung/Nacharbeit keine verdeckte EngineeringDecision erzeugen. Bei ungelöster Auswahl soll kein Standardgewinner erzeugt werden."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:167
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-006"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-006"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:170
+msgid "S2 → S3"
+msgstr "S2 → S3"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:177
+msgid "The S2.5→S3.1 handoff shall transfer the EngineeringDecision with exact candidate identity, solution class, selection authority, and correlatable validation/selection provenance. S3 shall not reselect a candidate, exercise S2.3 authority, or reinterpret the recommendation."
+msgstr "Die S2.5→S3.1-Übergabe soll die EngineeringDecision mit exakter Kandidatenidentität, Lösungsklasse, Auswahlautorität und korrelierbarer Validierungs-/Auswahl-Provenienz übertragen. S3 darf keinen Kandidaten neu auswählen, keine S2.3-Autorität ausüben und die Empfehlung nicht neu interpretieren."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:183
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-007"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-007"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:186
+msgid "S3 Internal Boundaries"
+msgstr "S3 interne Grenzen"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:193
+msgid "The S3.1→S3.2 handoff shall transfer a SetupPlan with semantically classified mutating steps. Automatic executability shall be mappable to a compatible controlled executor/capability contract before approval. States shall honestly distinguish unsupported, manual, already satisfied, and executable. A genuinely non-mutating already-satisfied step with deterministic current-state evidence does not require human approval."
+msgstr "Die S3.1→S3.2-Übergabe soll einen SetupPlan mit semantisch klassifizierten mutierenden Schritten übertragen. Automatische Ausführbarkeit soll vor der Freigabe einem passenden kontrollierten Executor-/Capability-Vertrag zuordenbar sein. Zustände sollen ehrlich zwischen nicht unterstützt, manuell, bereits erfüllt und ausführbar unterscheiden. Ein tatsächlich nicht mutierender, bereits erfüllter Schritt mit deterministischer Ist-Zustands-Evidenz erfordert keine menschliche Freigabe."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:201
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-008"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-008"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:208
+msgid "The S3.2→S3.3 handoff shall transfer the approved, persisted SetupPlan with approval provenance bound to exact plan content. Exactly the approved plan content shall be executed. Changed content shall require new approval. Execution shall not proceed without central approval and authorization."
+msgstr "Die S3.2→S3.3-Übergabe soll den freigegebenen, persistierten SetupPlan mit an den exakten Planinhalt gebundener Freigabe-Provenienz übertragen. Es soll exakt der freigegebene Planinhalt ausgeführt werden. Geänderter Inhalt soll eine neue Freigabe erfordern. Die Ausführung darf nicht ohne zentrale Freigabe und Autorisierung fortfahren."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:214
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-009"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-009"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:221
+msgid "The S3.3↔S3.4 bidirectional contract shall manage setup-step execution identity, content fingerprint, claim/check state, and result/known-success state. Identical known-success content may be reused only under explicit contract. Changed content requires new execution identity and approval. Unknown or recovery state shall fail closed. Concurrent and restart semantics shall be deterministic."
+msgstr "Der bidirektionale S3.3↔S3.4-Vertrag soll Ausführungsidentität, Content-Fingerprint, Claim-/Check-Zustand und Ergebnis-/Bekannter-Erfolg-Zustand je Setup-Schritt verwalten. Identischer, bekannt erfolgreicher Inhalt darf nur unter explizitem Vertrag wiederverwendet werden. Geänderter Inhalt erfordert neue Ausführungsidentität und Freigabe. Unbekannter oder Wiederherstellungszustand soll Fail-Closed gehen. Nebenläufigkeits- und Neustart-Semantik soll deterministisch sein."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:228
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-010"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-010"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:231
+msgid "S3 → S4"
+msgstr "S3 → S4"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:238
+msgid "Development entry requires: all required setup approved, all required executable setup steps completed successfully, no unresolved setup blocker, and execution/recovery state safe to continue. Before S4 source generation, the S3→S4 handoff shall provide the established relevant properties of the intended target environment that affect source compatibility, including tool versions or available capabilities where relevant. The S4 generator shall receive these properties as context. Missing or unreliable compatibility information shall not be treated as confirmation; generation shall not proceed on an unstated compatibility assumption. The handoff shall preserve the user's chosen technology and existing project conventions and shall not introduce a technology change solely from ADC preference. Development shall not start after failed required setup."
+msgstr "Der Entwicklungseinstieg setzt voraus: alle erforderlichen Setups sind freigegeben, alle erforderlichen ausführbaren Setup-Schritte wurden erfolgreich abgeschlossen, es gibt keine ungelösten Setup-Blocker und der Ausführungs-/Wiederherstellungszustand erlaubt die Fortsetzung. Vor der S4-Quellgenerierung muss die S3→S4-Übergabe die festgestellten relevanten Eigenschaften der vorgesehenen Zielumgebung bereitstellen, die die Quellkompatibilität beeinflussen, gegebenenfalls einschließlich Werkzeugversionen oder verfügbarer Fähigkeiten. Der S4-Generator muss diese Eigenschaften als Kontext erhalten. Fehlende oder unzuverlässige Kompatibilitätsinformationen dürfen nicht als Bestätigung gelten; die Generierung darf nicht auf einer unausgesprochenen Kompatibilitätsannahme beruhen. Die Übergabe muss die Technologiewahl des Nutzers und bestehende Projektkonventionen bewahren und darf keinen Technologiewechsel allein aufgrund einer ADC-Präferenz einführen. Nach fehlgeschlagenem erforderlichem Setup darf die Entwicklung nicht starten."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:243
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-011"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-011"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:246
+msgid "S4 Internal Boundaries"
+msgstr "S4 interne Grenzen"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:253
+msgid "The S4.1→S4.3 handoff shall transfer structured changes with safe target-scope-relative semantics and an explicit action/content contract. An empty development change set shall fail."
+msgstr "Die S4.1→S4.3-Übergabe soll strukturierte Änderungen mit sicherer, zielbereichsrelativer Semantik und einem expliziten Aktions-/Inhaltsvertrag übertragen. Eine leere Entwicklungsänderungsmenge soll fehlschlagen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:257
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-012"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-012"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:264
+msgid "The S4.2→S4.3 handoff shall transfer test changes with an explicit TestChangeDisposition: either \"changes\" with actual test changes, or \"no_changes_required\" with empty changes and a non-empty reason. An empty changes array alone is not a no-op declaration."
+msgstr "Die S4.2→S4.3-Übergabe soll Teständerungen mit einer expliziten TestChangeDisposition übertragen: entweder „changes“ mit tatsächlichen Teständerungen oder „no_changes_required“ mit leeren Änderungen und einer nicht leeren Begründung. Ein leeres Änderungs-Array allein ist keine No-Op-Erklärung."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:269
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-013"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-013"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:276
+msgid "The S4.3↔S4.4 contract shall enforce: baseline-before provenance, controlled apply, and event/result attribution. Changed targets shall be attributable to run and phase. Target safety shall be enforced via central policy. Unauthorized targets shall never mutate outside the target scope. Skipped or partial application shall not appear successful. Interrupted mutation states shall be detected by later runs, correlated with provenance, and go fail-closed."
+msgstr "Der S4.3↔S4.4-Vertrag soll erzwingen: Baseline-Vorher-Provenienz, kontrollierte Anwendung und Ereignis-/Ergebniszuordnung. Geänderte Ziele sollen Lauf und Phase zuordenbar sein. Zielsicherheit soll über zentrale Richtlinien erzwungen werden. Nicht autorisierte Ziele dürfen niemals außerhalb des Zielbereichs mutieren. Übersprungene oder partielle Anwendung darf nicht erfolgreich erscheinen. Unterbrochene Mutationszustände sollen von späteren Läufen erkannt, mit Provenienz korreliert werden und Fail-Closed gehen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:284
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-014"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-014"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:287
+msgid "S4 → S5"
+msgstr "S4 → S5"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:294
+msgid "Verification entry requires: all required S4 mutations succeeded, development mutation succeeded, and test mutation succeeded when disposition is changes. Partial or skipped required application shall not enter normal successful verification flow."
+msgstr "Der Verifikationseinstieg erfordert: alle erforderlichen S4-Mutationen erfolgreich, Entwicklungsmutation erfolgreich und Teständerungsmutation erfolgreich, wenn die Disposition „changes“ ist. Partielle oder übersprungene erforderliche Anwendung darf nicht in den normalen erfolgreichen Verifikationsablauf eingehen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:299
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-015"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-015"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:302
+msgid "S5 Internal Boundaries"
+msgstr "S5 interne Grenzen"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:309
+msgid "The S5.1→S5.2 handoff shall transfer a VerificationPlan with step identity, working area, verification kind, runner/capability type, and execution policy structurally defined. Central S5 orchestration shall not special-case specific ecosystems."
+msgstr "Die S5.1→S5.2-Übergabe soll einen VerificationPlan mit strukturell definierter Schrittidentität, Arbeitsbereich, Verifikationsart, Runner-/Capability-Typ und Ausführungsrichtlinie übertragen. Die zentrale S5-Orchestrierung darf keine ökosystemspezifischen Sonderfälle behandeln."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:314
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-016"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-016"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:321
+msgid "The S5.2→S5.3 handoff shall transfer VerificationResults with preserved status, return code, timeout, diagnostics, runner identity, and per-step failure evidence. Every VerificationStepResult shall maintain explicit fidelity to the exact VerificationStep that produced it. UNSUPPORTED or TOOL_UNAVAILABLE shall not be treated as PASS. Multiple failures shall not be collapsed into misleading generic success."
+msgstr "Die S5.2→S5.3-Übergabe soll VerificationResults mit bewahrtem Status, Rückgabecode, Timeout, Diagnostik, Runner-Identität und Fehlschlag-Evidenz je Schritt übertragen. Jedes VerificationStepResult soll explizite Treue zum exakten VerificationStep bewahren, der es erzeugt hat. UNSUPPORTED oder TOOL_UNAVAILABLE dürfen nicht als PASS behandelt werden. Mehrere Fehlschläge dürfen nicht zu irreführendem generischem Erfolg zusammengefasst werden."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:329
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-017"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-017"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:336
+msgid "The S5.3→S5.4 handoff shall transfer aggregated test results and step failure evidence. Formatting shall preserve deterministic evidence semantics and shall not decide acceptance/rework or rewrite failed evidence into passed evidence."
+msgstr "Die S5.3→S5.4-Übergabe soll aggregierte Testergebnisse und Schritt-Fehlschlag-Evidenz übertragen. Die Formatierung soll deterministische Evidenzsemantik bewahren und darf nicht über Akzeptanz/Nacharbeit entscheiden oder fehlgeschlagene Evidenz in bestandene Evidenz umschreiben."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:341
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-018"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-018"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:348
+msgid "The S5.4→S5.5 handoff shall transfer bounded, redacted deterministic diagnostic evidence. The interpretation shall consume authoritative deterministic evidence and shall clearly be non-authoritative over real test facts. Hidden provider reasoning shall not become system evidence."
+msgstr "Die S5.4→S5.5-Übergabe soll begrenzte, redigierte deterministische diagnostische Evidenz übertragen. Die Interpretation soll autoritative deterministische Evidenz konsumieren und eindeutig nicht-autoritativ gegenüber realen Testfakten sein. Verdecktes Provider-Reasoning darf nicht zu Systemevidenz werden."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:354
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-019"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-019"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:361
+msgid "The S5.5→S5.6 handoff shall transfer the review result alongside the authoritative test result. Deterministic real failure shall dominate the reviewer interpretation: test FAIL + reviewer ACCEPTED yields rework required; timeout is never accepted, but yields rework required only when the review identifies a source-correctable cause, otherwise a fail-closed timeout outcome without rework; review infrastructure failure is not silently accepted."
+msgstr "Die S5.5→S5.6-Übergabe soll das Review-Ergebnis zusammen mit dem autoritativen Testergebnis übertragen. Ein deterministischer realer Fehlschlag soll die Reviewer-Interpretation dominieren: Test FAIL + Reviewer ACCEPTED ergibt Nacharbeit erforderlich; ein Timeout wird niemals akzeptiert, ergibt aber nur dann Nacharbeit erforderlich, wenn das Review eine im Quellcode behebbare Ursache feststellt, andernfalls ein fail-closed Timeout-Ergebnis ohne Nacharbeit; ein Review-Infrastrukturfehler wird nicht stillschweigend akzeptiert."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:367
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-020"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-020"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:374
+msgid "The S5.6→S5.7 handoff shall transfer a rework request only for defined rework states, with bounded failure evidence retained and exactly one bounded controlled rework cycle. Unlimited self-healing loops are forbidden."
+msgstr "Die S5.6→S5.7-Übergabe soll eine Nacharbeitsanfrage nur für definierte Nacharbeitszustände übertragen, mit bewahrter begrenzter Fehlschlag-Evidenz und genau einem begrenzten kontrollierten Nacharbeitszyklus. Unbegrenzte Selbstheilungsschleifen sind verboten."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:379
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-021"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-021"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:386
+msgid "The S5.7→S4 rework entry shall transfer a bounded rework development request with original failure evidence remaining attributable. Rework scope shall remain bounded. S4 shall not silently erase the verification cause."
+msgstr "Der S5.7→S4-Nacharbeitseinstieg soll eine begrenzte Nacharbeits-Entwicklungsanfrage übertragen, wobei die ursprüngliche Fehlschlag-Evidenz zuordenbar bleibt. Der Nacharbeitsumfang soll begrenzt bleiben. S4 darf die Verifikationsursache nicht stillschweigend löschen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:391
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-022"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-022"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:394
+msgid "S5 → S3 Recovery"
+msgstr "S5 → S3 Wiederherstellung"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:401
+msgid "The S5→S3.5 recovery path shall trigger only on generic TOOL_UNAVAILABLE or defined capability absence. The recovery request shall be structured, with persisted verification plan and failure evidence. Human approval shall be reused through S3 approval authority. Recovery shall be bounded and shall not convert normal functional test failures into toolchain recovery."
+msgstr "Der S5→S3.5-Wiederherstellungspfad soll nur bei generischem TOOL_UNAVAILABLE oder definierter Capability-Abwesenheit ausgelöst werden. Die Wiederherstellungsanfrage soll strukturiert sein, mit persistiertem Verifikationsplan und Fehlschlag-Evidenz. Menschliche Freigabe soll über die S3-Freigabeautorität wiederverwendet werden. Die Wiederherstellung soll begrenzt sein und normale funktionale Testfehlschläge nicht in Toolchain-Wiederherstellung umwandeln."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:408
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-023"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-023"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:415
+msgid "The S3.5→S5 verification retry shall be based on the persisted verification intent and plan, with no new S2 candidate selection, no infinite retry, and recovered capability verified before normal continuation."
+msgstr "Der S3.5→S5-Verifikations-Retry soll auf der persistierten Verifikationsabsicht und dem Plan basieren, ohne neue S2-Kandidatenauswahl, ohne unbegrenzten Retry, und die wiederhergestellte Capability soll vor der normalen Fortsetzung verifiziert werden."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:420
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-024"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-024"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:423
+msgid "S5 → S6"
+msgstr "S5 → S6"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:430
+msgid "The S5→S6 handoff shall transfer only terminal accepted deterministic outcome and evidence. Final approval shall remain distinct from verification. Local controlled delivery state shall remain distinct from publish. Run-owned changes and provenance define delivery scope. Failed verification shall not be delivered as success. Foreign pre-existing target state changes shall not be silently included. Destructive repair of delivery state is forbidden. Uncontrolled publish is forbidden. Publish requires its own governed approval where the architecture defines it."
+msgstr "Die S5→S6-Übergabe soll nur terminales, akzeptiertes deterministisches Ergebnis und Evidenz übertragen. Final Approval soll von der Verifikation unterschieden bleiben. Der lokale kontrollierte Auslieferungszustand soll vom Publish unterschieden bleiben. Laufeigene Änderungen und Provenienz definieren den Auslieferungsumfang. Fehlgeschlagene Verifikation darf nicht als Erfolg ausgeliefert werden. Fremde vorbestehende Zielzustandsänderungen dürfen nicht stillschweigend einbezogen werden. Destruktive Reparatur des Auslieferungszustands ist verboten. Unkontrolliertes Publish ist verboten. Publish erfordert eine eigene, geregelte Freigabe, wo die Architektur dies vorsieht."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:440
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-025"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-025"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:447
+msgid "The local controlled delivery state shall form the boundary to publish approval. Completed controlled local delivery state identity shall be known. Publish scope shall be known where publish exists. Publish approval shall be distinct from local delivery authority. No unrelated pre-existing target state changes shall be included."
+msgstr "Der lokale kontrollierte Auslieferungszustand soll die Grenze zur Publish-Freigabe bilden. Die Identität des abgeschlossenen kontrollierten lokalen Auslieferungszustands soll bekannt sein. Der Publish-Umfang soll bekannt sein, wo Publish existiert. Die Publish-Freigabe soll von der lokalen Auslieferungsautorität unterschieden werden. Keine unzusammenhängenden vorbestehenden Zielzustandsänderungen sollen einbezogen werden."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:454
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-026"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-026"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:457
+msgid "Cross-cutting Interfaces"
+msgstr "Übergreifende Schnittstellen"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:464
+msgid "The diagnostic trace shall apply to all relevant interfaces, preserving structured input/output lineage, recording the responsible unit/contract, recording status and failure category, correlating to the run, and retaining enough evidence to distinguish producer omission, transition corruption, semantic mismatch, and valid consumer rejection. The trace shall not store chain-of-thought, secrets, tokens, or credentials. Truncated raw prompts shall not be the only evidence for structured contracts."
+msgstr "Die diagnostische Trace soll für alle relevanten Schnittstellen gelten, strukturierte Eingabe-/Ausgabe-Historie bewahren, die zuständige Einheit/den Vertrag erfassen, Status und Fehlerkategorie erfassen, mit dem Lauf korrelieren und genug Evidenz bewahren, um Producer-Auslassung, Übergangskorruption, semantische Abweichung und gültige Consumer-Ablehnung zu unterscheiden. Die Trace darf keine Denkketten, Geheimnisse, Tokens oder Zugangsdaten speichern. Abgeschnittene rohe Prompts dürfen nicht die einzige Evidenz für strukturierte Verträge sein."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:473
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-027"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-027"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:480
+msgid "Each relevant interface shall identify artifact fidelity tests, fail-closed negative tests, authority leak tests, diagnostic evidence tests, persistence/restart tests where applicable, and real-system acceptance evidence where external/live behavior matters. A deterministic test with simulated providers shall not be described as proof of live-provider correctness. A real-system failure before a boundary shall not be described as evidence that the later boundary failed."
+msgstr "Jede relevante Schnittstelle soll Artefakttreue-Tests, Fail-Closed-Negativtests, Autoritätsleck-Tests, diagnostische Evidenztests, Persistenz-/Neustart-Tests, sofern zutreffend, und Real-System-Abnahmeevidenz identifizieren, wo externes/reales Verhalten relevant ist. Ein deterministischer Test mit simulierten Providern darf nicht als Beweis für die Korrektheit realer Provider beschrieben werden. Ein Real-System-Fehlschlag vor einer Grenze darf nicht als Beweis dafür beschrieben werden, dass die spätere Grenze fehlgeschlagen ist."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:489
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-028"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-028"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:492
+msgid "S6 → External"
+msgstr "S6 → Extern"
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:499
+msgid "Delivery evidence shall correspond to the actual delivery outcome and remain uniquely attributable. Project status shall reflect the actual delivery state. Learning memory and FMEA shall only be updated based on accepted evidence. Diagnostic or system-generated claims alone shall not create accepted learning. ADC shall be able to learn from accepted evidence of all outcome classes, including failed outcomes. The S6→user interface shall be technology-neutral."
+msgstr "Auslieferungsevidenz soll dem tatsächlichen Auslieferungsergebnis entsprechen und eindeutig zuordenbar bleiben. Der Projektstatus soll den tatsächlichen Auslieferungszustand widerspiegeln. Learning Memory und FMEA sollen nur auf Basis akzeptierter Evidenz aktualisiert werden. Diagnostische oder systemgenerierte Behauptungen allein sollen kein akzeptiertes Lernen erzeugen. ADC soll aus akzeptierter Evidenz aller Ergebnisklassen lernen können, einschließlich fehlgeschlagener Ergebnisse. Die S6→Benutzer-Schnittstelle soll technologieneutral sein."
+
+#: ../../home/udo/AI-Dev-Center/requirements/interfaces/interface_requirements.rst:507
+msgid "Source: ADC_IF_Anforderungskatalog.txt IF-029"
+msgstr "Quelle: ADC_IF_Anforderungskatalog.txt IF-029"
+
+
+# CLAUDE-ADC-TEST035-REMOTE-DELIVERY-REQUIREMENTS-DELTA-IMPLEMENT-001
+msgid "Delivery to a remote live runtime target shall, in one governed sequence: (1) capture a recoverable pre-change snapshot sufficient to restore exactly the artifacts the deployment is authorized to change; (2) transfer only the approved and verified deployment delta; (3) activate, reload, or restart only the runtime scope required by the approved change; (4) verify the resulting runtime health or required target outcome before delivery is declared successful; and (5) fail closed — unexpected target identity, unexpected target state, failed transfer, failed activation, or failed health verification shall never be silently reported as success. If activation or post-activation verification fails, the delivery flow may perform at most one bounded rollback restoring exactly the captured pre-change state of the artifacts changed by this deployment within the affected runtime scope only; rollback shall never become a general production-repair mechanism. After rollback, the restoration shall be verified; if rollback cannot be completed or rollback verification fails, the outcome shall be a blocked state requiring operator intervention, with no repeated rollback loop. Delivery shall not exfiltrate credentials, tokens, secret files, or other target-local sensitive authentication material into the project repository, ADC evidence, generated reports, or deployment artifacts that do not require them. Sufficient delivery and activation provenance and delivery evidence shall be recorded to establish which approved change was delivered, to which authorized target, which target artifacts were changed, the activation result, the health-verification result, and whether a rollback occurred and its verification result."
+msgstr "Die Auslieferung an ein externes Laufzeit-Ziel soll in einer kontrollierten Sequenz erfolgen: (1) Erstellung eines wiederherstellbaren Voränderungs-Schnappschusses, der genau die Artefakte wiederherstellen kann, die die Bereitstellung zu ändern autorisiert ist; (2) Übertragung ausschließlich des genehmigten und verifizierten Bereitstellungs-Deltas; (3) Aktivierung, Neu-laden oder Neustart ausschließlich des vom genehmigten Change betroffenen Laufzeitumfangs; (4) Verifikation des resultierenden Laufzeitzustands bzw. des erforderlichen Zielergebnisses, bevor die Auslieferung als erfolgreich erklärt wird; (5) Fail-Closed — unerwartete Zielidentität, unerwarteter Zielzustand, fehlgeschlagene Übertragung, fehlgeschlagene Aktivierung oder fehlgeschlagene Zustandsverifikation dürfen niemals stillschweigend als Erfolg gemeldet werden. Schlägt die Aktivierung oder die Nachaktivierungs-Verifikation fehl, darf der Auslieferungsablauf genau einen begrenzten Rollback ausführen, der genau den erfassten Voränderungszustand der durch diese Bereitstellung geänderten Artefakte ausschließlich innerhalb des betroffenen Laufzeitumfangs wiederherstellt; ein Rollback darf niemals zu einem allgemeinen Produktionsreparaturmechanismus werden. Nach dem Rollback soll die Wiederherstellung verifiziert werden; kann der Rollback nicht abgeschlossen werden oder schlägt dessen Verifikation fehl, ist das Ergebnis ein blockierter Zustand mit Operator-Intervention, ohne wiederholte Rollback-Schleifen. Die Auslieferung darf Anmeldeinformationen, Tokens, Geheimdateien oder andere Zielpunkte sensibler Authentifizierungsmaterialien weder in das Projektrepository, ADC-Evidenz, generierte Berichte noch in Bereitstellungsartefakte, die sie nicht benötigen, exfiltrieren. Ausreichend Auslieferungs- und Aktivierungsprovenienz sowie Auslieferungsevidenz sollen aufgezeichnet werden, um festzustellen, welche genehmigte Änderung ausgeliefert wurde, an welches autorisierte Ziel, welche Zielartefakte geändert wurden, das Aktivierungsergebnis, das Zustandsverifizierungsergebnis und ob ein Rollback erfolgte sowie dessen Verifikationsergebnis."
+msgid "Source: SUB_REQ_024 (S6), ARC_REQ_026 (CLAUDE-ADC-TEST035-REMOTE-DELIVERY-REQUIREMENTS-DELTA-IMPLEMENT-001)"
+msgstr "Quelle: SUB_REQ_024 (S6), ARC_REQ_026"
+
+
+# CLAUDE-ADC-RSE033-INSTALLER-RECOVERY-REQ-CODE-FIX-001
+msgid "Technical identity and provenance shall remain explicitly correlatable along the chain: validated Requirement identity, selected Engineering ToolchainItem identity and provenance, SetupStep target and installation assertion, VerificationStep tool or capability identity, missing-toolchain recovery identity, and installer or capability registry identity. Package identity, executable or CLI identity, and installer identity are distinct concepts; they shall be connected only by an explicit, validated relation, and equality between them shall never be assumed implicitly. Every accepted installation representation shall resolve deterministically, through one central contract, to its intended structured installer or capability identity. Missing, ambiguous, or contradictory identity correlation shall fail closed before any mutating recovery action."
+msgstr "Technische Identität und Provenienz sollen entlang der Kette ausdrücklich korrelierbar bleiben: validierte Requirement-Identität, Identität und Provenienz des ausgewählten Engineering-ToolchainItems, SetupStep-Ziel und Installationsangabe, Werkzeug- oder Capability-Identität des VerificationSteps, Identität der Missing-Toolchain-Recovery sowie Identität in der Installer- oder Capability-Registry. Paket-Identität, Executable- bzw. CLI-Identität und Installer-Identität sind unterschiedliche Konzepte; sie dürfen nur durch eine ausdrückliche, validierte Relation verbunden werden, und ihre Gleichheit darf niemals implizit angenommen werden. Jede akzeptierte Installationsdarstellung soll über einen zentralen Vertrag deterministisch auf ihre vorgesehene strukturierte Installer- oder Capability-Identität aufgelöst werden. Fehlende, mehrdeutige oder widersprüchliche Identitätskorrelation soll vor jeder mutierenden Recovery-Aktion fail-closed enden."
+msgid "Source: ARC_031 (Producer-Artifact-Consumer chain; satisfies SYS_REQ_025, SYS_REQ_027), ARC_014 (S3.5), SUB_REQ_012"
+msgstr "Quelle: ARC_031 (Producer-Artifact-Consumer-Kette; erfüllt SYS_REQ_025, SYS_REQ_027), ARC_014 (S3.5), SUB_REQ_012"
+
+# CLAUDE-ADC-RSE033-ESPHOME-COMPILE-TIMEOUT-REQ-CODE-FIX-001
+msgid "The execution policy shall carry an explicit execution time budget for each step, selected before execution by one central, technology-neutral policy from the step's generic operation class and traceable to the VerificationPlan. Runners shall consume this budget and shall not substitute a runner- or tool-specific budget; a step without a valid budget shall fail closed."
+msgstr "Die Ausführungsrichtlinie soll für jeden Schritt ein explizites Ausführungszeitbudget tragen, das vor der Ausführung von einer zentralen, technologieneutralen Richtlinie anhand der generischen Operationsklasse des Schritts gewählt wird und auf den VerificationPlan rückführbar ist. Runner sollen dieses Budget verwenden und kein runner- oder werkzeugspezifisches Budget unterschieben; ein Schritt ohne gültiges Budget soll fail-closed enden."
+
+# CLAUDE-ADC-RSE033-EXECUTION-ERROR-REQ-CODE-FIX-001
+msgid "TIMEOUT and EXECUTION_ERROR shall not be treated as PASS either. A failure after the controlled process was successfully started shall be transferred as EXECUTION_ERROR with its error category preserved, never as TOOL_UNAVAILABLE."
+msgstr "Auch TIMEOUT und EXECUTION_ERROR dürfen nicht als PASS behandelt werden. Ein Fehler nach erfolgreichem Start des kontrollierten Prozesses ist als EXECUTION_ERROR mit erhaltener Fehlerkategorie zu übergeben, niemals als TOOL_UNAVAILABLE."
+
+# CLAUDE-ADC-RSE033-EXECUTION-ERROR-REQ-CODE-FIX-001
+msgid "An EXECUTION_ERROR without a real verification or test failure alongside it yields the fail-closed verification_execution_error outcome regardless of the review result: it is never accepted and never yields rework required."
+msgstr "Ein EXECUTION_ERROR ohne daneben bestehenden realen Verifikations- oder Testfehlschlag ergibt unabhängig vom Review-Ergebnis das fail-closed Ergebnis verification_execution_error: Er wird niemals akzeptiert und ergibt niemals Nacharbeit erforderlich."
+
+msgid "IF-030 is a separately approved Council-specific addition to IF-002, IF-003, and IF-027. Its normative obligations are SUB_REQ_033 through SUB_REQ_040. Existing interface draft statuses remain unchanged; lifecycle notification loss cannot establish compliance unless independent critical retrieval and truthful durability are demonstrated."
+msgstr "IF-030 ist eine gesondert freigegebene Council-spezifische Ergänzung zu IF-002, IF-003 und IF-027. Ihre normativen Pflichten sind SUB_REQ_033 bis SUB_REQ_040. Bestehende Interface-Draft-Status bleiben unverändert; Lifecycle-Zustellverlust weist keine Erfüllung nach, solange unabhängiger kritischer Abruf und wahrheitsgemäße Sicherung nicht belegt sind."
+
+msgid "Development entry requires: all required setup approved, all required executable setup steps completed successfully, no unresolved setup blocker, and execution/recovery state safe to continue. Development shall not start after failed required setup."
+msgstr "Der Einstieg in die Entwicklung setzt voraus: alle erforderlichen Setups sind freigegeben, alle erforderlichen ausführbaren Setup-Schritte wurden erfolgreich abgeschlossen, es gibt keinen ungelösten Setup-Blocker und Ausführungs-/Wiederherstellungszustand ist sicher fortsetzbar. Nach fehlgeschlagenem erforderlichem Setup darf die Entwicklung nicht beginnen."
+
+msgid "Before S4 generation starts, the S3→S4 handoff shall carry established relevant target-environment properties that affect source compatibility, including tool versions or capabilities where relevant. The receiving generator shall get those properties as context. Missing or unreliable compatibility data shall remain unknown and shall not be treated as confirmation. The handoff shall preserve the user's technology choice and project conventions."
+msgstr "Vor Beginn der S4-Generierung muss die S3→S4-Übergabe festgestellte relevante Eigenschaften der Zielumgebung übertragen, die die Source-Kompatibilität beeinflussen, gegebenenfalls einschließlich Werkzeugversionen oder Fähigkeiten. Der empfangende Generator muss diese Eigenschaften als Kontext erhalten. Fehlende oder unzuverlässige Kompatibilitätsdaten müssen unbekannt bleiben und dürfen nicht als Bestätigung gelten. Die Übergabe muss Technologiewahl des Nutzers und Projektkonventionen bewahren."
+
+msgid "Source: SUB_REQ_041, ADC_IF_Anforderungskatalog.txt IF-011"
+msgstr "Quelle: SUB_REQ_041, ADC_IF_Anforderungskatalog.txt IF-011"
+
+msgid "The S4→S5 handoff shall carry the identity and compatibility-relevant properties of the intended target environment established before source generation. The S5 plan and its controlled execution shall use that same target environment for verification of the generated source. A different host or default environment shall not be represented as target verification."
+msgstr "Die S4→S5-Übergabe muss die Identität und kompatibilitätsrelevanten Eigenschaften der vor der Quellgenerierung festgestellten Zielumgebung übertragen. Der S5-Plan und seine kontrollierte Ausführung müssen dieselbe Zielumgebung zur Verifikation des erzeugten Source verwenden. Ein anderer Host oder eine Standardumgebung darf nicht als Zielverifikation dargestellt werden."
+
+msgid "Source: SUB_REQ_042, SYS_REQ_032"
+msgstr "Quelle: SUB_REQ_042, SYS_REQ_032"

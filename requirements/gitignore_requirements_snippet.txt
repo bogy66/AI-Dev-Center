@@ -1,0 +1,4 @@
+.requirements-venv/
+requirements/_build/
+requirements/_evidence/runs/
+requirements/_evidence/unmapped_selectors.json

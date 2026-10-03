@@ -1,0 +1,77 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) 
+# This file is distributed under the same license as the AI-Dev-Center Requirements package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: AI-Dev-Center Requirements \n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-19 08:28+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: ../../home/udo/AI-Dev-Center/requirements/pilot/synthetic_traceability.rst:2
+msgid "Synthetic Traceability Pilot"
+msgstr "Synthetischer Nachverfolgbarkeits-Pilot"
+
+#: ../../home/udo/AI-Dev-Center/requirements/pilot/synthetic_traceability.rst:6
+msgid "This page is a **non-normative technical pilot** for the ADC Sphinx-Needs setup. All Needs on this page carry the ``pilot`` tag and are excluded from the real ADC dashboards."
+msgstr "Diese Seite ist ein **nicht-normativer technischer Pilot** für das ADC-Sphinx-Needs-Setup. Alle Needs auf dieser Seite tragen den ``pilot``-Tag und sind von den echten ADC-Dashboards ausgeschlossen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/pilot/synthetic_traceability.rst:14
+msgid "ADC shall provide a traceable engineering process."
+msgstr "ADC soll einen nachverfolgbaren Engineering-Prozess bereitstellen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/pilot/synthetic_traceability.rst:22
+msgid "Relevant engineering outcomes shall be traceable to their originating goals."
+msgstr "Relevante Engineering-Ergebnisse sollen zu ihren Ursprungszielen nachverfolgbar sein."
+
+#: ../../home/udo/AI-Dev-Center/requirements/pilot/synthetic_traceability.rst:30
+msgid "The selected architecture provides explicit trace relationships."
+msgstr "Die gewählte Architektur stellt explizite Trace-Beziehungen bereit."
+
+#: ../../home/udo/AI-Dev-Center/requirements/pilot/synthetic_traceability.rst:38
+msgid "The selected architecture shall expose a traceable derived requirement."
+msgstr "Die gewählte Architektur soll eine nachverfolgbare abgeleitete Anforderung offenlegen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/pilot/synthetic_traceability.rst:46
+msgid "The responsible functional area shall preserve the required trace relationship."
+msgstr "Der zuständige funktionale Bereich soll die erforderliche Trace-Beziehung bewahren."
+
+#: ../../home/udo/AI-Dev-Center/requirements/pilot/synthetic_traceability.rst:54
+msgid "The interface shall preserve the trace relationship across its boundary."
+msgstr "Die Schnittstelle soll die Trace-Beziehung über ihre Grenze hinweg bewahren."
+
+#: ../../home/udo/AI-Dev-Center/requirements/pilot/synthetic_traceability.rst:62
+msgid "Synthetic implementation placeholder."
+msgstr "Synthetischer Implementierungs-Platzhalter."
+
+#: ../../home/udo/AI-Dev-Center/requirements/pilot/synthetic_traceability.rst:71
+msgid "Synthetic verification placeholder."
+msgstr "Synthetischer Verifikations-Platzhalter."
+
+#: ../../home/udo/AI-Dev-Center/requirements/pilot/synthetic_traceability.rst:79
+msgid "Synthetic PASS evidence."
+msgstr "Synthetische PASS-Evidenz."
+
+#: ../../home/udo/AI-Dev-Center/requirements/pilot/synthetic_traceability.rst:82
+msgid "Traceability graph"
+msgstr "Nachverfolgbarkeitsgraph"
+
+#: ../../home/udo/AI-Dev-Center/requirements/pilot/synthetic_traceability.rst:84
+msgid "ADC synthetic end-to-end trace"
+msgstr "ADC synthetischer Ende-zu-Ende-Trace"
+
+#: ../../home/udo/AI-Dev-Center/requirements/pilot/synthetic_traceability.rst:93
+msgid "Forward traceability matrix"
+msgstr "Vorwärts-Nachverfolgbarkeitsmatrix"
+
+#: ../../home/udo/AI-Dev-Center/requirements/pilot/synthetic_traceability.rst:101
+msgid "Reverse coverage matrix"
+msgstr "Rückwärts-Abdeckungsmatrix"

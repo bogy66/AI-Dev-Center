@@ -1,0 +1,1449 @@
+from __future__ import annotations
+
+import subprocess
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import asdict
+from pathlib import Path
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from fastapi import Depends, FastAPI
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from app.dev_workflow import (
+    DevelopmentWorkflow, WorkflowBlockedError, WorkflowExecutionError,
+)
+from app.engineering_decision import (
+    ChairmanRecommendationInadmissibleError,
+    EngineeringSelectionRequiredError,
+    EngineeringVariantNotFoundError,
+    EngineeringVariantSelection,
+    NoEligibleEngineeringCandidateError,
+)
+from app.diagnostic_trace import DiagnosticTraceRecorder, TraceEvent, TraceLevel
+from app.council_models import project_identity_error
+from app.project_setup_application import (
+    ProjectSetupApplicationService,
+    approve_setup_plan,
+    execute_approved_plan_from_store,
+    persist_setup_plan,
+)
+from app.canonical_execution import (
+    ConcurrentExecutionError, ExecutionReentryError, RecoveryRequiredError,
+)
+from app.workflow_plan_store import WorkflowPlanStore
+from app.canonical_composition import build_canonical_components
+from app.ai_config import load_ai_config, update_web_config
+from app.project_context import (
+    ProjectDefinitionStore, ProjectRegistry, ProjectRegistryError,
+    ARCHIVED_STATUS,
+)
+from app.repository_import import RepositoryImportError, import_repository
+
+app = FastAPI(title="AI Dev Center Web GUI")
+app.mount("/static", StaticFiles(directory="web"), name="static")
+
+
+# ---------------------------------------------------------------------------
+#  Tracing wrapper for MCPServer
+# ---------------------------------------------------------------------------
+class TracingMCPServerWrapper:
+    """Intercepts MCPServer tool calls and records diagnostic trace events.
+
+    The wrapper intentionally ignores ``list_tools`` and internal/dunder
+    methods.  All other callable public methods on the real MCP server are
+    treated as observable MCP tool calls and are recorded as tool_started,
+    tool_completed, or tool_failed.
+    """
+
+    def __init__(self, real_mcp: object, recorder: DiagnosticTraceRecorder):
+        self._real = real_mcp
+        self._recorder = recorder
+
+    def __getattr__(self, name: str):
+        if name.startswith("_"):
+            # Delegate internal/dunder attribute access to the real object.
+            return getattr(self._real, name)
+
+        attr = getattr(self._real, name)
+
+        # list_tools is not a tool call itself; it only describes tools.
+        if name == "list_tools" or not callable(attr):
+            return attr
+
+        def traced_call(*args, **kwargs):
+            start = datetime.now()
+            self._recorder.record(
+                level=TraceLevel.INFO,
+                component="MCP",
+                event="tool_started",
+                action=name,
+                status="started",
+                arguments=kwargs if kwargs else {},
+            )
+            try:
+                result = attr(*args, **kwargs)
+                elapsed_ms = (datetime.now() - start).total_seconds() * 1000
+                self._recorder.record(
+                    level=TraceLevel.INFO,
+                    component="MCP",
+                    event="tool_completed",
+                    action=name,
+                    status="success",
+                    duration_ms=elapsed_ms,
+                    result_summary=str(result)[:200],
+                )
+                return result
+            except Exception as exc:
+                elapsed_ms = (datetime.now() - start).total_seconds() * 1000
+                self._recorder.record(
+                    level=TraceLevel.ERROR,
+                    component="MCP",
+                    event="tool_failed",
+                    action=name,
+                    status="failed",
+                    duration_ms=elapsed_ms,
+                    result_summary=str(exc)[:200],
+                )
+                raise
+
+        return traced_call
+
+
+# ---------------------------------------------------------------------------
+#  Session management
+# ---------------------------------------------------------------------------
+class PendingEngineeringSelection:
+    """CLAUDE-ARCH-S2-013C: the minimum state that must survive the
+    productive S2.4 pause -- the display-only EngineeringVariantSelection
+    (S2.4's own artifact, never a second notion of admissibility/
+    authority) plus the preflight/platform evidence resolve_engineering_
+    selection() needs to resume. council_result/validations/chairman_
+    recommendation are already carried inside `selection` -- nothing is
+    duplicated here.
+
+    `project_intelligence` (CLAUDE-ARCH-S2-013G): also carried across the
+    pause -- resolve_engineering_selection() re-runs S2.3 admissibility
+    from scratch, and its Verification Feasibility mechanism-compatibility
+    check needs the SAME independent, ADC-owned evidence the initial
+    run() call already had, never a re-derivation the Council could
+    influence."""
+
+    def __init__(
+        self, selection: EngineeringVariantSelection,
+        preflight_result: object, platform: str | None,
+        project_intelligence: object | None = None,
+    ):
+        self.selection = selection
+        self.preflight_result = preflight_result
+        self.platform = platform
+        self.project_intelligence = project_intelligence
+
+
+class Session:
+    def __init__(
+        self,
+        project_id: str,
+        project_path: str,
+        task_description: str,
+        run_id: str,
+        trace_level: TraceLevel,
+        recorder: DiagnosticTraceRecorder,
+    ):
+        self.project_id = project_id
+        self.project_path = project_path
+        self.task_description = task_description
+        self.run_id = run_id
+        self.trace_level = trace_level
+        self.recorder = recorder
+        self.mcp_wrapper: Optional[TracingMCPServerWrapper] = None
+        self.workflow: Optional[object] = None
+        self.development_workflow: Optional[DevelopmentWorkflow] = None
+        self.project_setup_service: Optional[ProjectSetupApplicationService] = None
+        self.plan_store: Optional[WorkflowPlanStore] = None
+        self.approval = None
+        self.plan_id: Optional[str] = None
+        self.approval_status: Optional[str] = None
+        self.approval_required: bool = False
+        self.workflow_status: str = "unknown"
+        self.error_message: Optional[str] = None
+        self.blocked: bool = False
+        self.final_approval_result = None
+        # CLAUDE-ARCH-S2-013C
+        self.pending_engineering_selection: Optional[PendingEngineeringSelection] = None
+        self.engineering_decision_status: Optional[str] = None
+
+    @property
+    def trace_events(self) -> List[TraceEvent]:
+        return self.recorder.events
+
+
+sessions: Dict[str, Session] = {}
+_planning_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="web-planning")
+planning_tasks: Dict[str, Future] = {}
+
+
+# ---------------------------------------------------------------------------
+#  Component construction
+# ---------------------------------------------------------------------------
+class WebSetupComponents:
+    """Canonical planning dependencies for the web adapter."""
+
+    def __init__(self, service, plan_store, approval, development_workflow):
+        self.service = service
+        self.plan_store = plan_store
+        self.approval = approval
+        self.development_workflow = development_workflow
+
+
+def get_web_setup_components() -> WebSetupComponents:
+    """Build the canonical setup path without creating legacy agents."""
+    components = build_canonical_components()
+    return WebSetupComponents(
+        components.service, components.plan_store, components.approval,
+        components.development_workflow,
+    )
+
+
+# Legacy dependency retained for the old agent-backed compatibility path.
+def get_workflow_components():
+    """Deprecated compatibility hook; returns the canonical composition."""
+    return build_canonical_components()
+
+
+# Module-level so tests can redirect it (via monkeypatch) independently of
+# the FastAPI dependency_overrides mechanism, which other fixtures in this
+# suite may legitimately clear between tests.
+PROJECT_DEFINITIONS_PATH = ".project-definitions/definitions.json"
+
+
+def get_project_registry() -> ProjectRegistry:
+    """Central project lifecycle registry, built on ProjectDefinitionStore.
+
+    Not a second persistence mechanism: this opens the same
+    ``.project-definitions/definitions.json`` history store used
+    elsewhere in the productive path, keyed by the shared resolved-path
+    lock in app.state_lock.
+    """
+    return ProjectRegistry(ProjectDefinitionStore(PROJECT_DEFINITIONS_PATH))
+
+
+# ---------------------------------------------------------------------------
+#  Helpers
+# ---------------------------------------------------------------------------
+def _serialize_event(trace_event: TraceEvent) -> Dict[str, Any]:
+    return {
+        "timestamp": trace_event.timestamp.isoformat(),
+        "run_id": trace_event.run_id,
+        "level": trace_event.level.value,
+        "component": trace_event.component,
+        "event": trace_event.event,
+        "action": trace_event.action,
+        "status": trace_event.status,
+        "duration_ms": trace_event.duration_ms,
+        "arguments": trace_event.arguments,
+        "result_summary": trace_event.result_summary,
+        "metadata": trace_event.metadata,
+    }
+
+
+def _serialize_trace(events: List[TraceEvent]) -> List[Dict[str, Any]]:
+    return [_serialize_event(event) for event in events]
+
+
+def _compute_timeline(events: List[TraceEvent], session: Session) -> List[Dict[str, str]]:
+    STAGE_ORDER = [
+        "Inspect",
+        "Discovery",
+        "Preflight",
+        "Setup Plan",
+        "Approval",
+        "Execution",
+        "Verification",
+        "Completed",
+        "Failed",
+    ]
+
+    completed_tool_actions = {
+        ev.action
+        for ev in events
+        if ev.event == "tool_completed" and ev.status == "success"
+    }
+    stage_map = {
+        "inspect_project": "Inspect",
+        "discover_requirements": "Discovery",
+        "run_preflight": "Preflight",
+        "create_plan": "Setup Plan",
+    }
+
+    stages: List[Dict[str, str]] = []
+    for name in STAGE_ORDER:
+        if name == "Approval":
+            if session.approval_required and not session.workflow_status == "completed":
+                status = "pending"
+            elif session.approval_status == "approved" or session.workflow_status == "completed":
+                status = "completed"
+            else:
+                status = "pending"
+            stages.append({"stage": name, "status": status})
+            continue
+        if name == "Execution":
+            if session.approval_status == "approved" and session.workflow_status != "completed":
+                status = "in_progress"
+            elif session.workflow_status == "completed":
+                status = "completed"
+            else:
+                status = "pending"
+            stages.append({"stage": name, "status": status})
+            continue
+        if name == "Verification":
+            if session.workflow_status == "completed":
+                status = "completed"
+            else:
+                status = "pending"
+            stages.append({"stage": name, "status": status})
+            continue
+        if name in ("Completed", "Failed"):
+            if session.error_message:
+                stages.append({"stage": "Failed", "status": "active"})
+            elif session.workflow_status == "completed":
+                stages.append({"stage": "Completed", "status": "active"})
+            else:
+                stages.append({"stage": name, "status": "inactive"})
+            continue
+
+        tool_names_for_stage = [t for t, s in stage_map.items() if s == name]
+        if any(t in completed_tool_actions for t in tool_names_for_stage):
+            status = "completed"
+        else:
+            status = "pending"
+        stages.append({"stage": name, "status": status})
+
+    if session.blocked:
+        for stage in stages:
+            if stage["stage"] == "Inspect":
+                stage["status"] = "completed"
+        stages.append({"stage": "Blocked", "status": "active"})
+
+    return stages
+
+
+def _current_state_info(session: Session) -> Dict[str, Any]:
+    last_event = session.trace_events[-1] if session.trace_events else None
+    last_completed = None
+    next_expected = None
+
+    if session.blocked:
+        next_expected = "Workflow blocked"
+    elif session.workflow_status == "completed":
+        next_expected = "Workflow completed"
+    elif session.approval_required and not session.approval_status == "approved":
+        next_expected = "User approval"
+    else:
+        next_expected = "Execution"
+
+    if last_event and last_event.status in ("success", "failure"):
+        last_completed = f"{last_event.action} ({last_event.status})"
+
+    elapsed_str = ""
+    durations = [e.duration_ms for e in session.trace_events if e.duration_ms is not None]
+    if durations:
+        elapsed_str = f"{sum(durations) / 1000:.1f}s"
+
+    return {
+        "current_action": last_event.action if last_event else "idle",
+        "current_component": last_event.component if last_event else "none",
+        "current_mcp_tool": (
+            last_event.action
+            if last_event
+            and last_event.component == "MCP"
+            and last_event.event.startswith("tool_")
+            else "none"
+        ),
+        "elapsed": elapsed_str,
+        "last_completed": last_completed or "none",
+        "next_expected": next_expected,
+    }
+
+
+# ---------------------------------------------------------------------------
+#  API endpoints
+# ---------------------------------------------------------------------------
+class StartRequest(BaseModel):
+    project_name: str
+    project_directory: str
+    task_description: str
+    trace_level: TraceLevel = TraceLevel.INFO
+
+
+class OpenProjectRequest(BaseModel):
+    project_path: str
+
+
+class ValidateProjectRequest(BaseModel):
+    project_path: str
+
+
+class RegisterProjectRequest(BaseModel):
+    project_path: str
+    display_name: str | None = None
+
+
+class RenameProjectRequest(BaseModel):
+    new_name: str
+
+
+class ImportRepositoryRequest(BaseModel):
+    source: str
+    destination_parent: str
+    target_name: str | None = None
+
+
+class EngineeringSelectionRequest(BaseModel):
+    """CLAUDE-ARCH-S2-013C: the productive S2.4 Human Engineering
+    Authority decision. `action` is one of the target actions
+    (ADC_Zielbild Abschnitt 3): accept, select, reject, defer, rework.
+    `variant_id` is required only for `action == "select"` (choosing a
+    non-recommended admissible alternative); it is otherwise ignored."""
+
+    action: str
+    variant_id: str | None = None
+    comment: str | None = None
+
+
+class WebConfigUpdate(BaseModel):
+    model: str | None = None
+    endpoint: str | None = None
+    timeout_seconds: float | None = None
+    secret_reference: str | None = None
+    discovery_enabled: bool | None = None
+    require_json: bool | None = None
+    max_requirements: int | None = None
+
+    class Config:
+        extra = "forbid"
+
+
+def get_web_config_path() -> Path:
+    return Path("config/ai-dev-center.yml")
+
+
+def _web_config_response(config):
+    council = None
+    if config.council is not None:
+        council = {
+            "enabled": config.council.enabled,
+            "max_variants_per_agent": config.council.max_variants_per_agent,
+            "roles": {
+                name: asdict(getattr(config.council, name))
+                for name in (
+                    "environment_architect", "toolchain_integrator",
+                    "risk_assessor", "chairman",
+                )
+            },
+            "read_only": True,
+        }
+    return {
+        "version": config.version,
+        "ai": {
+            "provider": config.provider, "model": config.model,
+            "endpoint": config.endpoint,
+            "authentication": {
+                "type": config.authentication.type,
+                "secret_reference": config.authentication.secret,
+            },
+            "timeout_seconds": config.timeout_seconds,
+            "discovery": asdict(config.discovery),
+            "council": council,
+        },
+        "writable_fields": [
+            "model", "endpoint", "timeout_seconds", "secret_reference",
+            "discovery_enabled", "require_json", "max_requirements",
+        ],
+    }
+
+
+class LocalDirectorySelector:
+    """Select a server-local directory using one fixed desktop command."""
+
+    def select(self) -> str | None:
+        result = subprocess.run(
+            ["zenity", "--file-selection", "--directory", "--title=Select project directory"],
+            check=False, capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode != 0:
+            return None
+        return result.stdout.strip() or None
+
+
+def get_directory_selector():
+    return LocalDirectorySelector()
+
+
+def _resolved_existing_directory(raw_path: str) -> Path:
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        raise ValueError("Project directory is required.")
+    try:
+        path = Path(raw_path).expanduser().resolve(strict=True)
+    except (FileNotFoundError, OSError, RuntimeError) as error:
+        raise FileNotFoundError("Project directory does not exist.") from error
+    if not path.is_dir():
+        raise NotADirectoryError("Project path is not a directory.")
+    return path
+
+
+class FinalApprovalRequest(BaseModel):
+    decision: str
+    approved_by: str | None = None
+    comment: str | None = None
+
+
+@app.get("/")
+async def root():
+    return FileResponse("web/index.html")
+
+
+@app.get("/api/config")
+async def get_web_config(config_path: Path = Depends(get_web_config_path)):
+    try:
+        return _web_config_response(load_ai_config(config_path))
+    except ValueError:
+        return JSONResponse(
+            content={"error": "Productive configuration is unavailable."},
+            status_code=500,
+        )
+
+
+@app.patch("/api/config")
+async def patch_web_config(
+    request: WebConfigUpdate,
+    config_path: Path = Depends(get_web_config_path),
+):
+    updates = {
+        key: value for key, value in request.dict(exclude_unset=True).items()
+        if value is not None
+    }
+    try:
+        config = update_web_config(config_path, updates)
+    except ValueError as error:
+        return JSONResponse(content={"error": str(error)}, status_code=400)
+    except OSError:
+        return JSONResponse(
+            content={"error": "Productive configuration could not be saved."},
+            status_code=500,
+        )
+    return _web_config_response(config)
+
+
+@app.post("/api/workflow/start")
+async def start_workflow(
+    req: StartRequest,
+    components: WebSetupComponents = Depends(get_web_setup_components),
+    registry: ProjectRegistry = Depends(get_project_registry),
+):
+    project_id = req.project_name
+    project_path = req.project_directory
+    task_description = req.task_description
+    trace_level = req.trace_level
+
+    # Same identity rule as the public Council call (SUB_REQ_036): an
+    # unsupported project identity is refused visibly before any session,
+    # recorder or workflow keeps it -- never shortened or replaced.
+    identity_error = project_identity_error(project_id)
+    if identity_error is not None:
+        return JSONResponse(content={
+            "blocked": True, "status": "failed",
+            "error": f"Project name rejected: {identity_error}.",
+        }, status_code=400)
+
+    # The established two-argument application-service contract uses the
+    # project identifier as the canonical planning run identifier.
+    session_id = run_id = project_id
+    recorder = DiagnosticTraceRecorder(run_id=run_id, trace_level=trace_level)
+    session = Session(
+        project_id,
+        project_path,
+        task_description,
+        run_id,
+        trace_level,
+        recorder,
+    )
+
+    recorder.record(
+        level=TraceLevel.INFO,
+        component="Workflow",
+        event="workflow_started",
+        action="start",
+        status="started",
+        arguments={
+            "project_id": project_id,
+        },
+    )
+
+    try:
+        project_path = str(_resolved_existing_directory(project_path))
+        session.project_path = project_path
+    except (ValueError, FileNotFoundError, NotADirectoryError) as exc:
+        safe_error = str(exc) if isinstance(
+            exc, (FileNotFoundError, NotADirectoryError)
+        ) else "Project or planning request was rejected."
+        status_code = 400
+        session.error_message = safe_error
+        session.blocked = True
+        session.workflow_status = "failed"
+        recorder.record(
+            level=TraceLevel.ERROR, component="Workflow",
+            event="workflow_start_failed", action="validate_project",
+            status="failed", result_summary=safe_error,
+        )
+        sessions[session_id] = session
+        return JSONResponse(content={
+            "session_id": session_id, "blocked": True,
+            "status": "failed", "error": safe_error,
+        }, status_code=status_code)
+
+    # Archived projects are not valid development targets: they must be
+    # restored first. An unregistered path proceeds normally and is
+    # opportunistically registered as active so it becomes visible in the
+    # productive project list without requiring a separate registration step.
+    if registry.status_of(project_path) == ARCHIVED_STATUS:
+        safe_error = (
+            "This project is archived. Restore it before starting development."
+        )
+        session.error_message = safe_error
+        session.blocked = True
+        session.workflow_status = "failed"
+        recorder.record(
+            level=TraceLevel.ERROR, component="Workflow",
+            event="workflow_start_failed", action="validate_project",
+            status="failed", result_summary=safe_error,
+        )
+        sessions[session_id] = session
+        return JSONResponse(content={
+            "session_id": session_id, "blocked": True,
+            "status": "failed", "error": safe_error,
+        }, status_code=409)
+    registry.register(project_path, display_name=project_id)
+
+    existing = sessions.get(session_id)
+    if existing is not None and existing.workflow_status in {"planning", "running"}:
+        return JSONResponse(content={
+            "session_id": session_id, "status": existing.workflow_status,
+            "error": "This project already has an active Web workflow session.",
+        }, status_code=409)
+
+    session.development_workflow = components.development_workflow
+    session.project_setup_service = components.service
+    session.plan_store = components.plan_store
+    session.approval = components.approval
+    session.workflow_status = "planning"
+    sessions[session_id] = session
+    task = _planning_executor.submit(_run_initial_planning, session, components)
+    planning_tasks[session_id] = task
+    task.add_done_callback(lambda _task, sid=session_id: planning_tasks.pop(sid, None))
+    return JSONResponse(content={
+        "session_id": session_id, "status": "planning",
+    }, status_code=202)
+
+
+def _run_initial_planning(session: Session, components: WebSetupComponents):
+    terminal_kind = "failed"
+    try:
+        result = components.service.plan_project_setup(
+            session.project_id, session.project_path,
+            entry_interface="web", entry_data={
+                "task_description": session.task_description,
+                "project_id": session.project_id,
+            },
+        )
+        # CLAUDE-ARCH-S2-013C: the productive workflow now stops at the
+        # S2.4 Human Engineering Authority boundary whenever S2.3 found at
+        # least one admissible candidate -- result.setup_plan is None and
+        # result.engineering_selection carries the display-only decision
+        # evidence instead. Only an explicit call to
+        # /api/workflow/{session_id}/engineering-decision may resume
+        # planning towards a SetupPlan; this initial run never persists
+        # one on its own.
+        pending_selection = getattr(result, "engineering_selection", None)
+        if pending_selection is not None:
+            session.pending_engineering_selection = PendingEngineeringSelection(
+                pending_selection, result.preflight_result, result.platform,
+                getattr(result, "project_intelligence", None),
+            )
+            plan = None
+        else:
+            plan = result.setup_plan
+            persist_setup_plan(
+                components.plan_store, plan, getattr(result, "council_result", None),
+                planning_result=result,
+            )
+    except WorkflowBlockedError as error:
+        safe_error = error.safe_reason
+        terminal_kind = "blocked"
+    except (ValueError, FileNotFoundError, NotADirectoryError):
+        safe_error = "Project or planning request was rejected."
+    except WorkflowExecutionError:
+        safe_error = "The central workflow rejected the planning request."
+    except Exception:
+        safe_error = "The central workflow could not start."
+    else:
+        if pending_selection is not None:
+            session.workflow_status = "pending_engineering_selection"
+            session.recorder.record(
+                level=TraceLevel.INFO, component="Workflow",
+                event="engineering_selection_required",
+                action="request_engineering_selection", status="pending",
+                result_summary=(
+                    f"Project {session.project_id}: Chairman recommends "
+                    f"{pending_selection.chairman_recommendation!r}"
+                ),
+            )
+            return
+        session.plan_id = plan.id
+        session.approval_required = True
+        session.approval_status = plan.status
+        session.workflow_status = plan.status
+        session.recorder.record(
+            level=TraceLevel.INFO, component="Workflow", event="plan_created",
+            action="create_plan", status="success",
+            result_summary=f"Plan {plan.id}",
+        )
+        session.recorder.record(
+            level=TraceLevel.INFO, component="Workflow", event="approval_required",
+            action="request_approval", status="pending",
+            result_summary=f"Project {session.project_id}, Plan {plan.id}",
+        )
+        return
+
+    if safe_error:
+        session.error_message = safe_error
+        session.blocked = terminal_kind == "blocked"
+        session.workflow_status = terminal_kind
+        session.recorder.record(
+            level=TraceLevel.WARNING if terminal_kind == "blocked" else TraceLevel.ERROR,
+            component="Workflow",
+            event=(
+                "workflow_planning_blocked"
+                if terminal_kind == "blocked" else "workflow_planning_failed"
+            ),
+            action="plan_project_setup", status=terminal_kind,
+            result_summary=safe_error,
+        )
+
+
+_TERMINAL_RUNTIME_STATES = frozenset({"completed", "failed"})
+
+
+def _current_activity_event(events):
+    """The event the public current activity reflects (SUB_REQ_035).
+
+    The history keeps every event in arrival order; the current state is
+    monotone per invocation: once an invocation has a terminal runtime
+    state, later non-terminal (late, duplicate or overtaking) events of the
+    same invocation no longer become current. Events without an
+    invocation_id keep the previous latest-event behavior."""
+    terminal = set()
+    current = None
+    for event in events:
+        details = event.details or {}
+        invocation = details.get("invocation_id")
+        state = details.get("runtime_state", event.status)
+        if invocation is not None:
+            if invocation in terminal:
+                continue
+            if state in _TERMINAL_RUNTIME_STATES:
+                terminal.add(invocation)
+        current = event
+    return current
+
+
+@app.get("/api/state/{session_id}")
+async def get_state(session_id: str):
+    session = sessions.get(session_id)
+    if not session:
+        return JSONResponse(content={"error": "unknown session"}, status_code=404)
+
+    trace = _serialize_trace(session.trace_events)
+    central_trace = []
+    current_activity = None
+    if session.project_setup_service is not None:
+        try:
+            central_events = session.project_setup_service.get_diagnostic_trace(
+                session.run_id
+            )
+            central_trace = [
+                {
+                    "timestamp": event.timestamp,
+                    "run_id": session.run_id,
+                    "level": "ERROR" if event.status in {"failed", "blocked"} else "INFO",
+                    "component": "Workflow",
+                    "event": event.event_type,
+                    "action": event.phase,
+                    "status": event.status,
+                    "result_summary": event.summary,
+                    "metadata": {"source": event.source, **event.details},
+                }
+                for event in central_events
+            ]
+            latest = _current_activity_event(central_events)
+            if latest is not None:
+                current_activity = {
+                    "stage": latest.phase,
+                    "actor": latest.details.get("actor", ""),
+                    "runtime_state": latest.details.get(
+                        "runtime_state", latest.status
+                    ),
+                    "summary": latest.summary,
+                }
+        except Exception:
+            central_trace = []
+            current_activity = None
+    timeline = _compute_timeline(session.trace_events, session)
+    info = _current_state_info(session)
+
+    return {
+        "session_id": session_id,
+        "run_id": session.run_id,
+        "trace_level": session.trace_level.value,
+        "project_id": session.project_id,
+        "project_path": session.project_path,
+        "task_description": session.task_description,
+        "plan_id": session.plan_id,
+        "approval_required": session.approval_required,
+        "approval_status": session.approval_status,
+        "workflow_status": session.workflow_status,
+        "blocked": session.blocked,
+        "error_message": session.error_message,
+        "trace": trace,
+        "central_trace": central_trace,
+        "current_activity": current_activity,
+        "timeline": timeline,
+        "transparency": info,
+        # CLAUDE-ARCH-S2-013C: whether the productive S2.4 Human
+        # Engineering Authority boundary is currently waiting for an
+        # explicit human decision (see /engineering-decision below).
+        "engineering_selection_required": session.pending_engineering_selection is not None,
+    }
+
+
+def _engineering_decision_payload(pending: PendingEngineeringSelection) -> Dict[str, Any]:
+    """CLAUDE-ARCH-S2-013C: the productive Web/API presentation of the
+    Chairman recommendation and admissible alternatives (ADC_Zielbild
+    Abschnitt 25) -- built directly from S2.3/S2.4's own already-computed
+    CandidateValidation set, never a duplicated notion of admissibility.
+
+    CLAUDE-ARCH-S2-014C (F3), defense-in-depth: duplicate variant ids are
+    now rejected at the Chairman-synthesis structural boundary
+    (app.engineering_council._parse_chairman_result) and, independently,
+    by S2.3 itself (app.engineering_decision.validate_variants()), so
+    `validations` here should never actually contain two entries sharing
+    an id -- but the lookup below still resolves by first match (`next`,
+    the SAME resolution order resolve_human_engineering_selection() and
+    validations_by_id() use), never a `{id: v}` dict, which would
+    silently keep the LAST duplicate and let the displayed candidate
+    disagree with whichever one a human's later POST actually resolves."""
+    selection = pending.selection
+    validations = selection.validations
+    recommendation_id = selection.chairman_recommendation
+
+    def _by_id(variant_id):
+        return next((v for v in validations if v.variant.id == variant_id), None)
+
+    def present(validation) -> Dict[str, Any]:
+        variant = validation.variant
+        return {
+            "id": variant.id,
+            "name": variant.name,
+            "environment": variant.environment,
+            "admissible": validation.admissible,
+            "reasons": list(validation.reasons),
+            "advantages": list(variant.advantages),
+            "disadvantages": list(variant.disadvantages),
+            "risks": list(variant.risks),
+            "verification": variant.verification,
+            "rank": variant.rank,
+            "total_score": variant.total_score,
+            "consensus_level": variant.consensus_level,
+            "requirement_coverage": sorted({
+                item.requirement_ref for item in variant.toolchain
+            }),
+            "toolchain": [
+                {
+                    "requirement_ref": item.requirement_ref, "name": item.name,
+                    "type": item.type, "state": item.state,
+                }
+                for item in variant.toolchain
+            ],
+        }
+
+    recommended_validation = _by_id(recommendation_id) if recommendation_id else None
+    recommendation = present(recommended_validation) if recommended_validation is not None else None
+    if recommendation is not None:
+        recommendation["is_recommendation"] = True
+    alternatives = [
+        present(v) for v in validations
+        if v.admissible and v.variant.id != recommendation_id
+    ]
+    # Rejected/inadmissible candidates are exposed only as diagnostic
+    # information -- never as selectable alternatives (they carry their
+    # own `admissible: false` + `reasons`, matching the existing
+    # Diagnostic Trace convention rather than a second admissibility UI).
+    rejected = [present(v) for v in validations if not v.admissible]
+    return {
+        "chairman_recommendation": recommendation,
+        "admissible_alternatives": alternatives,
+        "rejected_candidates": rejected,
+        "actions": ["accept", "select", "reject", "defer", "rework"],
+        # D2: a bounded, machine-readable status distinguishing WHY
+        # selection is still unresolved (never a raw exception string)
+        # -- see app.engineering_decision.EngineeringVariantSelection.
+        "selection_authority": selection.selection_authority,
+        "unresolved_reason": selection.unresolved_reason,
+    }
+
+
+@app.get("/api/workflow/{session_id}/engineering-decision")
+async def get_engineering_decision(session_id: str):
+    """CLAUDE-ARCH-S2-013C: retrieve the pending S2.4 engineering decision
+    -- Chairman recommendation, admissible alternatives and their
+    comparison evidence (Pro/Contra, risks, verification, rank/score)."""
+    session = sessions.get(session_id)
+    if not session:
+        return JSONResponse(content={"error": "unknown session"}, status_code=404)
+    pending = session.pending_engineering_selection
+    if pending is None:
+        return JSONResponse(
+            content={"error": "no engineering decision is pending"}, status_code=400,
+        )
+    return _engineering_decision_payload(pending)
+
+
+@app.post("/api/workflow/{session_id}/engineering-decision")
+async def decide_engineering_selection(session_id: str, request: EngineeringSelectionRequest):
+    """CLAUDE-ARCH-S2-013C: the productive S2.4 Human Engineering
+    Authority decision point -- accept the Chairman recommendation,
+    choose another admissible alternative, reject, defer, or request
+    rework. Reuses S2.4's own resolve_human_engineering_selection()
+    (via DevelopmentWorkflow.resolve_engineering_selection()) -- this
+    endpoint never re-implements admissibility or authority resolution
+    itself. `human_selected_variant_id` is ALWAYS supplied explicitly
+    (even for `accept`, using the Chairman's own recommended id) so
+    EngineeringDecision.selection_authority is always "human"."""
+    session = sessions.get(session_id)
+    if not session:
+        return JSONResponse(content={"error": "unknown session"}, status_code=404)
+    pending = session.pending_engineering_selection
+    if pending is None:
+        return JSONResponse(
+            content={"error": "no engineering decision is pending"}, status_code=400,
+        )
+
+    action = request.action
+    selection = pending.selection
+    council_result = selection.council_result
+
+    if action == "reject":
+        session.workflow_status = "rejected"
+        session.blocked = True
+        session.recorder.record(
+            level=TraceLevel.INFO, component="Agent", event="engineering_selection_rejected",
+            action="reject_engineering_selection", status="rejected",
+            result_summary=request.comment or "",
+        )
+        return {"status": "rejected"}
+
+    if action == "defer":
+        session.workflow_status = "deferred"
+        session.recorder.record(
+            level=TraceLevel.INFO, component="Agent", event="engineering_selection_deferred",
+            action="defer_engineering_selection", status="deferred",
+            result_summary=request.comment or "",
+        )
+        return {"status": "deferred"}
+
+    if action == "rework":
+        # CLAUDE-ARCH-S2-013C: a human-requested rework of the ENTIRE
+        # Council/Chairman synthesis (as opposed to S2.3's own existing,
+        # bounded, automatic S2.3->S2.2 admissibility repair -- see
+        # app.engineering_council._admissibility_rework_evidence(), which
+        # this endpoint never touches) is NOT defined precisely enough by
+        # the current target architecture to implement safely here (which
+        # evidence would a new Chairman prompt use? would it re-run
+        # Council Phase 1/2? how many attempts are allowed?). Per this
+        # task's own instruction ("stop and report the exact ambiguity
+        # rather than inventing a major new workflow"), this action is
+        # recorded and safely leaves the pending selection untouched
+        # (reversible: the user may still accept/select/reject/defer
+        # afterwards) rather than inventing new Council-rerun semantics.
+        session.workflow_status = "rework_requested"
+        session.recorder.record(
+            level=TraceLevel.INFO, component="Agent", event="engineering_rework_requested",
+            action="request_engineering_rework", status="rework_required",
+            result_summary=request.comment or "",
+        )
+        return {
+            "status": "rework_requested",
+            "note": (
+                "Rework of the full Council/Chairman synthesis is not yet "
+                "defined by the target architecture; no automatic action "
+                "was taken. The pending engineering decision remains "
+                "available for accept/select/reject/defer."
+            ),
+        }
+
+    if action == "accept":
+        human_selected_variant_id = selection.chairman_recommendation
+        if not human_selected_variant_id:
+            return JSONResponse(
+                content={"error": "no Chairman recommendation exists to accept"},
+                status_code=400,
+            )
+    elif action == "select":
+        human_selected_variant_id = request.variant_id
+        if not human_selected_variant_id:
+            return JSONResponse(
+                content={"error": "variant_id is required for action=select"},
+                status_code=400,
+            )
+    else:
+        return JSONResponse(
+            content={"error": f"unsupported action: {action!r}"}, status_code=400,
+        )
+
+    if session.development_workflow is None:
+        return JSONResponse(content={"error": "no workflow available to resume"}, status_code=400)
+
+    try:
+        result = session.development_workflow.resolve_engineering_selection(
+            council_result, pending.preflight_result, pending.platform,
+            session.project_id, human_selected_variant_id=human_selected_variant_id,
+            run_id=session.run_id,
+            project_intelligence=pending.project_intelligence,
+            project_root=session.project_path,
+        )
+    except EngineeringVariantNotFoundError as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=400)
+    except ChairmanRecommendationInadmissibleError as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=409)
+    except (NoEligibleEngineeringCandidateError, EngineeringSelectionRequiredError) as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=409)
+    except Exception as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=409)
+
+    plan = result.setup_plan
+    if session.plan_store is not None:
+        persist_setup_plan(
+            session.plan_store, plan, result.council_result, planning_result=result,
+        )
+    session.pending_engineering_selection = None
+    session.plan_id = plan.id
+    session.approval_required = True
+    session.approval_status = plan.status
+    session.workflow_status = plan.status
+    session.recorder.record(
+        level=TraceLevel.INFO, component="Workflow", event="engineering_selection_resolved",
+        action=f"{action}_engineering_selection", status="success",
+        result_summary=f"Selected {human_selected_variant_id!r} (authority=human)",
+    )
+    session.recorder.record(
+        level=TraceLevel.INFO, component="Workflow", event="plan_created",
+        action="create_plan", status="success",
+        result_summary=f"Plan {plan.id}",
+    )
+    session.recorder.record(
+        level=TraceLevel.INFO, component="Workflow", event="approval_required",
+        action="request_approval", status="pending",
+        result_summary=f"Project {session.project_id}, Plan {plan.id}",
+    )
+    return {
+        "status": plan.status, "plan_id": plan.id,
+        "selected_variant_id": human_selected_variant_id,
+        "selection_authority": "human",
+    }
+
+
+@app.post("/api/workflow/{session_id}/approve")
+async def approve_workflow(session_id: str):
+    session = sessions.get(session_id)
+    if not session:
+        return JSONResponse(content={"error": "unknown session"}, status_code=404)
+    if not session.workflow or not session.plan_id:
+        return JSONResponse(content={"error": "no plan to approve"}, status_code=400)
+    if session.workflow_status == "completed":
+        return JSONResponse(content={"message": "already completed"}, status_code=200)
+
+    recorder = session.recorder
+    recorder.record(
+        level=TraceLevel.INFO,
+        component="Agent",
+        event="approval_granted",
+        action="approve",
+        status="success",
+    )
+    recorder.record(
+        level=TraceLevel.INFO,
+        component="Workflow",
+        event="execution_started",
+        action="execute_approved_plan",
+        status="started",
+    )
+
+    try:
+        result = session.workflow.approve_and_execute(session.project_id, session.plan_id)
+    except Exception as exc:
+        session.error_message = str(exc)
+        session.blocked = True
+        session.workflow_status = "failed"
+        recorder.record(
+            level=TraceLevel.ERROR,
+            component="Workflow",
+            event="execution_failed",
+            action="approve_and_execute",
+            status="failed",
+            result_summary=str(exc),
+        )
+        return JSONResponse(content={"error": str(exc)}, status_code=500)
+
+    session.approval_status = "approved"
+    if getattr(result, "workflow_status", None) == "completed":
+        session.workflow_status = "completed"
+    else:
+        session.workflow_status = "executing"
+
+    recorder.record(
+        level=TraceLevel.INFO,
+        component="Workflow",
+        event="execution_completed",
+        action="execute_approved_plan",
+        status="success",
+    )
+    recorder.record(
+        level=TraceLevel.INFO,
+        component="Workflow",
+        event="verification_completed",
+        action="verify_execution",
+        status="success",
+    )
+
+    return {"workflow_status": session.workflow_status}
+
+
+@app.post("/api/workflow/{session_id}/approval")
+async def approve_canonical_workflow(session_id: str):
+    """Approve a canonical plan without starting execution."""
+    session = sessions.get(session_id)
+    if not session:
+        return JSONResponse(content={"error": "unknown session"}, status_code=404)
+    if not session.plan_store or not session.project_setup_service or not session.plan_id:
+        return JSONResponse(content={"error": "no canonical plan to approve"}, status_code=400)
+    try:
+        approved_plan = approve_setup_plan(
+            session.project_setup_service, session.plan_store,
+            session.project_id, session.plan_id, session.run_id,
+        )
+    except Exception as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=409)
+
+    session.approval_status = approved_plan.status
+    session.approval_required = False
+    session.workflow_status = approved_plan.status
+    return {"plan_id": approved_plan.id, "status": approved_plan.status}
+
+
+@app.post("/api/workflow/{session_id}/execute")
+async def execute_canonical_workflow(session_id: str):
+    """Execute only a separately approved canonical plan."""
+    session = sessions.get(session_id)
+    if not session:
+        return JSONResponse(content={"error": "unknown session"}, status_code=404)
+    if not session.plan_store or not session.project_setup_service or not session.plan_id:
+        return JSONResponse(content={"error": "no canonical plan to execute"}, status_code=400)
+    try:
+        result = execute_approved_plan_from_store(
+            session.project_setup_service,
+            session.plan_store,
+            session.project_id,
+            session.plan_id,
+            session.project_path,
+            session.task_description,
+            session.run_id,
+        )
+    except ConcurrentExecutionError as exc:
+        return JSONResponse(content={"status": "concurrent_execution_rejected", "error": str(exc)}, status_code=409)
+    except RecoveryRequiredError as exc:
+        return JSONResponse(content={"status": "recovery_required", "error": str(exc)}, status_code=409)
+    except ExecutionReentryError as exc:
+        return JSONResponse(content={"status": "reentry_rejected", "error": str(exc)}, status_code=409)
+    except Exception as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=409)
+
+    session.final_approval_result = result.final_approval_result
+    session.workflow_status = result.final_approval_result.status
+    recovery = result.missing_toolchain_recovery
+    return {
+        "plan_id": session.plan_id,
+        "status": result.final_approval_result.status,
+        "development_status": result.status,
+        "results": result.setup_execution_results,
+        # S5 TOOL_UNAVAILABLE -> S3.5: the prepared recovery awaits its own
+        # explicit human decision; nothing was approved or installed here.
+        "missing_toolchain_recovery": None if recovery is None else {
+            "plan_id": recovery.plan_id,
+            "status": recovery.status,
+            "blockers": list(recovery.blockers),
+        },
+    }
+
+
+@app.post("/api/workflow/{session_id}/final-approval")
+async def decide_final_approval(session_id: str, request: FinalApprovalRequest):
+    """Record an explicit final human decision without re-running development."""
+    session = sessions.get(session_id)
+    if not session or not session.project_setup_service:
+        return JSONResponse(content={"error": "unknown session"}, status_code=404)
+    try:
+        result = session.project_setup_service.decide_final_approval(
+            session.run_id, request.decision, request.approved_by, request.comment,
+        )
+    except Exception as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=409)
+    session.final_approval_result = result
+    session.workflow_status = "ready_for_git" if result.ready_for_git else result.status
+    return {"status": result.status, "ready_for_git": result.ready_for_git}
+
+
+@app.post("/api/workflow/{session_id}/reject")
+async def reject_workflow(session_id: str):
+    session = sessions.get(session_id)
+    if not session:
+        return JSONResponse(content={"error": "unknown session"}, status_code=404)
+
+    session.approval_status = "rejected"
+    session.blocked = True
+    session.workflow_status = "blocked"
+
+    session.recorder.record(
+        level=TraceLevel.INFO,
+        component="Agent",
+        event="approval_rejected",
+        action="reject",
+        status="rejected",
+    )
+    session.recorder.record(
+        level=TraceLevel.INFO,
+        component="Workflow",
+        event="workflow_state_changed",
+        action="blocked",
+        status="blocked",
+    )
+
+    return {"status": "rejected"}
+
+
+@app.get("/api/workflow/{session_id}/export")
+async def export_trace(session_id: str):
+    session = sessions.get(session_id)
+    if not session:
+        return JSONResponse(content={"error": "unknown session"}, status_code=404)
+
+    return JSONResponse(content=session.recorder.export())
+
+
+@app.get("/api/workflow/{session_id}/diagnostic-trace")
+async def get_central_diagnostic_trace(session_id: str):
+    """Read the persistent central trace through the application contract."""
+    session = sessions.get(session_id)
+    if not session or not session.project_setup_service:
+        return JSONResponse(content={"error": "unknown session"}, status_code=404)
+    events = session.project_setup_service.get_diagnostic_trace(session.run_id)
+    return {
+        "run_id": session.run_id,
+        "events": [
+            {
+                "event_id": event.event_id,
+                "sequence": event.sequence,
+                "timestamp": event.timestamp,
+                "phase": event.phase,
+                "event_type": event.event_type,
+                "status": event.status,
+                "summary": event.summary,
+                "source": event.source,
+                "details": event.details,
+                "related_result_id": event.related_result_id,
+            }
+            for event in events
+        ],
+    }
+
+
+@app.post("/api/project/open")
+async def open_project_directory(req: OpenProjectRequest):
+    """Open the provided project directory using the Linux file manager."""
+    try:
+        path = _resolved_existing_directory(req.project_path)
+    except (ValueError, FileNotFoundError, NotADirectoryError) as error:
+        return JSONResponse(
+            content={"error": str(error)},
+            status_code=400,
+        )
+
+    try:
+        # Use xdg-open to open the directory in the Linux file manager.
+        # Never use shell=True.
+        subprocess.run(["xdg-open", "--", str(path)], check=False)
+    except Exception:
+        return JSONResponse(
+            content={"error": "Failed to open the project directory."},
+            status_code=500,
+        )
+
+    return {"status": "opened", "project_path": str(path)}
+
+
+@app.post("/api/project/validate")
+async def validate_project_directory(req: ValidateProjectRequest):
+    try:
+        path = _resolved_existing_directory(req.project_path)
+    except (ValueError, FileNotFoundError, NotADirectoryError) as error:
+        return JSONResponse(
+            content={"valid": False, "error": str(error)}, status_code=400,
+        )
+    return {"valid": True, "project_path": str(path), "intent": "existing"}
+
+
+@app.post("/api/project/select-directory")
+async def select_project_directory(
+    selector: LocalDirectorySelector = Depends(get_directory_selector),
+):
+    try:
+        selected = selector.select()
+        if selected is None:
+            return JSONResponse(content={"status": "cancelled"}, status_code=409)
+        path = _resolved_existing_directory(selected)
+    except (ValueError, FileNotFoundError, NotADirectoryError) as error:
+        return JSONResponse(content={"error": str(error)}, status_code=400)
+    except (OSError, subprocess.SubprocessError):
+        return JSONResponse(
+            content={"error": "Server-side directory selection is unavailable."},
+            status_code=503,
+        )
+    return {"status": "selected", "project_path": str(path)}
+
+
+# ---------------------------------------------------------------------------
+#  Project lifecycle: rename / archive / restore / delete-from-ADC (CLAUDE-003)
+# ---------------------------------------------------------------------------
+def _project_record_response(record) -> dict:
+    return {
+        "project_id": record.project_id,
+        "display_name": record.display_name,
+        "project_root": record.project_root,
+        "lifecycle_status": record.lifecycle_status,
+    }
+
+
+@app.get("/api/projects")
+async def list_projects(
+    registry: ProjectRegistry = Depends(get_project_registry),
+):
+    """List all known ADC projects, grouped by lifecycle status."""
+    return {
+        "active": [_project_record_response(r) for r in registry.list_by_status("active")],
+        "archived": [_project_record_response(r) for r in registry.list_by_status("archived")],
+    }
+
+
+@app.post("/api/projects/register")
+async def register_project(
+    req: RegisterProjectRequest,
+    registry: ProjectRegistry = Depends(get_project_registry),
+):
+    """Idempotently register a validated existing directory as a known project.
+
+    Never reactivates an archived or removed project — a path that is
+    already known is returned unchanged at its current lifecycle status.
+    """
+    try:
+        path = _resolved_existing_directory(req.project_path)
+    except (ValueError, FileNotFoundError, NotADirectoryError) as error:
+        return JSONResponse(content={"error": str(error)}, status_code=400)
+    record = registry.register(str(path), display_name=req.display_name)
+    return _project_record_response(record)
+
+
+@app.post("/api/projects/import")
+async def import_repository_endpoint(
+    req: ImportRepositoryRequest,
+    registry: ProjectRegistry = Depends(get_project_registry),
+):
+    """Clone an existing remote Git repository and register it as active.
+
+    CLONE -> VERIFY -> REGISTER only: this never installs dependencies,
+    runs repository code, or starts the development workflow. Errors are
+    returned as structured messages that never include raw credentials.
+    """
+    try:
+        record = import_repository(
+            req.source, req.destination_parent, req.target_name,
+            registry=registry,
+        )
+    except RepositoryImportError as error:
+        return JSONResponse(content={"error": str(error)}, status_code=400)
+    return _project_record_response(record)
+
+
+@app.post("/api/projects/{project_id}/rename")
+async def rename_project(
+    project_id: str,
+    req: RenameProjectRequest,
+    registry: ProjectRegistry = Depends(get_project_registry),
+):
+    try:
+        record = registry.rename(project_id, req.new_name)
+    except ProjectRegistryError as error:
+        return JSONResponse(content={"error": str(error)}, status_code=400)
+    return _project_record_response(record)
+
+
+@app.post("/api/projects/{project_id}/archive")
+async def archive_project(
+    project_id: str,
+    registry: ProjectRegistry = Depends(get_project_registry),
+):
+    try:
+        record = registry.archive(project_id)
+    except ProjectRegistryError as error:
+        return JSONResponse(content={"error": str(error)}, status_code=400)
+    return _project_record_response(record)
+
+
+@app.post("/api/projects/{project_id}/restore")
+async def restore_project(
+    project_id: str,
+    registry: ProjectRegistry = Depends(get_project_registry),
+):
+    try:
+        record = registry.restore(project_id)
+    except ProjectRegistryError as error:
+        return JSONResponse(content={"error": str(error)}, status_code=400)
+    return _project_record_response(record)
+
+
+@app.post("/api/projects/{project_id}/remove")
+async def remove_project(
+    project_id: str,
+    registry: ProjectRegistry = Depends(get_project_registry),
+):
+    """Remove an archived project from ADC management.
+
+    This only supersedes lifecycle metadata in the existing project
+    definition store. It never deletes, moves, or otherwise touches the
+    underlying project directory or its Git repository.
+    """
+    try:
+        record = registry.remove(project_id)
+    except ProjectRegistryError as error:
+        return JSONResponse(content={"error": str(error)}, status_code=400)
+    return _project_record_response(record)

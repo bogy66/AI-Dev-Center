@@ -1,0 +1,494 @@
+# Translations template for PROJECT.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the PROJECT project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-09-20 11:28+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:2
+msgid "ADC Architecture Decisions"
+msgstr "ADC Architekturentscheidungen"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:4
+msgid "Selected architecture for the ADC system. Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt"
+msgstr "Gewählte Architektur für das ADC-System. Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:12
+msgid "ADC is decomposed into six subsystems: S1 Requirement Intelligence, S2 Engineering Decision, S3 Environment & Setup, S4 Development & Change, S5 Quality & Verification, S6 Delivery & Outcome. This sequences the end-to-end capability (Understand → Decide → Prepare → Change → Verify → Deliver → Learn)."
+msgstr "ADC ist in sechs Subsysteme gegliedert: S1 Anforderungsintelligenz, S2 Engineering-Entscheidung, S3 Umgebung & Setup, S4 Entwicklung & Änderung, S5 Qualität & Verifikation, S6 Auslieferung & Ergebnis. Dies sequenziert die Ende-zu-Ende-Fähigkeit (Verstehen → Entscheiden → Vorbereiten → Ändern → Verifizieren → Ausliefern → Lernen)."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:18
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §1"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §1"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:25
+msgid "A dedicated subsystem is responsible for understanding what the project and user actually need. S1 analyzes user requests, inspects the project read-only, identifies and structures requirements, distinguishes mandatory from optional requirements, recognizes conflicts and uncertainties, connects requirements with evidence, and formulates requirements testably for later verification. S1 produces no technical solution and executes no setup action."
+msgstr "Ein eigenes Subsystem ist dafür zuständig zu verstehen, was das Projekt und der Benutzer tatsächlich benötigen. S1 analysiert Benutzeraufträge, untersucht das Projekt read-only, identifiziert und strukturiert Anforderungen, unterscheidet Pflicht- von optionalen Anforderungen, erkennt Konflikte und Unsicherheiten, verbindet Anforderungen mit Evidenz und formuliert Anforderungen testbar für die spätere Verifikation. S1 erzeugt keine technische Lösung und führt keine Setup-Aktion aus."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:32
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §1/S1"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §1/S1"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:39
+msgid "A dedicated subsystem decides WHAT shall be technically built and WITH WHICH engineering solution. S2 generates multiple solution variants, evaluates technical feasibility, compares risks and toolchain options, considers verification concepts, and produces a justified recommendation while keeping alternatives transparent. S2 executes no installation and mutates no environment; it produces Engineering Decisions, not setup execution."
+msgstr "Ein eigenes Subsystem entscheidet, WAS technisch gebaut werden soll und MIT WELCHER Engineering-Lösung. S2 erzeugt mehrere Lösungsvarianten, bewertet technische Machbarkeit, vergleicht Risiken und Toolchain-Optionen, berücksichtigt Verifikationskonzepte und erzeugt eine begründete Empfehlung, während Alternativen transparent bleiben. S2 führt keine Installation aus und mutiert keine Umgebung; es erzeugt Engineering-Entscheidungen, keine Setup-Ausführung."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:46
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §1/S2"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §1/S2"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:53
+msgid "S2 is internally decomposed into five sub-areas. S2.1 generates independent, technically sound engineering alternatives and collects cross-review evidence. Authority: generate alternatives and cross-review. Forbidden: selecting a recommendation, deciding admissibility, human selection, producing EngineeringDecision."
+msgstr "S2 ist intern in fünf Teilbereiche gegliedert. S2.1 erzeugt unabhängige, technisch sinnvolle Engineering-Alternativen und sammelt Cross-Review-Evidenz. Autorität: Alternativen erzeugen und Cross-Review. Verboten: eine Empfehlung auswählen, über Zulässigkeit entscheiden, menschliche Auswahl treffen, eine EngineeringDecision erzeugen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:59
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.1"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.1"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:66
+msgid "S2.2 synthesizes the cross-reviewed proposals and produces a recommendation to the user, including one bounded targeted repair attempt on structurally rejected synthesis. Forbidden: exercising technical admissibility policy independently of S2.3, or deterministically replacing the recommendation with another variant."
+msgstr "S2.2 synthetisiert die gegengeprüften Vorschläge und erzeugt eine Empfehlung für den Benutzer, einschließlich eines begrenzten gezielten Reparaturversuchs bei strukturell abgelehnter Synthese. Verboten: technische Zulässigkeitsrichtlinien unabhängig von S2.3 anzuwenden oder die Empfehlung deterministisch durch eine andere Variante zu ersetzen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:72
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.2"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.2"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:79
+msgid "S2.3 is the sole technical admissibility authority within S2. It classifies admissible/inadmissible with exact deterministic reasons and preserves multiple admissible alternatives. Forbidden: selecting a preferred solution, modifying/merging/repairing any candidate."
+msgstr "S2.3 ist die alleinige Autorität für technische Zulässigkeit innerhalb von S2. Es klassifiziert zulässig/unzulässig mit exakten deterministischen Gründen und bewahrt mehrere zulässige Alternativen. Verboten: eine bevorzugte Lösung auswählen, einen Kandidaten ändern/zusammenführen/reparieren."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:84
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.3"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.3"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:91
+msgid "S2.4 represents the final human decision authority. The human may accept the recommendation, select another admissible alternative, reject, defer, or request rework. Forbidden: overriding technical inadmissibility or silently substituting the desired candidate."
+msgstr "S2.4 repräsentiert die finale menschliche Entscheidungsautorität. Der Mensch kann die Empfehlung annehmen, eine andere zulässige Alternative auswählen, ablehnen, zurückstellen oder Nacharbeit anfordern. Verboten: technische Unzulässigkeit übersteuern oder den gewünschten Kandidaten stillschweigend ersetzen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:96
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.4"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.4"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:103
+msgid "S2.5 produces the final S2 decision artifact and owns the S2→S3 boundary. The EngineeringDecision is the single artifact crossing the boundary in the normal case. S2.5 preserves exact candidate identity, selection authority, and validation provenance. Forbidden: inventing a selection, choosing a winner, repairing a candidate."
+msgstr "S2.5 erzeugt das finale S2-Entscheidungsartefakt und verantwortet die S2→S3-Grenze. Die EngineeringDecision ist im Normalfall das einzige Artefakt, das die Grenze überquert. S2.5 bewahrt exakte Kandidatenidentität, Auswahlautorität und Validierungs-Provenienz. Verboten: eine Auswahl erfinden, einen Gewinner bestimmen, einen Kandidaten reparieren."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:109
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.5"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.5"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:116
+msgid "S3 transfers the chosen engineering solution into a real, usable development and test environment in a controlled manner. S3 derives the target state from the Engineering Decision, observes the current state, compares them, avoids unnecessary changes, produces a SetupPlan, classifies setup steps, verifies that each executable step has a matching controlled executor, obtains human approval, performs controlled execution, re-verifies the result, and updates EnvironmentState."
+msgstr "S3 überführt die gewählte Engineering-Lösung kontrolliert in eine reale, nutzbare Entwicklungs- und Testumgebung. S3 leitet den Zielzustand aus der Engineering-Entscheidung ab, beobachtet den aktuellen Zustand, vergleicht beide, vermeidet unnötige Änderungen, erzeugt einen SetupPlan, klassifiziert Setup-Schritte, prüft, dass jeder ausführbare Schritt einen passenden kontrollierten Executor besitzt, holt menschliche Freigabe ein, führt kontrollierte Ausführung durch, verifiziert das Ergebnis erneut und aktualisiert den EnvironmentState."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:124
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §1/S3"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §1/S3"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:131
+msgid "S3.1 determines WHICH setup actions are required and controllably materializes the Engineering Decision into a structured SetupPlan with classified SetupSteps. Forbidden: executing actions, granting human approval, or reopening the S2 candidate selection."
+msgstr "S3.1 bestimmt, WELCHE Setup-Aktionen erforderlich sind, und materialisiert die Engineering-Entscheidung kontrolliert in einen strukturierten SetupPlan mit klassifizierten SetupSteps. Verboten: Aktionen ausführen, menschliche Freigabe erteilen oder die S2-Kandidatenauswahl neu aufrollen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:136
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.1"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.1"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:143
+msgid "S3.2 is the sole human approval authority over planned mutating setup actions, separated from planning (S3.1) and execution (S3.3). Forbidden: planning, executing, or replacing human authority with system or deterministic policy."
+msgstr "S3.2 ist die alleinige menschliche Freigabeautorität über geplante mutierende Setup-Aktionen, getrennt von Planung (S3.1) und Ausführung (S3.3). Verboten: planen, ausführen oder menschliche Autorität durch System- oder deterministische Richtlinien ersetzen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:147
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.2"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.2"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:154
+msgid "S3.3 performs approved setup mutations controllably and deterministically, requiring an approved SetupPlan and executable SetupStep, enforcing the setup execution boundary, integrating replay/idempotency protection from S3.4, and delegating concrete setup mutation to the responsible registered executor."
+msgstr "S3.3 führt freigegebene Setup-Mutationen kontrolliert und deterministisch aus, erfordert einen freigegebenen SetupPlan und einen ausführbaren SetupStep, erzwingt die Setup-Ausführungsgrenze, integriert Replay-/Idempotenzschutz aus S3.4 und delegiert die konkrete Setup-Mutation an den zuständigen registrierten Executor."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:160
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.3"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.3"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:167
+msgid "S3.4 manages persisted execution identity and state per setup step, with claim/check protection, cross-process safety, content-fingerprint binding, known-success reuse, fail-closed on unknown/recovery state, and forced new generation/approval on changed content. S3.4 concerns only setup-step execution identity, not broader workflow-stage synchronization."
+msgstr "S3.4 verwaltet persistierte Ausführungsidentität und -zustand je Setup-Schritt, mit Claim-/Check-Schutz, prozessübergreifender Sicherheit, Content-Fingerprint-Bindung, Wiederverwendung bei bekanntem Erfolg, Fail-Closed bei unbekanntem/Wiederherstellungszustand und erzwungener Neuerzeugung/Freigabe bei geändertem Inhalt. S3.4 betrifft nur die Ausführungsidentität von Setup-Schritten, nicht die übergreifende Synchronisation von Workflow-Stufen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:173
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.4"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.4"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:180
+msgid "S3.5 converts generic TOOL_UNAVAILABLE evidence into bounded, approval-bound recovery using the authorities of S3.1/S3.2/S3.3 again, with exactly bounded recovery and re-execution of the previously planned verification. Forbidden: unapproved installation, unbounded loops, reopening S2 engineering selection, or stack-specific central policy."
+msgstr "S3.5 überführt generische TOOL_UNAVAILABLE-Evidenz in eine begrenzte, freigabegebundene Wiederherstellung unter erneuter Nutzung der Autoritäten von S3.1/S3.2/S3.3, mit exakt begrenzter Wiederherstellung und erneuter Ausführung der zuvor geplanten Verifikation. Verboten: nicht freigegebene Installation, unbegrenzte Schleifen, erneutes Aufrollen der S2-Engineering-Auswahl oder stack-spezifische zentrale Richtlinien."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:186
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.5"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.5"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:193
+msgid "S4 performs the actual technical change on the project in a controlled manner. S4 converts requirements into structured development work, respects project conventions, produces structured Engineering Changes, applies them via controlled ChangeApplication within authorized TargetScope, maintains Change Provenance, and protects pre-existing target state."
+msgstr "S4 führt die eigentliche technische Änderung am Projekt kontrolliert durch. S4 überführt Anforderungen in strukturierte Entwicklungsarbeit, respektiert Projektkonventionen, erzeugt strukturierte Engineering Changes, wendet sie über kontrollierte ChangeApplication innerhalb des autorisierten TargetScope an, pflegt Change Provenance und schützt vorbestehenden Zielzustand."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:199
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §1/S4"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §1/S4"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:206
+msgid "S4.1 generates structured developer changes without performing ChangeTarget mutation. Critical invariant: an empty development change set must fail — S4.1 has no no-op authority."
+msgstr "S4.1 erzeugt strukturierte Entwickler-Änderungen, ohne eine ChangeTarget-Mutation durchzuführen. Kritische Invariante: eine leere Entwicklungsänderungsmenge muss fehlschlagen — S4.1 hat keine No-Op-Autorität."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:210
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3C/S4.1"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3C/S4.1"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:217
+msgid "S4.2 generates structured test changes with an explicit no-op contract. A valid no-op requires explicit declaration; an empty changes array alone is not a no-op."
+msgstr "S4.2 erzeugt strukturierte Teständerungen mit einem expliziten No-Op-Vertrag. Ein gültiger No-Op erfordert eine explizite Deklaration; ein leeres Änderungs-Array allein ist kein No-Op."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:221
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3C/S4.2"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3C/S4.2"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:228
+msgid "S4.3 applies a structured Engineering Change via the controlled ChangeApplication mechanism onto its authorized ChangeTarget/TargetScope, writing generated content exclusively within the authorized scope, classifying actual apply attempts, and going fail-closed on partial or skipped application."
+msgstr "S4.3 wendet eine strukturierte Engineering Change über den kontrollierten ChangeApplication-Mechanismus auf ihren autorisierten ChangeTarget/TargetScope an, schreibt erzeugten Inhalt ausschließlich innerhalb des autorisierten Bereichs, klassifiziert tatsächliche Anwendungsversuche und geht bei partieller oder übersprungener Anwendung Fail-Closed."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:234
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3C/S4.3"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3C/S4.3"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:241
+msgid "S4.4 provides traceable change origin with baseline-before, event-after attribution, run/phase attribution, and controlled change evidence."
+msgstr "S4.4 stellt nachvollziehbaren Änderungsursprung bereit, mit Baseline-Vorher-, Ereignis-Nachher-Zuordnung, Lauf-/Phasen-Zuordnung und kontrollierter Änderungsevidenz."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:244
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3C/S4.4"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3C/S4.4"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:251
+msgid "S5 mechanically and really verifies whether the technical solution and changes actually function. S5 produces a VerificationPlan, uses project-specific build and test systems, separates unit/subcomponent/system/ real-system evidence, does not replace results with AI self-assertions, detects toolchain availability, maps verification dependencies, treats real test results as authoritative evidence, and connects failure modes with test coverage."
+msgstr "S5 prüft mechanisch und real, ob die technische Lösung und die Änderungen tatsächlich funktionieren. S5 erzeugt einen VerificationPlan, nutzt projektspezifische Build- und Testsysteme, trennt Unit-/Komponenten-/System-/Real-System-Evidenz, ersetzt Ergebnisse nicht durch KI-Selbstbehauptungen, erkennt Toolchain-Verfügbarkeit, bildet Verifikationsabhängigkeiten ab, behandelt reale Testergebnisse als autoritative Evidenz und verknüpft Fehlerarten mit Testabdeckung."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:259
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §1/S5"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §1/S5"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:266
+msgid "S5.1 derives a structured VerificationPlan from project requirements and the present toolchain."
+msgstr "S5.1 leitet einen strukturierten VerificationPlan aus Projektanforderungen und der vorhandenen Toolchain ab."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:269
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.1"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.1"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:276
+msgid "S5.2 executes registered controlled verification runners deterministically. Toolchain-specific logic belongs exclusively in runners/adapters, never in central orchestration."
+msgstr "S5.2 führt registrierte kontrollierte Verifikations-Runner deterministisch aus. Toolchain-spezifische Logik gehört ausschließlich in Runner/Adapter, niemals in die zentrale Orchestrierung."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:280
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.2"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.2"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:287
+msgid "S5.3 aggregates verification results per step and preserves failure evidence in a structured manner."
+msgstr "S5.3 aggregiert Verifikationsergebnisse je Schritt und bewahrt Fehlschlag-Evidenz strukturiert."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:290
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.3"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.3"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:297
+msgid "S5.4 performs deterministic formatting of already-produced verification evidence. S5.4 has no diagnostic authority."
+msgstr "S5.4 führt deterministische Formatierung bereits erzeugter Verifikationsevidenz durch. S5.4 besitzt keine diagnostische Autorität."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:300
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.4"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.4"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:307
+msgid "S5.5 interprets diagnostic evidence. Forbidden: reinterpreting a real deterministic test failure as success."
+msgstr "S5.5 interpretiert diagnostische Evidenz. Verboten: einen realen deterministischen Testfehlschlag als Erfolg umzudeuten."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:310
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.5"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.5"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:317
+msgid "S5.6 enforces the deterministic test outcome policy: a real verification/test failure forces rework regardless of the interpretation from S5.5."
+msgstr "S5.6 setzt die deterministische Testergebnis-Richtlinie durch: ein realer Verifikations-/Testfehlschlag erzwingt Nacharbeit unabhängig von der Interpretation aus S5.5."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:321
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.6"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.6"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:328
+msgid "S5.7 orchestrates exactly one bounded controlled rework cycle. Rework is triggered by the S5 verification verdict; ownership therefore lies correctly with S5, not S4."
+msgstr "S5.7 orchestriert genau einen begrenzten kontrollierten Nacharbeitszyklus. Nacharbeit wird durch das S5-Verifikationsurteil ausgelöst; die Verantwortung liegt daher korrekt bei S5, nicht bei S4."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:332
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.7"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.7"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:339
+msgid "S6 transfers only technically verified and human-approved results into a final state in a controlled manner. S6 provides Final Approval, controlled Delivery Operation, respects Delivery Target, performs controlled Publish where applicable, maintains Delivery Evidence, preserves Change Provenance, does not absorb foreign target state changes not belonging to the current run, prevents silent destructive repair of the Delivery state, and prevents automatic publication outside defined boundaries. Delivery is a separate engineering step. Version control is optional and project-specific."
+msgstr "S6 überführt nur technisch verifizierte und menschlich freigegebene Ergebnisse kontrolliert in einen Endzustand. S6 stellt Final Approval bereit, kontrollierte Delivery Operation, respektiert das Delivery Target, führt kontrolliertes Publish durch, sofern zutreffend, pflegt Delivery Evidence, bewahrt Change Provenance, absorbiert keine fremden Zielzustandsänderungen, die nicht zum aktuellen Lauf gehören, verhindert stillschweigende destruktive Reparatur des Delivery-Zustands und verhindert automatische Veröffentlichung außerhalb definierter Grenzen. Auslieferung ist ein eigener Engineering-Schritt. Versionskontrolle ist optional und projektspezifisch."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:348
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §1/S6"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §1/S6"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:355
+msgid "Explicit boundaries connect S2→S3→S4→S5→S6. S3 must consume the already selected Engineering Decision without reopening selection authority. S4 may start only after required S3 responsibilities are fulfilled. S5 may start only after required S4 mutations succeeded. S5→S4 has exactly one bounded rework cycle. S5→S3 provides bounded Missing-Toolchain recovery. S5→S6 delivers terminal verification evidence only after the deterministic policy is satisfied."
+msgstr "Explizite Grenzen verbinden S2→S3→S4→S5→S6. S3 muss die bereits gewählte Engineering-Entscheidung konsumieren, ohne die Auswahlautorität neu aufzurollen. S4 darf erst starten, nachdem die erforderlichen S3-Verantwortlichkeiten erfüllt sind. S5 darf erst starten, nachdem die erforderlichen S4-Mutationen erfolgreich waren. S5→S4 hat genau einen begrenzten Nacharbeitszyklus. S5→S3 stellt begrenzte Wiederherstellung bei fehlender Toolchain bereit. S5→S6 liefert terminale Verifikationsevidenz erst, nachdem die deterministische Richtlinie erfüllt ist."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:363
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §4"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §4"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:370
+msgid "The architecture uses a defined set of technology-neutral terms (Requirement, EngineeringDecision, SetupEffect, SetupPlan, Capability, Executor, VerificationPlan, VerificationResult, EnvironmentState, Change, ChangeTarget, ChangeApplication, ExecutionContext, TargetScope, DeliveryOperation, DeliveryTarget, DeliveryState, DeliveryEvidence) to implement technology-neutrality structurally. Stack-specific logic belongs in adapters, inspectors, executors, runners, change-appliers, and providers, never in central orchestration."
+msgstr "Die Architektur verwendet einen definierten Satz technologieneutraler Begriffe (Requirement, EngineeringDecision, SetupEffect, SetupPlan, Capability, Executor, VerificationPlan, VerificationResult, EnvironmentState, Change, ChangeTarget, ChangeApplication, ExecutionContext, TargetScope, DeliveryOperation, DeliveryTarget, DeliveryState, DeliveryEvidence), um Technologieneutralität strukturell umzusetzen. Stack-spezifische Logik gehört in Adapter, Inspektoren, Executors, Runner, Change-Applier und Provider, niemals in die zentrale Orchestrierung."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:379
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §2, §5"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §2, §5"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:386
+msgid "The architecture defines an explicit Producer→Artifact→Consumer chain for every important transition: User/Adapter→CommonRequest→S1, ProjectInspector→ProjectIntelligence→S1/S2, S1→RequirementSet→S2, S2→ EngineeringDecision→S3, S3→SetupPlan→Approval/Execution, S3→ EnvironmentState→S4/S5, S4→StructuredChanges/ChangeProvenance→S5, S5→ VerificationResult→FinalApproval/S6, S6→DeliveryEvidence→User/ProjectStatus/ Learning. For each important artifact the following shall be answerable: who creates it, who may modify it, where it is persisted, who consumes it, which authority applies, which evidence proves its state, which contract version applies."
+msgstr "Die Architektur definiert eine explizite Producer→Artifact→Consumer-Kette für jeden wichtigen Übergang: User/Adapter→CommonRequest→S1, ProjectInspector→ProjectIntelligence→S1/S2, S1→RequirementSet→S2, S2→EngineeringDecision→S3, S3→SetupPlan→Approval/Execution, S3→EnvironmentState→S4/S5, S4→StructuredChanges/ChangeProvenance→S5, S5→VerificationResult→FinalApproval/S6, S6→DeliveryEvidence→User/ProjectStatus/Learning. Für jedes wichtige Artefakt soll Folgendes beantwortbar sein: wer es erzeugt, wer es ändern darf, wo es persistiert wird, wer es konsumiert, welche Autorität gilt, welche Evidenz seinen Zustand belegt, welche Vertragsversion gilt."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:397
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §8"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §8"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:404
+msgid "The architecture maps the Zielbild requirement that Diagnostic Evidence must not replace formal decision-authority onto concrete Sx.y authorities. Diagnostic Trace/Evidence shall not substitute for: CandidateValidation (S2.3), Human Engineering Selection (S2.4), Setup Approval (S3.2), Approval Provenance, deterministic VerificationResult (S5), Final Approval (S5→S6), or Publish Approval (S6)."
+msgstr "Die Architektur bildet die Zielbild-Anforderung, dass diagnostische Evidenz formale Entscheidungsautorität nicht ersetzen darf, auf konkrete Sx.y-Autoritäten ab. Diagnostic Trace/Evidence soll nicht ersetzen: CandidateValidation (S2.3), Human Engineering Selection (S2.4), Setup Approval (S3.2), Approval Provenance, deterministisches VerificationResult (S5), Final Approval (S5→S6) oder Publish Approval (S6)."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:411
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §9"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §9"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:418
+msgid "The architecture realizes alternative generation and recommendation through a Council with Chairman role. The Council generates multiple technically sound alternatives and evaluates them in cross-review. The Chairman synthesizes proposals and cross-reviews and selects a technically justified recommendation. The Chairman is not a deterministic solver but an engineering recommendation selector."
+msgstr "Die Architektur realisiert Alternativenerzeugung und Empfehlung über einen Council mit Chairman-Rolle. Der Council erzeugt mehrere technisch sinnvolle Alternativen und bewertet sie im Cross-Review. Der Chairman synthetisiert Vorschläge und Cross-Reviews und wählt eine technisch begründete Empfehlung. Der Chairman ist kein deterministischer Solver, sondern ein Selektor für Engineering-Empfehlungen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:425
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §6"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §6"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:432
+msgid "Before mutating execution, ADC must architecturally prove: which SetupEffect is required, which SetupStep is produced from it, which controlled Executor is responsible, which structured input schema the Executor expects, whether all required fields are present, whether the execution representation is supported, whether the Capability is registered, whether the project scope is correct, whether the operation is permissible, whether human approval is required and present, and whether the result can be verified afterward. The architecture models readiness states: already_satisfied, materializable, manual_review, unsupported, blocked, approval_required, executable, verification_required."
+msgstr "Vor mutierender Ausführung muss ADC architektonisch nachweisen: welcher SetupEffect erforderlich ist, welcher SetupStep daraus erzeugt wird, welcher kontrollierte Executor zuständig ist, welches strukturierte Eingabeschema der Executor erwartet, ob alle erforderlichen Felder vorhanden sind, ob die Ausführungsrepräsentation unterstützt wird, ob die Capability registriert ist, ob der Projektbereich korrekt ist, ob die Operation zulässig ist, ob menschliche Freigabe erforderlich und vorhanden ist, und ob das Ergebnis anschließend verifiziert werden kann. Die Architektur modelliert Bereitschaftszustände: already_satisfied, materializable, manual_review, unsupported, blocked, approval_required, executable, verification_required."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:443
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §7"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §7"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:445
+msgid "The selected traceability chain links Zielbild→SystemRequirements→ Architecture→ArchitectureDerivedRequirements→SubsystemRequirements→ InterfaceRequirements with explicit parent/child relationships and network validation."
+msgstr "Die gewählte Nachverfolgbarkeitskette verbindet Zielbild→SystemRequirements→Architecture→ArchitectureDerivedRequirements→SubsystemRequirements→InterfaceRequirements mit expliziten Eltern-/Kind-Beziehungen und Netzwerkvalidierung."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:450
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §12"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §12"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:457
+msgid "The architecture defines a reference workflow through S1–S6: user formulates goal → ADC inspects project read-only → S1 produces structured requirements → requirements validated → current EnvironmentState observed → S2 Council generates multiple variants → Council agents review → Chairman synthesizes and selects recommendation → variants checked against requirements, constraints, materializability, execution/verification feasibility (S2.3) → user sees recommendation and alternatives → user decides (S2.4) → S3 produces SetupPlan → non-executable or manual parts visibly marked → human approval for mutating setup steps (S3.2) → controlled setup execution (S3.3) → environment re-verification → S4 Development & Change → S5 real tests and verification → on failure: Diagnosis → missing contract/failure mode → regression test → fix → re-verification (S5.5–S5.7) → final approval → S6 controlled delivery → separate publish approval where applicable → controlled publish where applicable → outcome and evidence persisted → FMEA/ Learning Memory updated only after accepted evidence."
+msgstr "Die Architektur definiert einen Referenz-Workflow durch S1–S6: Benutzer formuliert Ziel → ADC untersucht Projekt read-only → S1 erzeugt strukturierte Anforderungen → Anforderungen validiert → aktueller EnvironmentState beobachtet → S2-Council erzeugt mehrere Varianten → Council-Agenten prüfen gegen → Chairman synthetisiert und wählt Empfehlung → Varianten geprüft gegen Anforderungen, Constraints, Materialisierbarkeit, Ausführungs-/Verifikationsmachbarkeit (S2.3) → Benutzer sieht Empfehlung und Alternativen → Benutzer entscheidet (S2.4) → S3 erzeugt SetupPlan → nicht ausführbare oder manuelle Teile sichtbar markiert → menschliche Freigabe für mutierende Setup-Schritte (S3.2) → kontrollierte Setup-Ausführung (S3.3) → erneute Umgebungsverifikation → S4 Entwicklung & Änderung → S5 reale Tests und Verifikation → bei Fehlschlag: Diagnose → fehlender Vertrag/fehlende Fehlerart → Regressionstest → Fix → erneute Verifikation (S5.5–S5.7) → finale Freigabe → S6 kontrollierte Auslieferung → separate Publish-Freigabe, sofern zutreffend → kontrolliertes Publish, sofern zutreffend → Ergebnis und Evidenz persistiert → FMEA/Learning Memory nur nach akzeptierter Evidenz aktualisiert."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:473
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §10 The architecture separates different knowledge types structurally: Knowledge (current valid project/system contract), Evidence (facts from the current run), Learning Memory (accepted insights), and Deterministic Contracts. Engineering FMEA is maintained as a living project instrument derived from requirements, architecture, technologies, toolchains, hardware, operating environment, past errors, tests, and real-system evidence."
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §10 Die Architektur trennt unterschiedliche Wissensarten strukturell: Knowledge (aktuell gültiger Projekt-/Systemvertrag), Evidence (Fakten aus dem aktuellen Lauf), Learning Memory (akzeptierte Erkenntnisse) und Deterministic Contracts. Die Engineering-FMEA wird als lebendes Projektinstrument geführt, abgeleitet aus Anforderungen, Architektur, Technologien, Toolchains, Hardware, Betriebsumgebung, früheren Fehlern, Tests und Real-System-Evidenz."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:481
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §1/S5 (Verification→Learning)"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §1/S5 (Verification→Learning)"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:488
+msgid "A cross-cutting Engineering Supervisor is planned as a quality layer observing S1 through S6. It is not a seventh subsystem. It shall start read-only, recognizing rather than automatically repairing. It shall never autonomously execute destructive actions or alternative fixes."
+msgstr "Ein übergreifender Engineering Supervisor ist als Qualitätsebene geplant, die S1 bis S6 beobachtet. Er ist kein siebtes Subsystem. Er soll rein lesend beginnen, erkennend statt automatisch reparierend. Er soll niemals autonom destruktive Aktionen oder alternative Korrekturen ausführen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:493
+msgid "Source: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §11"
+msgstr "Quelle: ADC_Architektur_Ausfuehrliche_Beschreibung.txt §11"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:497
+msgid "Architecture-derived Requirements"
+msgstr "Architektur-abgeleitete Anforderungen"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:499
+msgid "Requirements that exist because of selected Architecture decisions."
+msgstr "Anforderungen, die aufgrund gewählter Architekturentscheidungen bestehen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:506
+msgid "The selected architecture shall generate multiple independent engineering alternatives and collect cross-review evidence for each before a recommendation is made."
+msgstr "Die gewählte Architektur soll mehrere unabhängige Engineering-Alternativen erzeugen und für jede Cross-Review-Evidenz sammeln, bevor eine Empfehlung erfolgt."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:510
+msgid "Source: ARC_004 (S2.1), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.1"
+msgstr "Quelle: ARC_004 (S2.1), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.1"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:517
+msgid "Technical admissibility shall be determined by a dedicated authority structurally separate from the recommendation and synthesis functions, using exact deterministic reasons. Admissibility shall never be inferred from a recommendation."
+msgstr "Technische Zulässigkeit soll von einer eigenen Autorität bestimmt werden, strukturell getrennt von Empfehlungs- und Synthesefunktionen, unter Verwendung exakter deterministischer Gründe. Zulässigkeit soll niemals aus einer Empfehlung abgeleitet werden."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:522
+msgid "Source: ARC_006 (S2.3), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.3"
+msgstr "Quelle: ARC_006 (S2.3), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.3"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:529
+msgid "The handoff from engineering decision to environment preparation shall use a single EngineeringDecision artifact preserving exact candidate identity, selection authority, and validation provenance. S3 shall consume the already-selected decision without reopening selection."
+msgstr "Die Übergabe von der Engineering-Entscheidung zur Umgebungsvorbereitung soll ein einziges EngineeringDecision-Artefakt verwenden, das exakte Kandidatenidentität, Auswahlautorität und Validierungs-Provenienz bewahrt. S3 soll die bereits gewählte Entscheidung konsumieren, ohne die Auswahl neu aufzurollen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:534
+msgid "Source: ARC_008 (S2.5), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.5"
+msgstr "Quelle: ARC_008 (S2.5), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3A/S2.5"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:541
+msgid "Setup planning shall determine which setup actions are required and produce a structured SetupPlan with classified steps. Planning shall not execute actions, grant approvals, or reopen engineering selection."
+msgstr "Setup-Planung soll bestimmen, welche Setup-Aktionen erforderlich sind, und einen strukturierten SetupPlan mit klassifizierten Schritten erzeugen. Planung darf keine Aktionen ausführen, keine Freigaben erteilen und die Engineering-Auswahl nicht neu aufrollen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:545
+msgid "Source: ARC_010 (S3.1), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.1"
+msgstr "Quelle: ARC_010 (S3.1), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.1"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:552
+msgid "Human approval for mutating setup actions shall be a dedicated architectural boundary structurally separated from planning and execution. No mutating setup action shall execute without an explicit human approval matching the exact planned content."
+msgstr "Menschliche Freigabe für mutierende Setup-Aktionen soll eine eigene architektonische Grenze sein, strukturell getrennt von Planung und Ausführung. Keine mutierende Setup-Aktion soll ohne eine explizite menschliche Freigabe ausgeführt werden, die exakt dem geplanten Inhalt entspricht."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:557
+msgid "Source: ARC_011 (S3.2), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.2"
+msgstr "Quelle: ARC_011 (S3.2), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.2"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:564
+msgid "Approved setup mutations shall execute only through a dedicated controlled execution boundary requiring an approved plan, executable steps, and a responsible registered executor. Every execution shall be deterministically recorded with replay/idempotency protection."
+msgstr "Freigegebene Setup-Mutationen sollen nur über eine eigene kontrollierte Ausführungsgrenze ausgeführt werden, die einen freigegebenen Plan, ausführbare Schritte und einen zuständigen registrierten Executor erfordert. Jede Ausführung soll deterministisch mit Replay-/Idempotenzschutz erfasst werden."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:569
+msgid "Source: ARC_012 (S3.3), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.3"
+msgstr "Quelle: ARC_012 (S3.3), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3B/S3.3"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:576
+msgid "Development changes shall be generated as structured change sets. An empty development change set shall fail — no silent no-op authority exists for development mutations."
+msgstr "Entwicklungsänderungen sollen als strukturierte Änderungsmengen erzeugt werden. Eine leere Entwicklungsänderungsmenge soll fehlschlagen — es besteht keine stillschweigende No-Op-Autorität für Entwicklungsmutationen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:580
+msgid "Source: ARC_016 (S4.1), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3C/S4.1"
+msgstr "Quelle: ARC_016 (S4.1), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3C/S4.1"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:587
+msgid "Every change shall have baseline-before and event-after provenance with run and phase attribution. Change evidence shall be captured and preserved for traceability."
+msgstr "Jede Änderung soll Baseline-Vorher- und Ereignis-Nachher-Provenienz mit Lauf- und Phasenzuordnung besitzen. Änderungsevidenz soll erfasst und für Nachverfolgbarkeit bewahrt werden."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:591
+msgid "Source: ARC_019 (S4.4), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3C/S4.4"
+msgstr "Quelle: ARC_019 (S4.4), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3C/S4.4"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:598
+msgid "Verification shall execute through registered controlled runners. Each verification step shall produce a result with status, return code, timeout, diagnostics, and runner identity preserved."
+msgstr "Verifikation soll über registrierte kontrollierte Runner ausgeführt werden. Jeder Verifikationsschritt soll ein Ergebnis mit Status, Rückgabecode, Timeout, Diagnostik und bewahrter Runner-Identität erzeugen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:602
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:623
+msgid "Source: ARC_022 (S5.2), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.2"
+msgstr "Quelle: ARC_022 (S5.2), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.2"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:609
+msgid "Verification execution shall not introduce uncontrolled changes into the target project. A verification runner that invokes an external tool shall preserve target-workspace integrity: filesystem side effects produced merely as verification side effects shall either be isolated from the target workspace, or pass through an explicitly authorized controlled-mutation/provenance contract where such mutation is intentionally part of system behavior. Incidental cache/build/helper artifacts produced merely as verification side effects are not automatically approved engineering changes. Verification success shall never silently legitimize workspace mutation; unexpected target mutation during verification shall fail closed and shall never be absorbed into delivery merely because the verifier itself reported success."
+msgstr "Die Verifikationsausführung soll keine unkontrollierten Änderungen in das Zielprojekt einbringen. Ein Verifikations-Runner, der ein externes Werkzeug aufruft, soll die Integrität des Ziel-Arbeitsbereichs bewahren: Dateisystem-Seiteneffekte, die lediglich als Verifikations-Seiteneffekte entstehen, sollen entweder vom Ziel-Arbeitsbereich isoliert sein oder über einen explizit autorisierten kontrollierten Mutations-/Provenienzvertrag laufen, sofern eine solche Mutation absichtlich Teil des Systemverhaltens ist. Beiläufige Cache-/Build-/Hilfsartefakte, die lediglich als Verifikations-Seiteneffekte entstehen, sind keine automatisch genehmigten Engineering-Änderungen. Ein Verifikationserfolg soll eine Mutation des Arbeitsbereichs niemals stillschweigend legitimieren; eine unerwartete Zielmutation während der Verifikation soll Fail-Closed gehen und niemals in die Auslieferung übernommen werden, nur weil der Verifizierer selbst Erfolg gemeldet hat."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:630
+msgid "Rework triggered by verification failure shall be limited to exactly one bounded controlled cycle. No unbounded rework loops shall occur."
+msgstr "Durch Verifikationsfehlschlag ausgelöste Nacharbeit soll auf genau einen begrenzten kontrollierten Zyklus beschränkt sein. Es sollen keine unbegrenzten Nacharbeitsschleifen auftreten."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:633
+msgid "Source: ARC_027 (S5.7), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.7"
+msgstr "Quelle: ARC_027 (S5.7), ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5.7"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:640
+msgid "Cross-subsystem boundaries shall enforce that each subsystem may start only after the required upstream responsibilities are fulfilled. The S5→S4 boundary shall allow exactly one rework cycle. The S5→S3 boundary shall allow only bounded missing-toolchain recovery."
+msgstr "Subsystemübergreifende Grenzen sollen erzwingen, dass jedes Subsystem erst starten darf, nachdem die erforderlichen vorgelagerten Verantwortlichkeiten erfüllt sind. Die S5→S4-Grenze soll genau einen Nacharbeitszyklus erlauben. Die S5→S3-Grenze soll nur begrenzte Wiederherstellung bei fehlender Toolchain erlauben."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:646
+msgid "Source: ARC_029, ADC_Architektur_Ausfuehrliche_Beschreibung.txt §4"
+msgstr "Quelle: ARC_029, ADC_Architektur_Ausfuehrliche_Beschreibung.txt §4"
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:653
+msgid "Every ADC-controlled software installation (pip/venv package installation, apt/system package installation, toolchain/package-manager installation, and any other classified installation action) shall execute inside a visible, interactive terminal session that shows the real installation process/output and provides a real interactive TTY, so that a `sudo` prompt, when required, can be answered directly by the human in that terminal. This applies even when the specific installation would not itself require sudo: installation shall never execute silently as a hidden/background subprocess. Terminal availability is a precondition for starting such an installation: if no approved/supported interactive terminal can be opened, installation shall not proceed silently and shall fail closed with a structured cause. The terminal shall close automatically once the installation command has terminated; cancelling or closing the terminal before successful completion shall never be treated as installation success. ADC shall never request, receive, store, pipe, cache, log, serialize, or persist the sudo password itself, in any form -- sudo authentication, when needed, occurs entirely inside the terminal's own interactive TTY. The terminal is only the execution surface for an already-authorized installation; it shall never itself create installation authority."
+msgstr "Jede von ADC kontrollierte Software-Installation (Pip-/venv-Paketinstallation, apt-/Systempaketinstallation, Toolchain-/Paketmanager-Installation und jede andere klassifizierte Installationsaktion) soll innerhalb einer sichtbaren, interaktiven Terminal-Sitzung ausgeführt werden, die den tatsächlichen Installationsvorgang/die Ausgabe zeigt und ein echtes interaktives TTY bereitstellt, sodass eine `sudo`-Aufforderung, falls erforderlich, direkt vom Menschen in diesem Terminal beantwortet werden kann. Dies gilt auch dann, wenn die konkrete Installation selbst kein sudo erfordert: Die Installation soll niemals stillschweigend als versteckter Hintergrundprozess ausgeführt werden. Die Verfügbarkeit eines Terminals ist eine Voraussetzung für den Start einer solchen Installation: Kann kein genehmigtes/unterstütztes interaktives Terminal geöffnet werden, soll die Installation nicht stillschweigend fortfahren und mit einer strukturierten Ursache Fail-Closed gehen. Das Terminal soll sich automatisch schließen, sobald der Installationsbefehl beendet ist; das Abbrechen oder Schließen des Terminals vor erfolgreichem Abschluss soll niemals als Installationserfolg gewertet werden. ADC soll das sudo-Passwort selbst niemals in irgendeiner Form anfordern, empfangen, speichern, weiterleiten, zwischenspeichern, protokollieren, serialisieren oder persistieren -- die sudo-Authentifizierung erfolgt, falls erforderlich, ausschließlich innerhalb des eigenen interaktiven TTY des Terminals. Das Terminal ist lediglich die Ausführungsoberfläche für eine bereits autorisierte Installation; es soll niemals selbst Installationsautorität schaffen."
+
+#: ../../home/udo/AI-Dev-Center/requirements/architecture/architecture.rst:675
+msgid "Source: ARC_012 (S3.3), CLAUDE-ADC-VISIBLE-TERMINAL-FOR-SOFTWARE-INSTALLATION-001"
+msgstr "Quelle: ARC_012 (S3.3), CLAUDE-ADC-VISIBLE-TERMINAL-FOR-SOFTWARE-INSTALLATION-001"
+
+
+# KIA-ADC-CAPABILITY-AUTH-TERMINAL-BOUNDARY-FIX-001
+msgid "Every controlled execution surface, including a visible interactive terminal, shall preserve the validated execution semantics through to the final command: the authorized executable and working-directory scope, controlled child environment, unchanged argv, exactly one command launch per authorized invocation, real exit-status propagation, and no hidden installation fallback."
+msgstr "Jede kontrollierte Ausführungsoberfläche, einschließlich eines sichtbaren interaktiven Terminals, muss die validierte Ausführungssemantik bis zum endgültigen Befehl bewahren: das autorisierte ausführbare Programm und den Arbeitsverzeichnisbereich, die kontrollierte Kindprozessumgebung, unveränderte argv, genau einen Befehlsstart pro autorisiertem Aufruf, die Weitergabe des tatsächlichen Exit-Status und keinen verdeckten Installations-Ersatzpfad."
+
+# KIA-ADC-CAPABILITY-AUTH-TERMINAL-BOUNDARY-FIX-001
+msgid "This terminal execution surface shall comply with the central execution-semantics contract in ARC_REQ_009; visibility and interactive authentication do not relax that contract."
+msgstr "Diese Terminal-Ausführungsoberfläche muss den zentralen Vertrag zur Ausführungssemantik aus ARC_REQ_009 erfüllen; Sichtbarkeit und interaktive Authentifizierung schwächen diesen Vertrag nicht ab."
+
+
+# CLAUDE-ADC-TEST035-REMOTE-DELIVERY-REQUIREMENTS-DELTA-IMPLEMENT-001
+msgid "The delivery subsystem shall support controlled delivery of an approved and verified change to an explicitly authorized external live runtime target using the project's appropriate target-specific delivery mechanism. The runtime target's identity, address, and access details are project configuration and execution evidence — never hard-coded ADC product semantics. Delivery shall operate only on an approved verified delta. Unrelated pre-existing target state shall remain preserved. The chosen delivery mechanism may differ by target and project technology, consistent with version control being optional and project-specific."
+msgstr "Die Auslieferungskomponente soll die kontrollierte Auslieferung einer genehmigten und verifizierten Änderung an ein ausdrücklich autorisiertes externes Laufzeit-Ziel unterstützen, wobei der projektspezifische, zielgerechte Auslieferungsmechanismus verwendet wird. Identität, Adresse und Zugriffsdetails des Laufzeit-Ziels sind Projektkonfiguration und Ausführungsnachweis — niemals fest verdrahtete ADC-Produktsemantik. Die Auslieferung erfolgt ausschließlich auf dem genehmigten, verifizierten Delta. Unverwandte vorbestehende Zielzustände bleiben erhalten. Der gewählte Auslieferungsmechanismus darf sich je nach Ziel- und Projekttechnologie unterscheiden, konsistent damit, dass Versionskontrolle optional und projektspezifisch ist."
+msgid "Source: ARC_028 (S6 Delivery & Outcome); authority transitively via ARC_028 satisfies SYS_REQ_012, SYS_REQ_022 (CLAUDE-ADC-TEST035-REMOTE-DELIVERY-REQUIREMENTS-DELTA-IMPLEMENT-001)"
+msgstr "Quelle: ARC_028 (S6 Delivery & Outcome); Autorität transitiv über ARC_028, das SYS_REQ_012 und SYS_REQ_022 erfüllt"
+
+
+# CLAUDE-ADC-RSE033-INSTALLER-RECOVERY-REQ-CODE-FIX-001
+msgid "S3.5 recovery pauses at the existing S3.2 human approval boundary; one TOOL_UNAVAILABLE outcome yields at most one recovery, and its setup execution and verification retry each run at most once. The recovery resolves the unavailable tool identity to its provisioning requirement and its installer identity only through explicit correlation (IF_REQ_037) and fails closed otherwise."
+msgstr "Die S3.5-Recovery hält an der bestehenden menschlichen Freigabegrenze S3.2 an; ein TOOL_UNAVAILABLE-Ergebnis erzeugt höchstens eine Recovery, deren Setup-Ausführung und Verifikations-Wiederholung jeweils höchstens einmal laufen. Die Recovery löst die fehlende Werkzeug-Identität nur über ausdrückliche Korrelation (IF_REQ_037) auf ihre bereitstellende Anforderung und ihre Installer-Identität auf und endet andernfalls fail-closed."
+msgid "TOOL_UNAVAILABLE is not a real verification or test failure. S5.6 routes it across the S5→S3 boundary into bounded S3.5 Missing-Toolchain Recovery instead of S5.7 developer rework; S3.5 then owns the recovery request."
+msgstr "TOOL_UNAVAILABLE ist kein realer Verifikations- oder Testfehler. S5.6 leitet es über die Grenze S5→S3 in die begrenzte S3.5 Missing-Toolchain Recovery statt in S5.7-Entwickler-Rework; S3.5 verantwortet anschließend die Recovery-Anfrage."
+msgid "The recovery transition is part of this chain: S5→VerificationResult (TOOL_UNAVAILABLE, with the unavailable tool identity)→S3.5→missing-toolchain recovery request→S3.2 Approval→S3.3 Execution→S5 retry of the persisted VerificationPlan. The recovery request carries the unavailable tool identity, the correlated provisioning requirement, the selected EngineeringDecision's variant identity, and the persisted VerificationPlan and VerificationResult, so its provenance is answerable (IF_REQ_037)."
+msgstr "Der Recovery-Übergang ist Teil dieser Kette: S5→VerificationResult (TOOL_UNAVAILABLE, mit der fehlenden Werkzeug-Identität)→S3.5→Missing-Toolchain-Recovery-Anfrage→S3.2 Freigabe→S3.3 Ausführung→S5-Wiederholung des persistierten VerificationPlans. Die Recovery-Anfrage trägt die fehlende Werkzeug-Identität, die korrelierte bereitstellende Anforderung, die Varianten-Identität der ausgewählten EngineeringDecision sowie den persistierten VerificationPlan und das VerificationResult, sodass ihre Provenienz beantwortbar ist (IF_REQ_037)."
+msgid "Requirement activation and installation state are distinct. A ToolchainItem's installation state (needs_install, already_installed, unavailable) never overrides its requirement's activation. An inactive or non-blocking requirement may legitimately remain deferred without a SetupStep; a requirement satisfied through a declared provided_by relation is provided without its own SetupStep. An active, blocking requirement that is missing shall result in an actionable SetupStep or an explicitly non-executable state (manual_review, unsupported, blocked); it shall never silently cross the S3→S4 boundary."
+msgstr "Anforderungsaktivierung und Installationszustand sind voneinander getrennt. Der Installationszustand eines ToolchainItems (needs_install, already_installed, unavailable) überschreibt niemals die Aktivierung seiner Anforderung. Eine inaktive oder nicht blockierende Anforderung darf rechtmäßig ohne SetupStep zurückgestellt (deferred) bleiben; eine über eine deklarierte provided_by-Relation erfüllte Anforderung gilt ohne eigenen SetupStep als bereitgestellt. Eine aktive, blockierende, fehlende Anforderung soll zu einem ausführbaren SetupStep oder einem ausdrücklich nicht ausführbaren Zustand (manual_review, unsupported, blocked) führen; sie darf die Grenze S3→S4 niemals stillschweigend überschreiten."
+
+# CLAUDE-ADC-RSE033-ESPHOME-COMPILE-TIMEOUT-REQ-CODE-FIX-001
+msgid "The execution time budget of every external verification or build operation is part of the VerificationStep execution policy selected by S5.1 before execution; S5.2 runners consume that budget and are never its authoritative source, and no different technology-specific budget is substituted at execution time. A step without a valid budget fails closed before any process starts. When the budget expires, S5.2 terminates the entire controlled process tree and reports TIMEOUT with the partial evidence captured so far; the timeout return code is a synthetic marker, never a real process exit status."
+msgstr "Das Ausführungszeitbudget jeder externen Verifikations- oder Build-Operation ist Teil der Ausführungsrichtlinie des VerificationStep, die S5.1 vor der Ausführung festlegt; S5.2-Runner verwenden dieses Budget und sind niemals seine maßgebliche Quelle, und zur Ausführungszeit wird kein anderes technologiespezifisches Budget untergeschoben. Ein Schritt ohne gültiges Budget endet fail-closed, bevor ein Prozess startet. Läuft das Budget ab, beendet S5.2 den gesamten kontrollierten Prozessbaum und meldet TIMEOUT mit der bis dahin erfassten Teil-Evidenz; der Timeout-Rückgabecode ist ein synthetischer Marker, niemals ein realer Prozess-Exitstatus."
+msgid "TIMEOUT is a fail-closed, non-PASS verification outcome, but a timeout alone is not proof of a source-code defect. S5.6 hands a timeout to the single bounded S5.7 developer rework only when the S5.5 diagnosis identifies a source-correctable cause; otherwise the timeout remains a structured terminal verification outcome and is routed neither to S5.7 rework nor to S3.5 recovery. A real verification or test failure alongside the timeout still forces rework."
+msgstr "TIMEOUT ist ein fail-closed Verifikationsergebnis ungleich PASS, aber ein Timeout allein ist kein Nachweis eines Quellcodefehlers. S5.6 übergibt einen Timeout nur dann an das eine begrenzte S5.7-Entwickler-Rework, wenn die S5.5-Diagnose eine im Quellcode behebbare Ursache feststellt; andernfalls bleibt der Timeout ein strukturiertes terminales Verifikationsergebnis und wird weder in S5.7-Rework noch in die S3.5-Recovery geleitet. Ein realer Verifikations- oder Testfehler neben dem Timeout erzwingt weiterhin Rework."
+
+# CLAUDE-ADC-RSE033-EXECUTION-ERROR-REQ-CODE-FIX-001
+msgid "EXECUTION_ERROR is a controlled-verification execution-infrastructure failure after the controlled process was successfully started, where no valid project verification verdict was produced (for example a failure communicating with the started process, a controlled-process transport or runtime failure, or a failure of the controlled execution boundary itself). S5.2 decides the launch boundary structurally, never from message text: only an executable or capability that cannot be started is reported as TOOL_UNAVAILABLE; a controlled-execution failure after a successful start is reported as EXECUTION_ERROR with its error category, only after the owned process tree has been contained, and never as TOOL_UNAVAILABLE, TIMEOUT, PASS or FAIL. A launch failure that is not an unavailable executable or capability (for example exhausted process resources) cannot be remedied by provisioning and is likewise reported as EXECUTION_ERROR, never as TOOL_UNAVAILABLE."
+msgstr "EXECUTION_ERROR ist ein Fehler der kontrollierten Verifikations-Ausführungsinfrastruktur, nachdem der kontrollierte Prozess erfolgreich gestartet wurde, ohne dass ein gültiges Verifikationsurteil über das Projekt entstanden ist (zum Beispiel ein Kommunikationsfehler mit dem gestarteten Prozess, ein Transport- oder Laufzeitfehler des kontrollierten Prozesses oder ein Fehler der kontrollierten Ausführungsgrenze selbst). S5.2 entscheidet die Startgrenze strukturell, niemals anhand von Meldungstexten: Nur ein Programm oder eine Fähigkeit, die nicht gestartet werden kann, wird als TOOL_UNAVAILABLE gemeldet; ein Fehler der kontrollierten Ausführung nach erfolgreichem Start wird als EXECUTION_ERROR mit seiner Fehlerkategorie gemeldet, erst nachdem der eigene Prozessbaum eingedämmt wurde, und niemals als TOOL_UNAVAILABLE, TIMEOUT, PASS oder FAIL. Ein Startfehler, der kein nicht verfügbares Programm und keine nicht verfügbare Fähigkeit ist (zum Beispiel erschöpfte Prozessressourcen), kann durch Bereitstellung nicht behoben werden und wird ebenfalls als EXECUTION_ERROR gemeldet, niemals als TOOL_UNAVAILABLE."
+
+# CLAUDE-ADC-RSE033-EXECUTION-ERROR-REQ-CODE-FIX-001
+msgid "EXECUTION_ERROR is not a real verification or test failure and not proof of a source-code defect: no valid project verdict exists. S5.6 routes it to the fail-closed terminal verification_execution_error outcome, meaning that verification did not establish PASS or FAIL of the project because the ADC execution infrastructure failed. It is never accepted, never handed to S5.7 developer rework (an S5.5 diagnosis may describe it but cannot authorize rework), and never routed to S3.5 recovery. A real verification or test failure alongside it still forces rework."
+msgstr "EXECUTION_ERROR ist kein realer Verifikations- oder Testfehlschlag und kein Nachweis eines Quellcodefehlers: Es existiert kein gültiges Urteil über das Projekt. S5.6 leitet ihn in das fail-closed terminale Ergebnis verification_execution_error, das bedeutet, dass die Verifikation weder PASS noch FAIL des Projekts festgestellt hat, weil die ADC-Ausführungsinfrastruktur versagt hat. Er wird niemals akzeptiert, niemals an die S5.7-Entwickler-Nacharbeit übergeben (eine S5.5-Diagnose darf ihn beschreiben, aber keine Nacharbeit autorisieren) und niemals an die S3.5-Wiederherstellung geleitet. Ein realer Verifikations- oder Testfehlschlag daneben erzwingt weiterhin Nacharbeit."
+
+msgid "Before generation, relevant target-environment properties affecting source compatibility shall be established and supplied to the generator. Source compatibility shall not be assumed when evidence is unavailable."
+msgstr "Vor der Generierung sind relevante Eigenschaften der Zielumgebung, die die Source-Kompatibilität beeinflussen, festzustellen und dem Generator bereitzustellen. Source-Kompatibilität darf bei fehlender Evidenz nicht angenommen werden."
+
+msgid "Source: ARC_016 (S4.1), ZIEL_003, ZIEL_010"
+msgstr "Quelle: ARC_016 (S4.1), ZIEL_003, ZIEL_010"
+
+msgid "S5 verification of generated source executes in the same intended target environment established for that source. Verification run in a different host or default environment does not establish compatibility with the intended target."
+msgstr "Die S5-Verifikation des erzeugten Source wird in derselben vorgesehenen Zielumgebung ausgeführt, die für diesen Source festgestellt wurde. Eine Verifikation auf einem anderen Host oder in einer Standardumgebung stellt keine Kompatibilität mit dem vorgesehenen Ziel fest."
+
+msgid "Source: SYS_REQ_032; ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5"
+msgstr "Quelle: SYS_REQ_032; ADC_Architektur_Ausfuehrliche_Beschreibung.txt §3D/S5"
+
+msgid "S5 shall execute the applicable project verification for generated source in the same intended target environment established before generation. If that environment cannot be selected or used reliably, verification shall not confirm compatibility."
+msgstr "S5 soll die zutreffende Projektverifikation des erzeugten Source in derselben vor der Generierung festgestellten Zielumgebung ausführen. Kann diese Umgebung nicht zuverlässig ausgewählt oder genutzt werden, darf die Verifikation keine Kompatibilität bestätigen."
+
+msgid "Source: ARC_039, SYS_REQ_032"
+msgstr "Quelle: ARC_039, SYS_REQ_032"

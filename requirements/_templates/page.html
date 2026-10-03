@@ -1,0 +1,14 @@
+{% extends "!page.html" %}
+
+{#- OC-ADC-REQUIREMENTS-BILINGUAL-EN-DE-001: visible, deterministic
+    EN/Deutsch switch, present on every page. `adc_switch_lang_label` and
+    `adc_switch_url` are injected per-page by
+    i18n_language_switch.inject_language_switch_context (conf.py's
+    setup(), connected to the html-page-context event) -- never computed
+    client-side, never a JavaScript text swap. #}
+{% block content %}
+<div class="adc-language-switch">
+  <a href="{{ adc_switch_url }}">{{ adc_switch_lang_label }}</a>
+</div>
+{{ super() }}
+{% endblock %}
