@@ -1,0 +1,142 @@
+/* ADC Sphinx-Needs UI adjustments */
+
+.content {
+  max-width: 100%;
+}
+
+article {
+  max-width: 100%;
+}
+
+.needflow {
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+
+.needflow img,
+.needflow svg,
+.graphviz img,
+.graphviz svg {
+  width: 100%;
+  max-width: none;
+  height: auto;
+}
+
+table.need,
+table.needs,
+.dataTable {
+  width: 100% !important;
+}
+
+table {
+  display: table;
+  width: 100%;
+}
+
+div.table-wrapper {
+  overflow-x: auto;
+}
+
+.admonition.note {
+  margin-bottom: 1.5rem;
+}
+
+h1, h2 {
+  scroll-margin-top: 5rem;
+}
+
+/* Traffic-light requirement status styling */
+
+.adc-status-red table tbody tr {
+  background-color: #fff0f0 !important;
+}
+.adc-status-red table tbody tr:nth-child(even) {
+  background-color: #ffe0e0 !important;
+}
+
+.adc-status-yellow table tbody tr {
+  background-color: #fffff0 !important;
+}
+.adc-status-yellow table tbody tr:nth-child(even) {
+  background-color: #ffffd0 !important;
+}
+
+.adc-status-green table tbody tr {
+  background-color: #f0fff0 !important;
+}
+.adc-status-green table tbody tr:nth-child(even) {
+  background-color: #d0ffd0 !important;
+}
+
+/* Dark theme support */
+@media (prefers-color-scheme: dark) {
+  .adc-status-red table tbody tr {
+    background-color: #3d2020 !important;
+  }
+  .adc-status-red table tbody tr:nth-child(even) {
+    background-color: #4d2828 !important;
+  }
+
+  .adc-status-yellow table tbody tr {
+    background-color: #3d3d20 !important;
+  }
+  .adc-status-yellow table tbody tr:nth-child(even) {
+    background-color: #4d4d28 !important;
+  }
+
+  .adc-status-green table tbody tr {
+    background-color: #203d20 !important;
+  }
+  .adc-status-green table tbody tr:nth-child(even) {
+    background-color: #284d28 !important;
+  }
+}
+
+/* Inline role colors */
+.red {
+  color: #d00;
+  font-weight: bold;
+}
+.yellow {
+  color: #b8860b;
+  font-weight: bold;
+}
+.green {
+  color: #0a0;
+  font-weight: bold;
+}
+
+@media (prefers-color-scheme: dark) {
+  .red {
+    color: #ff6b6b;
+  }
+  .yellow {
+    color: #ffd700;
+  }
+  .green {
+    color: #6bff6b;
+  }
+}
+
+/* Requirement card traffic light: the icon + state text come from the
+   derived implementation_state field itself (see status_model.py /
+   conf.py needs_fields predicates) — no color-only signal, the state name
+   is always present as text next to the icon, readable in both themes
+   since it inherits the theme's own text color rather than a fixed one. */
+.needs_implementation_state {
+  font-weight: 600;
+}
+
+/* Dashboard implementation summary (dashboard/overview.rst) */
+.adc-status-summary {
+  list-style: none;
+  margin: 0.5rem 0 1.5rem 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 2rem;
+}
+
+.adc-summary-item {
+  font-size: 1.05rem;
+}
